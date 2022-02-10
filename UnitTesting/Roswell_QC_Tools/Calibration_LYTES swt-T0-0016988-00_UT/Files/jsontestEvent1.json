@@ -1,0 +1,28 @@
+{
+    "cat1": {
+        "lots": [
+            {"a":76,"b":96,"c":116,"chemCode":42,"crosswebs": [
+                {"a":584,"b":585,"c":586,"crossweb_end":4,"crossweb_start":1,"d":587,"e":588,"f":589,"g":590,"h":591},
+                {"a":592,"b":593,"c":594,"crossweb_end":5,"crossweb_start":2,"d":595,"e":596,"f":597,"g":598,"h":599},
+                {"a":600,"b":601,"c":602,"crossweb_end":6,"crossweb_start":3,"d":603,"e":604,"f":605,"g":606,"h":607}
+            ],"d":136,"foils": [
+                {"a":1092,"b":1093,"foil":1},
+                {"a":1094,"b":1095,"foil":2},
+                {"a":1096,"b":1097,"foil":3}
+            ],"lot":17,"numWavelengths":36,"species":56}
+        ]
+    },
+    "ctdx": {
+        "lots": [
+            {"a":65,"b":85,"c":105,"chemCode":41,"crosswebs": [
+                {"a":320,"b":321,"c":322,"crossweb_end":4,"crossweb_start":1,"d":323,"e":324,"f":325,"g":326,"h":327},
+                {"a":328,"b":329,"c":330,"crossweb_end":5,"crossweb_start":2,"d":331,"e":332,"f":333,"g":334,"h":335},
+                {"a":336,"b":337,"c":338,"crossweb_end":6,"crossweb_start":3,"d":339,"e":340,"f":341,"g":342,"h":343}
+            ],"d":125,"foils": [
+                {"a":1026,"b":1027,"foil":1},
+                {"a":1028,"b":1029,"foil":2},
+                {"a":1030,"b":1031,"foil":3}
+            ],"lot":6,"numWavelengths":25,"species":45}
+        ]
+    }
+}

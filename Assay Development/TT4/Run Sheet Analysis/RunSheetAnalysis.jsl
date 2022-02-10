@@ -1,0 +1,215 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Script to reduce TT4 run sheet data and join to just_results files
+
+//------------------Revision History for both script and Help File--
+//
+//	1.8 NClark 022219
+//		-> added variables to send to new functions for auto update and tracking
+//		-> added included to utilities.jsl
+//		-> added check functions at start of script
+//	1.7 NClark 100215
+//		-> Updated version for separation of AR Calc and Run Sheet into separate addins
+//	1.6 NClark 121814
+//		-> Updated "Run #" references to be "Sample id"
+//		-> Updated dialog to ask for "Sample id" column rather than "Run #"
+//		-> Updated number of rows from column A and E to use (corresponds with adjustments to run sheet to update for current run concerns)
+//		-> Added Try command for "Sample id" to change to numeric (may not be possible if coded string), but kept Run # Try() incase Run # exists
+//		-> Changed Sort() command to be within a Try and kept it for Run # (which may not exisit)
+//	1.5 NClark 111014
+//		-> Updated error dialog to correct 'condition 1' OR 'Sample id' to account for CatOne output
+//	1.4 NClark 071014
+//		-> Fixed lack of two Substrate columns (lose run sheet version)
+//		-> Moved Clear Globals and runSheetVer to be more obvious so will match actual revision saved
+//		-> File name gathered in part from 'just results' table name
+//			->Original FileName: xxxxxx-mmddyy...
+//			->Script locates "-"
+//			->'xxxxx' can be an series of characters that does NOT contain a dash("-")
+//			->'mmddyy' is a six digit date code
+//			->After 6 digit date code, the filename can be anything
+//	1.3 NClark	061014
+//		-> Moved Run # column closer to the front
+//	1.2 NClark	060614
+//		-> Added error catch for missing Run # column in justResults table
+//	1.1 NClark 052914
+//		-> Fixed bug where Excel Preferences weren't changed or returned correctly
+//		-> Moved Following columns after Post Analysis Notes
+//			Run Attempted
+//			Error
+//			Consumable Condition
+//			Slide Condition
+//			NOTES
+//			Experiment #
+//			Operator
+//			Slide Lot
+//			1X wash
+//			Script Version
+//			ISL file run
+//			Firmware
+//			R&D TT4 RunSheet ver.
+//		-> Updated excel preferences so it works on both JMP10 and 11+
+//	1.0 NClark 052614
+//		-> First Version released
+//------------------------------------------------------------------
+Names default to here(1);
+
+u = Get Environment Variable("username");
+addinID = "com.idexx.RnD_TT4RS";
+addinLib = "com.idexx.assayDevLibraries2";
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+
+if(isMissing(checkForUpdate(addinID)),
+	checkForUpdate(addinLib)
+);
+trackUsage(u,addinID);
+
+Try(
+	runSheetVer = Char(GetAddin(addinID)<<version);
+	,
+	Print("Addin not installed yet");
+	runSheetVer = "v999"
+);
+
+//Gets Excel preferences differently if user has JMP10 vs 10+ (won't work on v9-)
+If(Contains(JMPVersion(),"10")==1,
+	//Gets Preferences user may have changed from what's necessary
+	prefExcelSheet = GetPreferences(Use Excel Labels as Headings);
+	prefExcelOpen = GetPreferences(Select Individual Excel Worksheets);
+	//Changes to necessary preferences
+	Preferences(Use Excel Labels as Headings("Never"));
+	Preferences( Select Individual Excel Worksheets( 1 ) )
+	,
+	//Gets Preferences user may have changed from what's necessary
+	prefExcelSheet = GetPreferences(Use Excel Labels as Headings);
+	prefExcelOpen = GetPreferences(Excel Open Method);
+	//Changes to necessary preferences
+	Preferences(Use Excel Labels as Headings("Never"));
+	Preferences(Excel Open Method("Select Individual Worksheets"));
+);
+//start with desired just_results table open
+dtStart=currentdatatable();
+
+instMtrx = Column(dtStart, "Instrument ID") << GetAsMatrix;
+instID = If(Contains(instMtrx[1],"CTDX")!=0,"CatDx","CatOne");
+
+//Sets up Variables for new naming nomenclature (rules in revision history)
+tableName = dtStart<<GetName;
+titleName = Word(1,tableName,"-");
+dateName = Substr(tableName,Munger( tableName, 1, "-" )+1,6);
+
+//Changes Run # to desired column type to work with run sheet
+//If Run # column is not present, an error notifies the user
+Try(
+	Column(dtStart,"Sample id")<< ModelingType("Nominal");
+	Column(dtStart,"Sample id")<< DataType("Character"),
+	NewWindow("Column Misname",<<modal,
+		Vlistbox(
+			TextBox("It appears as though a 'Sample id' column does not exist in the justResults table. Please ensure the 'condition1' or 'Run #' column is correctly named to 'Sample id' and try again.",<<setwrap(300)),		
+			Buttonbox("OK")
+		),
+	);
+	Throw()
+);
+
+//Open the desired Run Sheet (responsibility of user to ensure they are for same data)
+dt=Open();
+
+//Locates the row which contains header information
+findStart = Column(dt,1)<<getasmatrix;
+rowStart = Contains(findStart,"Sample id");
+
+//Moves header information into column headers
+colMtrx={};
+For(i=1,i<=ncol(dt),i++,
+	colMtrx[i]=Column(dt,i)<<getasmatrix;
+	Column(dt,i)<<Setname(colMtrx[i][rowStart])
+);
+show(colMtrx[1]);
+
+//Removes any additional columns
+If(ncol(dt)>10,
+	colNum=ncol(dt);
+	For(i=11,i<=colNum,i++,
+		dt<<DeleteColumns(11)
+	)
+);
+
+//Adds columns for metadata from excel column A
+For(i=1,i<=5,i++,
+	dt<<new column(colMtrx[1][i],Formula(colMtrx[2][i]));
+	Column(dt,colMtrx[1][i])<<DeleteFormula;
+	
+);
+//Adds columns for metadata from excel column E
+For(i=1,i<=4,i++,
+	dt<<new column(colMtrx[5][i],Formula(colMtrx[6][i]));
+	Column(dt,colMtrx[5][i])<<DeleteFormula;
+	
+);
+//Deletes all rows up until data
+dt<<DeleteRows(1::rowStart);
+dt<<SelectWhere(IsMissing(:Sample id))<<DeleteRows;
+
+//Renames the Substrate column (if it exists) so it won't clash with the Substrate read in the 'just results' table
+Try(
+	Column(dt,"Substrate") << SetName("Substrate_RS");
+);
+
+//Joins dt onto dtStart by Run Number only
+newJustResults = dtStart << Join(
+	With( Data Table( dt ) ),
+	Merge Same Name Columns,
+	By Matching Columns( :Sample id = :Sample id ),
+	Drop multiples( 0, 0 ),
+	Name( "Include non-matches" )(1, 1),
+	Preserve main table order( 1 )
+);
+
+newJustResults << SetName(
+	titleName||"-"||dateName||"_"||"justResults and RunSheet"
+);
+
+newJustResults << New Column("R&D TT4 RunSheet ver.",Characterr(10),
+	Formula(Eval(runSheetVer))
+);
+//Resets preferences to what user previously had
+Eval(prefExcelSheet);
+Eval(prefExcelOpen);
+
+//Changes the Run # to a numeric column, Try allows for users to do Run # 4a or some other alpha-numeric
+Try(
+	Column(newJustResults,"Sample id")<< DataType("Numeric");
+	Column(newJustResults,"Sample id")<< ModelingType("Continuous");
+);
+Try(
+	Column(newJustResults,"Run #")<< DataType("Numeric");
+	Column(newJustResults,"Run #")<< ModelingType("Continuous");
+);
+
+//Sorts by run number
+Try(
+	newJustResults << Sort( By( :Run # ), Order( Ascending ), ReplaceTable(1) );
+);
+
+//Move Columns into right location
+newJustResults << MoveSelectedColumns(
+	{
+		"Run Attempted",
+		"Error",
+		"NOTES",
+		"Sample id",
+		"Experiment #",
+		"Operator",
+		"Kit Lot",
+		"Cat1 Software Version",
+		"IVLS",
+		"CDx Script",
+		"CDx Firmware",
+		"R&D TT4 RunSheet ver."
+	},
+	After("Post Analysis Notes")
+);

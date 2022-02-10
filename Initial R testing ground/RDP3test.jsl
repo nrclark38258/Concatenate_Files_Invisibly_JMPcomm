@@ -1,0 +1,47 @@
+Clear Globals();
+If( !Namespace Exists( "crpCalibration" ) == 0, crpCal = New Namespace( "crpCalibration" ) );
+crpCal:DataTable = Current Data Table();
+
+colList = {};
+For(i=1,i<=ncol(crpCal:DataTable),i++,
+	colName = Column(crpCal:DataTable,i)<<getname;
+	insertInto(colList,colName)
+);
+arCol = Contains(colList,"AR-Script");
+concCol = Contains(colList,"Panel Conc");
+If(arCol == 0 | concCol == 0,
+	NewWindow("Missing Columns",<<modal,
+		VListBox(
+			TextBox("One or more columns are missing.",<<SetFontStyle( "Bold" ),<<SetFontSize(12)),
+			TextBox(""),
+			HListBox(
+				TextBox("The analyzer response must be ",<<SetFontSize(12)),
+				TextBox("'AR-Script'",<<SetFontStyle( "Bold" ),<<SetFontSize(12)),
+			),
+			HListBox(
+				TextBox("and the concentrations must be ",<<SetFontSize(12)),
+				TextBox("'Panel Conc'",<<SetFontStyle( "Bold" ),<<SetFontSize(12))
+			)
+		)
+	);
+	Throw()
+);
+
+R Init();
+R Send(crpCal:DataTable, R Name("calDataTable"));
+R Send(arCol);
+R Send(concCol);
+//UPDATE SUBMIT FOR ADDINHOME ... and Rename file (not for CRP, LnTransform_cubic)
+R Submit File("G:\JMP\JMP Scripts\00-AddIns\Initial R testing ground\R_JMP_CRP-lot-RDP3_NRC-cubic only.txt");
+coefficients = R Get (coefs);
+R Term();
+
+coeff4 = Parse(char(coefficients[4]));
+
+crpCal:DataTable << New Column( "Formula from R",
+	Formula(
+		Exp((coefficients[4] *  :Name("AR-Script") ^ 3 + coefficients[3] *  :Name("AR-Script") ^ 2 + coefficients[2] * :Name("AR-Script") 
+		+coefficients[1]))-1
+	)
+);
+//Show( coefficients );

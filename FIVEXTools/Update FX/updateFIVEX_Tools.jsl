@@ -1,0 +1,22 @@
+//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+// 1.0 NClark 092915
+//		-> First Released Version
+//------------------------------------------------------------------
+
+Unregister Addin("com.idexx.nclark.SDCI");
+Unregister Addin("com.idexx.nclark.youdenMSA");
+Unregister Addin("com.idexx.nclark.exactBinom");
+Unregister Addin("com.idexx.nclark.updateFX");
+
+
+Open("\\FOGHORN\Groups\JMP User Group\JMP Addins\com.idexx.SDCI.jmpaddin");
+Open("\\FOGHORN\Groups\JMP User Group\JMP Addins\com.idexx.youdenMSA.jmpaddin");
+Open("\\FOGHORN\Groups\JMP User Group\JMP Addins\com.idexx.exactBinomial.jmpaddin");
+Open("\\FOGHORN\Groups\JMP User Group\JMP Addins\com.idexx.updateFX.jmpaddin");

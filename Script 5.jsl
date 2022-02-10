@@ -1,0 +1,17 @@
+clearglobals();
+
+Files = Pick File(
+	,
+	,
+	{"All Files|*", "JMP Files|jmp;jsl;jrn"},
+	1,
+	0,
+	,
+	Multiple
+);
+
+For( i = 1, i <= N Items( Files ), i++,
+	Files[i] = Parse( Substr( Files[i], 2, Length( Files[i] ) ) ) );
+//added comment/// added another comment
+
+//adde comment 1, line 18//added comment2, line 19

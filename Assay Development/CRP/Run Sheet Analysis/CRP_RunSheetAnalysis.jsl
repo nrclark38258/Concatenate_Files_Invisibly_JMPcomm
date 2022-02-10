@@ -1,0 +1,157 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Script to reduce TT4 run sheet data and join to just_results files
+
+clearglobals();
+
+runSheetVer = "v1.0";
+
+//------------------Revision History for both script and Help File--
+//
+//	1.0 NClark 052614
+//		-> First Version released
+//		-> Ported from v1.7 of TT4 Run sheet tool
+//------------------------------------------------------------------
+
+//Gets Excel preferences differently if user has JMP10 vs 10+ (won't work on v9-)
+If(Contains(JMPVersion(),"10")==1,
+	//Gets Preferences user may have changed from what's necessary
+	prefExcelSheet = GetPreferences(Use Excel Labels as Headings);
+	prefExcelOpen = GetPreferences(Select Individual Excel Worksheets);
+	//Changes to necessary preferences
+	Preferences(Use Excel Labels as Headings("Never"));
+	Preferences( Select Individual Excel Worksheets( 1 ) )
+	,
+	//Gets Preferences user may have changed from what's necessary
+	prefExcelSheet = GetPreferences(Use Excel Labels as Headings);
+	prefExcelOpen = GetPreferences(Excel Open Method);
+	//Changes to necessary preferences
+	Preferences(Use Excel Labels as Headings("Never"));
+	Preferences(Excel Open Method("Select Individual Worksheets"));
+);
+//start with desired just_results table open
+dtStart=currentdatatable();
+
+instMtrx = Column(dtStart, "Instrument ID") << GetAsMatrix;
+instID = If(Contains(instMtrx[1],"CTDX")!=0,"CatDx","CatOne");
+
+//Sets up Variables for new naming nomenclature (rules in revision history)
+tableName = dtStart<<GetName;
+titleName = Word(1,tableName,"-");
+dateName = Substr(tableName,Munger( tableName, 1, "-" )+1,6);
+
+//Changes Run # to desired column type to work with run sheet
+//If Run # column is not present, an error notifies the user
+Try(
+	Column(dtStart,"Sample id")<< ModelingType("Nominal");
+	Column(dtStart,"Sample id")<< DataType("Character"),
+	NewWindow("Column Misname",<<modal,
+		Vlistbox(
+			TextBox("It appears as though a 'Sample id' column does not exist in the justResults table. Please ensure the 'condition1' or 'Run #' column is correctly named to 'Sample id' and try again.",<<setwrap(300)),		
+			Buttonbox("OK")
+		),
+	);
+	Throw()
+);
+
+//Open the desired Run Sheet (responsibility of user to ensure they are for same data)
+dt=Open();
+
+//Locates the row which contains header information
+findStart = Column(dt,3)<<getasmatrix;
+rowStart = Contains(findStart,"Sample ID_RS");
+
+//Moves header information into column headers
+colMtrx={};
+For(i=1,i<=ncol(dt),i++,
+	colMtrx[i]=Column(dt,i)<<getasmatrix;
+	Column(dt,i)<<Setname(colMtrx[i][rowStart])
+);
+show(colMtrx[1]);
+
+//Removes any additional columns
+k=1;
+While(Column(dt,k) != Column("Notes"),k++);
+show(k);
+colNum=ncol(dt);
+For(i=k+1,i<=colNum,i++,
+	colDel = k+1;
+	dt<<DeleteColumns(colDel)
+);
+
+//Adds columns for metadata from excel column A
+For(i=1,i<=5,i++,
+	dt<<new column(colMtrx[1][i],Formula(colMtrx[2][i]));
+	Column(dt,colMtrx[1][i])<<DeleteFormula;
+	
+);
+//Adds columns for metadata from excel column C
+For(i=3,i<=5,i++,
+	dt<<new column(colMtrx[3][i],Formula(colMtrx[4][i]));
+	Column(dt,colMtrx[3][i])<<DeleteFormula;
+	
+);
+//Adds columns for metadata from excel column F
+For(i=1,i<=3,i++,
+	dt<<new column(colMtrx[6][i],Formula(colMtrx[7][i]));
+	Column(dt,colMtrx[6][i])<<DeleteFormula;
+	
+);
+//Deletes all rows up until data (assumes sample ID presence = data collected)
+dt<<DeleteRows(1::rowStart);
+dt<<SelectWhere(IsMissing(:Sample ID_RS))<<DeleteRows;
+
+
+//Joins dt onto dtStart by Run Number only
+newJustResults = dtStart << Join(
+	With( Data Table( dt ) ),
+	Merge Same Name Columns,
+	By Matching Columns( :Sample id = :Sample ID_RS ),
+	Drop multiples( 0, 0 ),
+	Name( "Include non-matches" )(1, 1),
+	Preserve main table order( 1 )
+);
+
+newJustResults << SetName(
+	titleName||"-"||dateName||"_"||"justResults and RunSheet"
+);
+
+newJustResults << New Column("R&D CRP RunSheet ver.",Characterr(10),
+	Formula(Eval(runSheetVer))
+);
+//Resets preferences to what user previously had
+Eval(prefExcelSheet);
+Eval(prefExcelOpen);
+
+//Changes the Run # to a numeric column, Try allows for users to do Run # 4a or some other alpha-numeric
+Try(
+	Column(newJustResults,"Run #")<< DataType("Numeric");
+	Column(newJustResults,"Run #")<< ModelingType("Continuous");
+);
+
+//Sorts by run number
+Try(
+	newJustResults << Sort( By( :Run # ), Order( Ascending ), ReplaceTable(1) );
+);
+
+/*//Move Columns into right location
+newJustResults << MoveSelectedColumns(
+	{
+		"Run Attempted",
+		"Error",
+		"NOTES",
+		"Sample id",
+		"Experiment #",
+		"Operator",
+		"Kit Lot",
+		"Cat1 Software Version",
+		"IVLS",
+		"CDx Script",
+		"CDx Firmware",
+		"R&D TT4 RunSheet ver."
+	},
+	After("Post Analysis Notes")
+);*/

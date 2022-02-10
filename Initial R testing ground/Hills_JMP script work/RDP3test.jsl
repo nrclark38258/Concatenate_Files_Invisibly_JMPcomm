@@ -1,0 +1,5 @@
+R Init();
+R Submit File("R:\nextlab2\Nate's folder\Catalyst Dx algorithms\CRP curve fitting\JMP script work\R scripts to be called by JMP\R_JMP_CRP-lot-RDP3.txt");
+R Submit("summary(nls.out)");
+coefficients = R Get (nls.out$par);
+R Term();

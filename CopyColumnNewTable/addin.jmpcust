@@ -1,0 +1,36 @@
+<!-- JMP Add-In Builder created --><jm:menu_and_toolbar_customizations xmlns:jm="http://www.jmp.com/ns/menu" version="3">
+  <jm:insert_in_main_menu>
+    <jm:insert_in_menu>
+      <jm:name>ADD-INS</jm:name>
+      <jm:insert_after>
+        <jm:name></jm:name>
+		
+		<jm:menu>
+			<jm:name>COPY COLUMNS</jm:name>
+			<jm:caption>Copy Columns/Formulas</jm:caption>
+
+			<jm:command namesDefaultToHere="1">
+			  <jm:name>Copy Column Formulas</jm:name>
+			  <jm:caption>Copy Columns/Formulas v3.1</jm:caption>
+			  <jm:action type="path">$ADDIN_HOME(com.idexx.nclark.copyColumnFormulas)\CopyColumnFormulas.jsl</jm:action>
+			  <jm:tip>Copies Several Columns with Formulas from one Table to Another</jm:tip>
+			</jm:command>
+
+			<jm:command namesDefaultToHere="1">
+				<jm:name>UPDATE COPY COLUMNS</jm:name>
+				<jm:caption>Update Copy Columns</jm:caption>
+				<jm:action type="text">Names Default to here(1);
+
+If(HostIs("MAC"),
+	Open(Convert File Path("\Volumes/groups/JMP User Group/JMP Addins/updateCopyColumns.jsl",unix))
+	,
+	Open(Convert File Path("//FOGHORN/Groups/JMP User Group/JMP Addins/updateCopyColumns.jsl",windows))
+);</jm:action>
+				<jm:tip>Updates to latest release</jm:tip>
+			</jm:command>
+
+		</jm:menu>
+      </jm:insert_after>
+    </jm:insert_in_menu>
+  </jm:insert_in_main_menu>
+</jm:menu_and_toolbar_customizations>

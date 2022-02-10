@@ -1,0 +1,27 @@
+// commented line, and if you put "//!" at the first line of the script,
+// then the script will run automatically when opened and not launch 
+// the script editor.
+
+/* a large block of comment can also be bracketed this way. */
+
+ /*A = "Hello world";
+ show(A);
+ 
+ for (i = 1, i < 5, i++, 
+ 	X = i;
+ 	print(X, A);
+ );
+ print ("all done");
+ New Window("\!"Hello\!" is a quoted string.", 
+ 	Text Box (Char(repeat("Toss my salad!  ", 70)))
+ );*/
+ 
+ // for some reason can't find the workbook:
+ /*excel_obj = Excel Profiler(
+ 	Workbook("\\foghorn\groups\nextlab2\Nate's folder\Catalyst Dx algorithms\CRP curve fitting\JMP script work\macroTestForJMP.xlsm"),
+ 	Model("getConcTest")
+ );*/ 
+ 
+ current_file = pick file("select the excel file with the macro to run");
+ 
+ 

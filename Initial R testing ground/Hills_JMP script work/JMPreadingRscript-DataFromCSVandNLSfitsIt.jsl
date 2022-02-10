@@ -1,0 +1,17 @@
+R Init();
+R submit("CRP = read.csv(file=\!"E:/2JMP_temp/CRP_lotRDP3_thru10.csv\!", head=TRUE, sep=\!",\!")");
+R Submit("X = CRP[,1]");
+R Submit("Y = CRP[,2]");
+// R Submit("install.packages(\!"minpack.lm\!")"); // only if user's machine does not already have it downloaded.
+R Submit("require(\!"minpack.lm\!")");
+//R Submit("X");  // we can see that the X variables have been loaded
+R Submit("parStart = list(a = 7, b = -10, c = 6, d = -4)");
+R Submit("expTransform = function(parS, xx) (parS$a + (parS$b * exp(xx)) + (parS$c * exp(xx^2)) + (parS$d * exp(xx^3)))");
+R Submit("residFun = function(params, yy, xx) yy - expTransform(params, xx)");
+R Submit("nls.out = nls.lm(par=parStart, fn = residFun, xx = X, yy = Y, control = nls.lm.control(nprint = 1))");
+//R Submit("summary(nls.out)");
+coefficients = R Get (nls.out$par);
+// R Submit("");
+R Term();
+
+// 

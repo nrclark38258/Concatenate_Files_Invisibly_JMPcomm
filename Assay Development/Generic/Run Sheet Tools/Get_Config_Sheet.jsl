@@ -1,0 +1,32 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates ARs for progress curves with Slope, EndPoint or Average EndPoint
+
+//------------------Revision History for both script and Help File--
+//
+//	1.0.0.0 NClark 021519
+//		-> First Version
+//------------------------------------------------------------------
+Names default to here(1);
+
+redirectWarning = Function({},
+	answer = 0;
+	New Window( "Redirect to Template",
+		<<Modal,
+		Text Box( "You will now be redirected to your browser to download", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "the most recent run configuration template", <<setfontstyle( "bold"), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		HListBox(Button Box( "OK",answer = 1 ),Button Box("Cancel"))
+	);
+	Return(answer)
+);
+
+
+Match(redirectWarning(),
+	1,Web("https://intradexx.idexx.com/teams/001/ClinicalChemistry/Team%20Documents/Configuration%20Run%20Sheet.xlsx");
+	,
+	0, Empty()
+);

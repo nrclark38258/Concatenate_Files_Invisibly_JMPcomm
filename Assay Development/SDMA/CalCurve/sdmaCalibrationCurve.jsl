@@ -1,0 +1,987 @@
+//Author(s)
+//NClark (JSL)
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates a Calibration curve for assay
+
+//------------------Revision History for both script and Help File--
+//
+//	4.3.0.0 NClark 022619
+//		-> added variables to send to new functions for auto update and tracking
+//		-> added included to utilities.jsl
+//		-> added check functions in main function of script
+//	4.2 NClark 081517
+//		-> updated to keep all graphs live!
+//	4.1 NClark 071817
+//		-> Updated dialog box to be Anchored Rodbard instead of Rodbard-Linear
+//	4.0 NClark 071717
+//		-> changed all LCMS of 0 to 0.01
+//		-> Added 100 rows of dose 10000 at AR = 0 per BY column category
+//		-> updated rodbard to be 'correct' and put coeffs into inverted formula
+//		-> Updated checks to include derivative of rodbard at 15
+//		-> dashed line of shame for bad deriv
+//		-> added graphs to plot AR vs LCMS, Deriv(LCMS) vs LCMS, Deriv(angle) vs. Angle
+//			-> all in one report with graph lines
+//		-> invoked 'batch interactive' commands on OK button to keep error dialogs to pop open
+//		-> modified adding of lines to graphs by combining several 'reports' into one Eval(Eval Expr()) list
+// added lots of different grapics
+//	3.1 NClark 060117
+//		-> fixed bug that would error script if quadratic between 10 and 20 couldn't converge
+//		-> updated bug where suspectData may be counted more than once
+//	3.0 NClark 052817
+//		-> complete refactoring switching to mostly functions
+//		-> improved stitching using R (must have R installed)
+//		-> checks for suspect data and supplies Fit Notes and Dashed Lines
+//	2.9 NClark 040617
+//		-> Added Try() statements around Value Ordering code so it will work when no BY column is chosen
+//	2.8 NClark 040517
+//		-> Updated bug where color in customization remained 'j' instead of actual color #
+//			-> Resulted in no lines if graphs journaled, saved, and reopened
+//			-> ...(j + 15) turned to (Expr(j+15)) so the math is evaluated when created
+//	2.7 NClark 040517
+//		-> Updated bug to explicitly call table for NCol() to find last column in table
+//	2.6 NClark 040217
+//		-> Deletes responses less than or equal to 0 in addition to already excluded rows
+//		-> Fixed Bug to exclude 0 doses based on the Num() of the value rather than not (previous wouldn't work if col was character)
+///		-> Gathered Value ordering from BY variable and applied it to subset tables
+//		-> Updated MeanFive For() loop to correctly identify condition (equals instead of contains)
+//	2.5 NClark 033017
+//		-> Added version check to ensure people are on right version of JMP(13+)
+//	2.4 NClark 033017
+//		-> Cleaned up code (comments, show(), etc)
+//		-> Combined duplicate code to reduce confusion
+//		-> Updated 'wrong cols' dialog'
+//	2.3 NClark 032917
+//		-> Updated to use only Angle in final formulas
+//		-> Updated to use latest derivative column instead of hard coded one
+//		-> Rows get colored to JMP default instead of native colors
+//		-> Line colors are 'random' 15 colors above each iteration
+//		-> Force By var to be character
+//	2.2 NClark 032817
+//		-> Copied much of the formula text to add in Eval(Derivative()) to create a column of the 1st derivative
+//		-> Duplicated code to add 1st derivative graph(s) and lines
+//	2.1 NClark 032817
+//		-> Updated Col List in Dialog to honor grouped columns
+//		-> Updated exclusion of > 5 to include Missing values
+//	2.0 NClark 032717
+//		-> Added column variable for 'Target Dose'
+//		-> Removed "R" code in place to do 2 fits, a Rodbard (Dose by AR) and Linear (AR by Dose)nclark
+//		-> Deletes user exclusions but maintains same table for separate fits through separate exclcusion calls
+//		-> Does RodBard 4P fit through all but 0 and a linear through 0 and 5 and stiches them together at mean of 5 AR
+//		-> Completed infrastructure to handle more than 1 fit with a BY but also for dual IF()
+//	1.0 NClark 032317
+//		-> 1st version for SDMA based on work for CRP
+//		-> 'smartly' uses AR-Script or Angle (pref for AR-Script)
+//		-> removes 0 panel from data as well as any excluded rows
+//	--------------Ported CRP v2.5 to make changes for an SDMA calibration
+//
+//------------------------------------------------------------------
+Names Default to Here(1);
+clearglobals();
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+
+u = Get Environment Variable("username");
+addinID = "com.idexx.RnD_SDMAcalCurve";
+addinLib = "com.idexx.assayDevLibraries2";
+
+sdmaCal = New Namespace( "sdmaCalibration" );
+sdmaCal:version = 3.1;
+sdmaCal:lbWidth = 130;
+::globalListsdmaCal = {::ba1ListsdmaCal, ::ba2ListsdmaCal, ::ba3ListsdmaCal, ::ba4ListsdmaCal}; //global list for column lists
+sdmaCal:lbList = {colListYsdmaCal, colListBsdmaCal, colListXsdmaCal, colListTsdmaCal};
+
+sdmaCal:DataTable = Current Data Table();
+If( Is Empty( sdmaCal:DataTable ),
+	Try(sdmaCal:DataTable = Open(),sdmaCal<<delete;throw())
+);
+sdmaCal:nc = N Col( sdmaCal:DataTable );
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+notImplemented = Function({},
+	New Window( "Feature Not Available", <<Modal, Text Box( "This feature has not been implemented yet." ), Button Box( "OK" ) );
+	Return(0)
+);
+
+dataQuality = Function({},
+	New Window( "Curve Data Suspect", <<Modal,
+		VListBox(
+			Text Box( "ONE OR MORE FITS NOT SHOWN" ),
+			TextBox( "One or more curves contains suspect data or data of poor quality. " ),
+			TextBox( "Please investigate data and rerun tool" ),
+			TextBox( "" )
+		),
+		Button Box( "OK" )
+	);
+	Return(0)
+);
+
+wrongVer = Function({maxVer},{Default Local},
+	New Window( "Requires JMP "||char(maxVer), <<Modal, Text Box( "This addin requires the used of JMP "||char(maxVer)||"+" ), Button Box( "OK" ))
+);
+
+populateGlobals = Function({globalList,localList,diagOption},
+	For(i=1,i<=N Items(globalList),i++,
+		//show(nitems(globalList));
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar);
+					/*Match(diagOption,
+						1, glVar = lb << Get Items
+					,
+						2, glVar = lb << Get
+					,
+						3, glVar = lb
+					);*/
+					Try(
+						glVar = lb << Get Items
+					,
+						Try(
+							glVar = lb << get
+						,
+							glVar = lb
+						)
+					);
+					Lock Globals(glVar);
+				),
+				Expr(lb),Name Expr(localList[i]),
+				Expr(glVar),Name Expr(globalList[i])
+			)
+		);
+	);
+	Return(1)
+);
+
+recallItems = Function({},
+//Is List will produce error if ba1List is not declared
+	//If error, declare vars, otherwise get vars
+	sdmaCal:colList = sdmaCal:DataTable << Get Column Names( String );
+	Try(
+		For( i = 1, i <= N Items( ::globalListsdmaCal ), i++,
+			sdmaCal:nextList = ::globalListsdmaCal[i];
+			For( j = 1, j <= N Items( sdmaCal:nextList ), j++,
+				If( N Row( Loc( sdmaCal:colList, sdmaCal:nextList[j] ) ) > 0,
+					Eval( Substitute( Expr( lb << Append( item ) ), Expr( lb ), sdmaCal:lbList[i], Expr( item ), sdmaCal:nextList[j] ) )
+				)
+			);
+		)
+	,
+		Print( "No columns to recall." )
+	);
+);
+
+wrongCols = Function({},
+	New Window( "Incomplete Column Selection",
+		<<Modal,
+		Text Box( "One or more variables are missing or incorrect for data type", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+
+		Text Box( "Both Concentration and Analyzer Resp require a single, continuous input", <<setfontstyle( "bold" ) ),
+		Text Box( "Target Conc requires a single, input (cont or char, but integer values)", <<setfontstyle( "bold" ) ),
+		Text Box( "BY can only be a single character column", <<setfontstyle( "bold" ) ),
+		Button Box( "OK" ),
+
+	)
+);
+/*Function no longer needed but kept for posterity
+noRinstalled = Function({},
+	New Window( "R not Installed",
+		<<Modal,
+		Text Box( "R needs to be installed for this tool to work", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+
+		Text Box( "Please click below to install R", <<setfontstyle( "bold" ) ),
+		ButtonBox("R v3.3.1",Open("\\FOGHORN\Groups\JMP User Group\R-3.3.1-win.exe"),<<underlinestyle),
+		Button Box( "OK" ),
+
+	);
+);
+quadFormula = Function({a, b, c, d},
+	{a, b, c, d, int1, int2},
+	int1 = (-1*b + sqrt(b^2 - 4 * a * (c - d))) / (2 * a);
+	int2 = (-1*b - sqrt(b^2 - 4 * a * (c - d))) / (2 * a);
+	Return(EvalList({int1, int2}))
+);
+*/
+exprCancel = Function({},
+	//sdmaCal:Diag << Close Window;
+	diagWindow << close window;
+	sdmaCal << delete
+);
+
+
+
+dataWarning = Function({numBad},{Default Local},
+	New Window( "Potential Suspect Data",
+		<<Modal,
+		Text Box( "ALERT", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Text Box( "Suspect data... " || Char(numBad) || " curve(s) identified"),
+		Text Box( "Represented by 'DASHED line of shame' curve fit lines"),
+		Button Box( "OK" ),
+
+	);
+);
+
+calibrationCurve = Function({},{x, suspectData},
+	sdmaCal:colList = {};
+	sdmaCal:meanFive = {};
+	//sdmaCal:fitCurve = {};
+	//sdmaCal:fitCoeff = {};
+	//sdmaCal:fitCoeffDone = {};
+	sdmaCal:fitCoeffList = {};
+	sdmaCal:rCoeffList = {};
+	sdmaCal:concavList = {};
+	sdmaCal:intersectPts = {};
+	sdmaCal:passFail = {};
+	sdmaCal:fitallFormulas = {};
+	sdmaCal:fitDerivFormulas = {};
+	sdmaCal:fitNotes = {};
+	
+	populateGlobals(::globalListsdmaCal,sdmaCal:lbList,1);
+	
+	//Checks to make sure adequete number of columns added to boxes	
+	If(
+		N Items( colListYsdmaCal << get items ) == 0 | N Items( colListXsdmaCal << get items ) == 0 | N Items( colListTsdmaCal << get items ) == 0,
+		wrongCols();
+		Throw();
+	);
+	
+	diagWindow << Close Window;
+
+	//Gets the names of the columns and then creates a ':' version of the first column in each list
+	//for this script there will only be one column in each list anyways
+	//Swapped X and Y columns to quickly make change from Conc on Y to Conc on X
+	sdmaCal:ycol = colListXsdmaCal << getitems;
+	sdmaCal:xcol = colListYsdmaCal << getitems;
+	sdmaCal:byCol = colListBsdmaCal << getitems;
+	sdmaCal:targCol = colListTsdmaCal << getitems;
+	sdmaCal:YvarUnParse = Eval Insert( ":name( \!"^sdmaCal:ycol[1]^\!" )" );
+	sdmaCal:XvarUnParse = Eval Insert( ":name( \!"^sdmaCal:xcol[1]^\!" )" );
+	sdmaCal:TvarUnParse = Eval Insert( ":name( \!"^sdmaCal:targCol[1]^\!" )" );
+	sdmaCal:Yvar = Parse( Eval Insert( ":name( \!"^sdmaCal:ycol[1]^\!" )" ) );
+	sdmaCal:Xvar = Parse( Eval Insert( ":name( \!"^sdmaCal:xcol[1]^\!" )" ) );
+	sdmaCal:Tvar = Parse( Eval Insert( ":name( \!"^sdmaCal:targCol[1]^\!" )" ) );
+	Try( 
+		sdmaCal:zVarUnParse = Eval Insert( ":name( \!"^sdmaCal:byCol[1]^\!" )" );
+		sdmaCal:zVar = Parse( Eval Insert( ":name( \!"^sdmaCal:byCol[1]^\!" )" ) )
+	);
+
+	sdmaCal:fit1 = sdmaCal:DataTable << Subset( Copy formula( 0 ), All rows, Selected columns only( 0 ));//, private );
+	
+	//Collects existing Value Ordering
+	Try(
+		sdmaCal:byValOrd = Column(sdmaCal:fit1,sdmaCal:bycol[1]) << Get Property("Value Ordering");
+	);
+	
+	//selects and deletes excluded rows and responses less than 0
+	//if not deleted, the raw data may be transferred to fits and used in calculations
+	sdmaCal:fit1 << selectwhere( Excluded( Row State( Row() ) ) == 1 | sdmaCal:ycol[1] <= 0);
+	For( j = 1, j <= N Row( sdmaCal:fit1 ), j += 3, 
+		If( Selected( Row State( j ) ) == 1,
+			sdmaCal:fit1 << deleterows();
+			Break();
+		,
+			Empty()
+		)
+	);
+
+	//fit rodbard 'correctly' but keeping 0 in (LCMS will be changed to 0.01)
+	For(i=1,i<=nrow(sdmaCal:fit1),i++,
+		If(Column(sdmaCal:fit1,sdmaCal:xcol[1])[i] == 0,
+			Column(sdmaCal:fit1,sdmaCal:xcol[1])[i] = 0.01
+		,
+			Empty()
+		)
+	);
+	Try(
+		Summarize( sdmaCal:fit1, sdmaCal:by = By( sdmaCal:byCol[1] ));
+	);
+	//Adds 100 concentration 10000 @ AR = 0
+	If(nitems(sdmaCal:byCol) == 0,
+		For(i=1, i<=100,i++,
+			Eval(Parse(EvalInsert("sdmaCal:fit1 << Add Rows( {^sdmaCal:XvarUnParse^ = 10000, ^sdmaCal:YvarUnParse^ = 0.0001, ^sdmaCal:TvarUnParse^ = 10000})")))
+		)
+	,
+		For(j=1,j<=nitems(sdmaCal:by),j++,
+			For(i=1, i<=100,i++,
+				Eval(Parse(EvalInsert("sdmaCal:fit1 << Add Rows( {^sdmaCal:XvarUnParse^ = 10000, ^sdmaCal:YvarUnParse^ = 0.0001, ^sdmaCal:TvarUnParse^ = 10000, ^sdmaCal:zVarUnParse^ = sdmaCal:by[j]})")))
+			)
+		)
+	);
+	
+	//X and Y columns swapped to plot the graph "correctly" with AR on the Y and Concentration on X
+	sdmaCal:fitCurve = Fit Curve(
+		X( colListYsdmaCal << getitems ),
+		Y( colListXsdmaCal << getitems ),
+		Fit Logistic 4P Rodbard,
+		by( colListBsdmaCal << getitems )
+	);
+
+	//Makes data table(s) of coefficients to put into matricies to build formulas
+	Try(
+		sdmaCal:fitCoeff = Report( sdmaCal:fitCurve[1] )[Table Box( 3 )] << make combined data table;
+	,
+		sdmaCal:fitCoeff = Report( sdmaCal:fitCurve )[Table Box( 3 )] << make combined data table;
+	);
+	
+	//If a by var is used, byCol will be a list that needs to have the value extracted for use
+	Try(
+		sdmaCal:byColumn = sdmaCal:byCol[1];
+	,
+		sdmaCal:byColumn = sdmaCal:byCol;
+	);
+	//Tries to set value ordering a lack of a By column or Value ordering will fail the Try()
+	Try(
+		Column(sdmaCal:fitCoeff,sdmaCal:byColumn) << Set Property("Value Ordering", sdmaCal:byValOrd);
+	);
+	For(i=ncol(sdmaCal:fitCoeff),i>=1,i--,
+		a = Column(sdmaCal:fitCoeff,i) << getname();
+		
+		If(a != "Parameter" & a != "Estimate" & a != sdmaCal:byColumn,
+			//Print("deleting");
+			sdmaCal:fitCoeff << DeleteColumns(a);
+		,
+			Empty()
+		)
+	);
+		
+	sdmaCal:fitCoeffDone = sdmaCal:fitCoeff << Split(
+		Split By( :Parameter ),
+		Split( :Estimate ),
+		Group( colListBsdmaCal << getitems ),
+		Sort by Column Property,
+		Private
+	);
+	Close( sdmaCal:fitCoeff, nosave );
+	
+	sdmaCal:temp1FitCoeffList = {};
+	For(l=1,l<=nrow(sdmaCal:fitCoeffDone),l++,
+		sdmaCal:temp2FitCoeffList = {};
+		For(m=1,m<=ncol(sdmaCal:fitCoeffDone),m++,
+			insertinto(sdmaCal:temp2FitCoeffList,sdmaCal:fitCoeffDone[l,m])
+		);
+		sdmaCal:temp1FitCoeffList[l]=sdmaCal:temp2FitCoeffList
+	);
+	sdmaCal:fitCoeffList = sdmaCal:temp1FitCoeffList;
+
+	Close( sdmaCal:fit1, nosave );
+
+/* Rodbard Normal Form (for deriv calculations):([c-L asympt]) + ([d-U asympt] - ([c-L asympt])) / (1 + ([Concentration] / [b-inflection]) ^ [a-Growth])*/
+
+//NOTE: The max slope is based on the normal Rodbard with Concentration on the X even though the final curve is inverted to calculate concentration from AR
+//The Slope graph should be vs. concentration, although a 1/slope graph vs. AR may also be useful?
+	//Gets the Max slope (least negative for SDMA) between the 10 and 20 point based on the quadratic fit between 10 and 20 (will utilize 15 if present)
+	For(i=1,i<=nitems(sdmaCal:fitCoeffList),i++,
+		If(nitems(sdmaCal:fitCoeffList[i])==5,
+			sdmaCal:slopeEqn = Eval(
+				Eval Expr(
+					Derivative(
+						(Expr(sdmaCal:fitCoeffList[i][4])) + (Expr(sdmaCal:fitCoeffList[i][5]) - (Expr(sdmaCal:fitCoeffList[i][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[i][3])) ^ Expr(sdmaCal:fitCoeffList[i][2])),
+						x
+					)
+				)
+			);
+		,
+			sdmaCal:slopeEqn = Eval(
+				Eval Expr(
+					Derivative(
+						(Expr(sdmaCal:fitCoeffList[i][3])) + (Expr(sdmaCal:fitCoeffList[i][4]) - (Expr(sdmaCal:fitCoeffList[i][3]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[i][2])) ^ Expr(sdmaCal:fitCoeffList[i][1])),
+						x
+					)
+				)
+			);
+		);
+		sdmaCal:maxSlope = Eval(Substitute(NameExpr(sdmaCal:slopeEqn),Expr(x),15));// spec should be less than (more negative) -0.0006
+		If(sdmaCal:maxSlope <= -0.0006,
+			sdmaCal:passFail[i] = "Pass"
+		,
+			sdmaCal:passFail[i] = "Fail"
+		);
+	);
+
+	Try(
+		For( i = 1, i <= N Items( sdmaCal:fitCoeffList ), i++,
+			r = Eval Insert( "\!"^sdmaCal:fitCoeffList[i][1]^\!"" );
+			suspectData = 0;
+			If(sdmaCal:passFail[i] == "UNK",
+				//sdmaCal:fitallFormulas[i] = r || "," || "Empty()";
+				//sdmaCal:fitDerivFormulas[i] = r || "," || "Empty()";
+				sdmaCal:fitNotes[i] = r || "," || "\!"Questionable Data Bewteen 10-20\!"";
+				suspectData = suspectData + 1;
+			,
+				sdmaCal:passFail[i] == "Fail",
+				//sdmaCal:fitallFormulas[i] = r || "," || "Empty()";
+				//sdmaCal:fitDerivFormulas[i] = r || "," || "Empty()";
+				sdmaCal:fitNotes[i] = r || "," || "\!"15 Slope gtr than -0.006\!"";
+				suspectData = suspectData + 1
+			,
+				sdmaCal:fitNotes[i] = r || "," || "\!"Pass\!"";
+			);
+			sdmaCal:fitallFormulas[i] = r || "," || Char(
+/* Rodbard Inverse form (for conc calculations): [b-inflection] * Exp(	Log(([d-U asmypt] - ([c-L asympt])) / ([AR] - ([c-L asympt])) - 1	) / [a-Growth])*/
+				Eval Expr(
+					Expr(sdmaCal:fitCoeffList[i][3]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[i][5]) - (Expr(sdmaCal:fitCoeffList[i][4]))) / (Expr(Parse( sdmaCal:YvarUnParse )) - (Expr(sdmaCal:fitCoeffList[i][4]))) - 1	) / Expr(sdmaCal:fitCoeffList[i][2]))
+				)
+			);
+			sdmaCal:fitDerivFormulas[i] = r || "," || Char(
+				////STAY WITH DERIV OF 'NORMAL' FORM
+				Eval Expr(
+					Eval(
+						Derivative(
+							Expr(sdmaCal:fitCoeffList[i][4]) + (Expr(sdmaCal:fitCoeffList[i][5]) - Expr(sdmaCal:fitCoeffList[i][4])) / (1 + (Expr(Parse( sdmaCal:XvarUnParse )) / Expr(sdmaCal:fitCoeffList[i][3] )) ^ Expr(sdmaCal:fitCoeffList[i][2]))
+						,
+							Expr(Parse( sdmaCal:XvarUnParse ))
+						)
+					)
+				)
+			);
+		)
+	, 
+		suspectData = 0;
+		//sdmaCal:intersectPts[i] = sdmaCal:meanFive[1];
+		//r = evalInsert("\!"^sdmaCal:fitCoeffList[1][i][1]^\!"");
+		If(sdmaCal:passFail[1] == "UNK",
+			//sdmaCal:fitallFormulas = "Empty()";
+			//sdmaCal:fitDerivFormulas = "Empty()";
+			sdmaCal:fitNotes = "\!"Questionable Data Bewteen 10-20\!"";
+			suspectData = suspectData + 1;
+		,
+			sdmaCal:passFail[1] == "Fail",
+			//sdmaCal:fitallFormulas = "Empty()";
+			//sdmaCal:fitDerivFormulas = "Empty()";
+			sdmaCal:fitNotes = "\!"15 Slope gtr than -0.0006\!"";
+			suspectData = suspectData + 1
+		,
+			sdmaCal:fitNotes = "\!"Pass\!"";
+		);
+		sdmaCal:fitallFormulas = Char(
+			Eval Expr(
+				Expr(sdmaCal:fitCoeffList[i][2]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[i][4]) - (Expr(sdmaCal:fitCoeffList[i][3]))) / (Expr(Parse( sdmaCal:YvarUnParse )) - (Expr(sdmaCal:fitCoeffList[i][3]))) - 1	) / Expr(sdmaCal:fitCoeffList[i][1]))
+			)
+		);
+		sdmaCal:fitDerivFormulas = Char(
+			Eval Expr(
+				Eval(
+					Derivative(
+						Expr(sdmaCal:fitCoeffList[i][3]) + (Expr(sdmaCal:fitCoeffList[i][4]) - Expr(sdmaCal:fitCoeffList[i][3])) / (1 + (Expr(Parse( sdmaCal:XvarUnParse )) / Expr(sdmaCal:fitCoeffList[i][2] )) ^ Expr(sdmaCal:fitCoeffList[i][1]))
+					,
+						Expr(Parse( sdmaCal:XvarUnParse ))
+					)
+				)
+			)
+		);
+	);
+	//Show( sdmaCal:fitallFormulas, sdmaCal:fitDerivFormulas );
+
+	Try(
+		sdmaCal:fitconcatForms = Concat Items( sdmaCal:fitallFormulas, "," ); //Concatenates all the list items into one final string
+		sdmaCal:fitDerivConcatForms = Concat Items( sdmaCal:fitDerivFormulas, "," );
+		sdmaCal:concatNotes = Concat Items( sdmaCal:fitNotes, "," );
+	,
+		sdmaCal:fitconcatForms = sdmaCal:fitallFormulas;
+		sdmaCal:fitDerivConcatForms = sdmaCal:fitDerivFormulas;
+		sdmaCal:concatNotes = sdmaCal:fitNotes;
+	);
+
+	//creates ":...." column name, in quotes (not like parse that removes the quotes)
+	//then creates first half of match column insesrting 'By' column
+	//then creates end of whole formula
+	Try(
+		sdmaCal:zVar1 = Eval Insert( ":name( \!"^sdmaCal:byCol[1]^\!" )" );
+		sdmaCal:startFormula = "sdmaCal:DataTable<<newcolumn(\!"RodBard4P\!",
+			Formula(
+				Match(" || sdmaCal:zVar1 || ",";
+		sdmaCal:startNotesFormula = "sdmaCal:DataTable<<newcolumn(\!"Fit Notes\!",
+			Formula(
+				Match(" || sdmaCal:zVar1 || ",";
+		sdmaCal:endForm = ")))";
+		sdmaCal:DerivStartFormula = "sdmaCal:DataTable<<newcolumn(\!"1stDeriv_RodBard4P\!",
+			Formula(
+				Match(" || sdmaCal:zVar1 || ",";
+		sdmaCal:DerivEndForm = ")))";
+	,
+		sdmaCal:startFormula = "sdmaCal:DataTable<<newcolumn(\!"RodBard4P\!",
+			Formula(";
+		sdmaCal:startNotesFormula = "sdmaCal:DataTable<<newcolumn(\!"Fit Notes\!",
+			Formula(";
+		sdmaCal:endForm = "))";
+		sdmaCal:DerivStartFormula = "sdmaCal:DataTable<<newcolumn(\!"1stDeriv_RodBard4P\!",
+			Formula(";
+		sdmaCal:DerivEndForm = "))";
+	);
+	
+	//combines all pieces into final huge string to create column with large formula
+	sdmaCal:finalConcat = Concat( sdmaCal:startFormula, sdmaCal:fitconcatForms, sdmaCal:endForm );
+	sdmaCal:derivFinalConcat = Concat( sdmaCal:DerivStartFormula, sdmaCal:fitDerivConcatForms, sdmaCal:DerivEndForm );
+	sdmaCal:finalNotes = Concat( sdmaCal:startNotesFormula, sdmaCal:concatNotes, sdmaCal:endForm );
+	//Show( sdmaCal:finalConcat, sdmaCal:derivFinalConcat );
+	
+	//Evaluates the parsed version of the full concatenated string
+	//Run just the Parse portion to see final format log window
+	Eval( Parse( sdmaCal:finalNotes ) );
+	Eval( Parse( sdmaCal:finalConcat ) );
+	Eval( Parse( sdmaCal:derivFinalConcat ) );
+	Column(sdmaCal:DataTable,ncol(sdmaCal:DataTable)-2)<<deleteformula;
+	
+	//gets the last column created, which would be the derivate column above
+	//ensures the graphs below use the latest instance of derivative and not a previous one
+	sdmaCal:lastDerivCol = Column( sdmaCal:dataTable, N Col(sdmaCal:dataTable) ) << getName;
+	//creates inverse derivative to put slopes in "more expected way"
+	sdmaCal:derivName = Eval Insert( ":name( \!"^sdmaCal:lastDerivCol ^\!" )" );
+	Eval(
+		EvalExpr(sdmaCal:DataTable << New Column("Inverse(1stDeriv_RodBard4P)",
+				Formula(
+					1 / Expr(Parse(sdmaCal:derivName))
+				)
+			)
+		)
+	);
+	sdmaCal:lastInvCol = Column( sdmaCal:dataTable, N Col(sdmaCal:dataTable) ) << getName;
+
+	//graphs data from original table, one By 'By' varaiable, one combined
+	colName = colListBsdmaCal << getitems; //checks for By variable
+	If( colName == {},
+		sdmaCal:fullBiv = sdmaCal:dataTable << Fit Group(
+			Bivariate( 
+				Y( colListXsdmaCal << getItems, Column( sdmaCal:lastDerivCol ) ),
+				X( colListYsdmaCal << getItems )
+			),
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems )
+			)
+		);
+		sdmaCal:fullBiv << Arrange in Rows( 3 );
+		/*sdmaCal:fullBiv1 = sdmaCal:dataTable << Fit Group(
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems )
+			)
+		);
+		tb = Report(sdmaCal:fullBiv1)[OutlineBox(2)];
+		Report(sdmaCal:fullBiv)[OutlineBox(3)]<<sib append(tb, horizontal);
+		sdmaCal:fullBiv1 << close window();*/
+	,
+		sdmaCal:biv = sdmaCal:dataTable << Fit Group(
+			Bivariate(
+				Y( colListXsdmaCal << getItems,Column( sdmaCal:lastDerivCol ) ),
+				X( colListYsdmaCal << getItems ),
+				//By( colListBsdmaCal << getItems )
+				
+			),
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems ),
+				//By( colListBsdmaCal << getItems )
+			),
+			By( colListBsdmaCal << getItems ),
+			
+		);
+		sdmaCal:biv << Arrange in Rows( 3 );
+		/*sdmaCal:biv1 = sdmaCal:dataTable << Fit Group(
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems ),
+				//By( colListBsdmaCal << getItems )
+			),
+			By( colListBsdmaCal << getItems )
+		);
+		For(i=1, i<=nitems(sdmaCal:biv1),i++,
+			tb = Report(sdmaCal:biv1[i])[OutlineBox(2)];
+			Report(sdmaCal:biv[i])[OutlineBox(3)]<<sib append(tb, horizontal);
+		);
+		sdmaCal:biv1 << close window();*/
+		sdmaCal:fullBiv = sdmaCal:dataTable << Fit Group(
+			Bivariate( 
+				Y( colListXsdmaCal << getItems, Column( sdmaCal:lastDerivCol ) ),
+				X( colListYsdmaCal << getItems )
+			),
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems )
+			)
+		);
+		sdmaCal:fullBiv << Arrange in Rows( 3 );
+		/*sdmaCal:fullBiv1 = sdmaCal:dataTable << Fit Group(
+			Bivariate( 
+				Y( Column( sdmaCal:lastInvCol ) ),
+				X( colListXsdmaCal << getItems )
+			)
+		);
+		Report( sdmaCal:fullBiv1 )[FrameBox( 1 )] << Row Legend( sdmaCal:byCol[1], Color( 0 ), Color Theme( "JMP Default" ) ); //adds row legend for full graph
+		tb = Report(sdmaCal:fullBiv1)[OutlineBox(2)];
+		Report(sdmaCal:fullBiv)[OutlineBox(3)]<<sib append(tb, horizontal);
+		sdmaCal:fullBiv1 << close window();
+		
+		Report( sdmaCal:fullBiv )[FrameBox( 1 )] << Row Legend( sdmaCal:byCol[1], Color( 0 ), Color Theme( "JMP Default" ) ); //adds row legend for full graph
+		Report( sdmaCal:fullBiv )[FrameBox( 2 )] << Row Legend( sdmaCal:byCol[1], Color( 0 ), Color Theme( "JMP Default" ) ); //adds row legend for full graph*/
+	);
+
+	sdmaCal:colorList = {"Red", "Blue", "Black", "Gray", "Yellow", "Brown"};//should update for full list order
+	//adds a custom script that graphs the equation over data
+	If( colName == {}, // No BY Variable
+		If(sdmaCal:passFail[1] == "UNK" | sdmaCal:passFail[1] == "Fail",
+			Eval(
+				Eval Expr(
+					Report( sdmaCal:fullBiv )[FrameBox( 1 )] << Add Graphics Script(
+						1,
+						Description( "RodBard4P-Linear" ),
+						Pen Color( Expr( sdmaCal:colorList[1] ) );
+						LineStyle("Dashed");
+						Y Function(
+							(Expr(sdmaCal:fitCoeffList[1][3])) + (Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[1][2])) ^ Expr(sdmaCal:fitCoeffList[1][1]))
+						,
+							x
+						);
+					);
+					Report( sdmaCal:fullBiv )[FrameBox( 2 )] << Add Graphics Script(
+						1,
+						Description( "RodBard4P-Linear" ),
+						Pen Color( Expr( sdmaCal:colorList[1] ) );
+						LineStyle("Dashed");
+						Y Function(
+							Eval(
+								Derivative(
+									(Expr(sdmaCal:fitCoeffList[1][3])) + (Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[1][2])) ^ Expr(sdmaCal:fitCoeffList[1][1]))
+								,
+								x
+								)
+							)	
+						,
+							x
+						);
+					);
+					Report( sdmaCal:fullBiv )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" ),
+							Pen Color( Expr( sdmaCal:colorList[1] ) );
+							LineStyle("Dashed");
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[1][2]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (x - (Expr(sdmaCal:fitCoeffList[1][3]))) - 1	) / Expr(sdmaCal:fitCoeffList[1][1]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+				)
+			);
+		,
+			Eval(
+				Eval Expr(
+					Report( sdmaCal:fullBiv )[FrameBox( 1 )] << Add Graphics Script(
+						1,
+						Description( "RodBard4P-Linear" ),
+						Pen Color( Expr( sdmaCal:colorList[1] ) );
+						Y Function(
+							(Expr(sdmaCal:fitCoeffList[1][3])) + (Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[1][2])) ^ Expr(sdmaCal:fitCoeffList[1][1]))
+						,
+							x
+						);
+					);
+					Report( sdmaCal:fullBiv )[FrameBox( 2 )] << Add Graphics Script(
+						1,
+						Description( "RodBard4P-Linear" ),
+						Pen Color( Expr( sdmaCal:colorList[1] ) );
+						Y Function(
+							Eval(
+								Derivative(
+									(Expr(sdmaCal:fitCoeffList[1][3])) + (Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[1][2])) ^ Expr(sdmaCal:fitCoeffList[1][1]))
+								,
+								x
+								)
+							)
+						,
+							x
+						);
+					);
+					Report( sdmaCal:fullBiv )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" ),
+							Pen Color( Expr( sdmaCal:colorList[1] ) );
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[1][2]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[1][4]) - (Expr(sdmaCal:fitCoeffList[1][3]))) / (x - (Expr(sdmaCal:fitCoeffList[1][3]))) - 1	) / Expr(sdmaCal:fitCoeffList[1][1]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+				)
+			);
+		)
+	, // For a BY Variable
+		For( j = 1, j <= N Items( sdmaCal:biv ), j++,
+			sdmaCal:reportTitle = Report( sdmaCal:biv[j] )[Outline Box( 2 )] << gettitle;
+			sdmaCal:byWord = Word( 2, sdmaCal:reportTitle, "=" );
+			If(sdmaCal:passFail[j] == "UNK" | sdmaCal:passFail[j] == "Fail", 
+				Eval(
+					Eval Expr(
+						Report( sdmaCal:biv[j] )[FrameBox( 1 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								(Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+							,
+								x
+							);
+						);
+						Report( sdmaCal:biv[j] )[FrameBox( 2 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								Eval(
+									Derivative((Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:biv[j] )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[j][3]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (x - (Expr(sdmaCal:fitCoeffList[j][4]))) - 1	) / Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 1 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								(Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 2 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								Eval(
+									Derivative((Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							LineStyle("Dashed");
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[j][3]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (x - (Expr(sdmaCal:fitCoeffList[j][4]))) - 1	) / Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+					)
+				);
+			,
+				Eval(
+					Eval Expr(
+						Report( sdmaCal:biv[j] )[FrameBox( 1 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							//LineStyle("Dashed");
+							Y Function(
+								(Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+							,
+								x
+							);
+						);
+						Report( sdmaCal:biv[j] )[FrameBox( 2 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							//LineStyle("Dashed");
+							Y Function(
+								Eval(
+									Derivative((Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:biv[j] )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[j][3]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (x - (Expr(sdmaCal:fitCoeffList[j][4]))) - 1	) / Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 1 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							//LineStyle("Dashed");
+							Y Function(
+								(Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 2 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							//LineStyle("Dashed");
+							Y Function(
+								Eval(
+									Derivative((Expr(sdmaCal:fitCoeffList[j][4])) + (Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (1 + (x / Expr(sdmaCal:fitCoeffList[j][3])) ^ Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+						Report( sdmaCal:fullBiv )[FrameBox( 3 )] << Add Graphics Script(
+							1,
+							Description( "RodBard4P-Linear_" || Char( j ) ),
+							Pen Color( Expr(j + 15) );
+							Y Function(
+								Eval(//deriv of inverted rodbard
+									Derivative(Expr(sdmaCal:fitCoeffList[j][3]) * Exp(	Log((Expr(sdmaCal:fitCoeffList[j][5]) - (Expr(sdmaCal:fitCoeffList[j][4]))) / (x - (Expr(sdmaCal:fitCoeffList[j][4]))) - 1	) / Expr(sdmaCal:fitCoeffList[j][2]))
+									,
+										x
+									)
+								)
+							,
+								x
+							);
+						);
+					)
+				);
+			)
+		)
+	);
+	If(suspectData > 0,
+		dataWarning(suspectData)
+	);
+	sdmaCal << delete;
+
+);
+
+sdmaCal:startDialog = Function({},
+	diagWindow = New Window( "Anchored Rodbard Calibration",
+		Border Box( Left( 3 ), top( 2 ),
+			V List Box(
+				Text Box( "Choose columns for Control and Analyzer Response" ),
+				H List Box(
+					V List Box(
+						Panel Box( "Select Columns",
+							colListData = Col List Box( All, width( sdmaCal:lbWidth ), nLines( Min( sdmaCal:nc, 10 ) ), Grouped )
+						),
+
+					),
+					Panel Box( "Cast Selected Columns into Roles",
+						Lineup Box( N Col( 2 ), Spacing( 3 ),
+							Button Box( "Concentration", colListYsdmaCal << Append( colListData << GetSelected ) ),
+							colListYsdmaCal = Col List Box( width( sdmaCal:lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 3 ), numeric ),
+							Button Box( "Analyzer Resp", colListXsdmaCal << Append( colListData << GetSelected ) ),
+							colListXsdmaCal = Col List Box( width( sdmaCal:lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ), numeric ),
+							Button Box( "Target Conc", colListTsdmaCal << Append( colListData << GetSelected ) ),
+							colListTsdmaCal = Col List Box( width( sdmaCal:lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ) ),
+							Button Box( "By", colListBsdmaCal << Append( colListData << GetSelected ) ),
+							colListBsdmaCal = Col List Box( width( sdmaCal:lbWidth ), nLines( 1 ), maxitems( 1 ), character )
+						)
+					),
+					Panel Box( "Action",
+						Lineup Box( N Col( 1 ),
+							Button Box( "OK",
+								Batch Interactive(1);
+								calibrationCurve();
+								Batch Interactive(0)
+							),
+							Button Box( "Cancel", exprCancel() ),
+							Text Box( " " ),
+							Button Box( "Remove",
+								colListYsdmaCal << RemoveSelected;
+								colListBsdmaCal << RemoveSelected;
+								colListXsdmaCal << RemoveSelected;
+								colListTsdmaCal << RemoveSelected;
+							),
+							Button Box( "Recall", recallItems()),//Eval( sdmaCal:recallItems ) )
+						)
+					)
+				)
+			)
+		)
+	);
+);
+
+////////////////////////////////////////
+//                                    //
+//             Main                   //
+//                                    //
+////////////////////////////////////////
+
+if(isMissing(checkForUpdate(addinID)),
+	checkForUpdate(addinLib)
+);
+trackUsage(u,addinID);
+
+If(Num(Word(1,jmpversion(),".")) <=12,
+	wrongVer(13);
+	sdmaCal << delete;
+	Throw();
+);
+
+sdmaCal:startDialog();
+

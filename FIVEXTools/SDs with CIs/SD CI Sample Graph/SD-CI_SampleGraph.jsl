@@ -1,0 +1,202 @@
+//Test Graph for SD CI lines
+
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	1.2 NClark 052620
+//		-> Updated for back update checking
+//	1.1 NClark 051210
+//		-> added include adn variables to allow for usage tracking
+//	1.0 NClark 101615
+//		-> First version of tool to be packaged along with SD CI Overlay
+//------------------------------------------------------------------
+
+include("$ADDIN_HOME(com.idexx.nclark.updateFX)\FIVEXutils\utilities.jsl");
+If(HostIs("Mac"),
+	u = Get Environment Variable("USER");
+	,
+	u = Get Environment Variable("username");
+);
+addinID = "com.idexx.nclark.SDCIgraph";
+trackUsage(u,addinID);
+batchUpdateChk(EvalList(List(addinID)));
+
+//forms interactive graph to play with sample sizes
+sampleGraph = 
+	alpha = 0.05;
+	Samples1 = 50; //n runs
+	//Defects1 = 1;
+	SD1 = 1;
+	Samples2 = 50; // n runs
+	//Defects2 = 4;
+	SD2 = 1;
+	x1 = 1;
+	x2 = 2;
+	a1 = 1.5;
+	
+	//Dialog("Must Choose one of the Desired Graphs");throw()
+	
+	lowLimit1 = Expr(SD1 / Root( ChiSquare Quantile( 1 - alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 ));
+	lowLimit2 = Expr(SD2 / Root( ChiSquare Quantile( 1 - alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 ));
+	
+	//New Low1: SD1 / Root( ChiSquare Quantile( 1 - alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 ) 
+	//New Low2: SD2 / Root( ChiSquare Quantile( 1 - alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )
+	//Existing High: SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )
+	//New High1: SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )  
+	//New High2: SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )   
+
+	nw = New Window( "Range Bars",
+		gb = Graph Box(
+			Y Scale( 0, a1 ),
+			X Scale( 0.5, 2.5 ),
+			FrameSize( 407, 271 ),
+			YAxis( Show Major Grid ),
+			Marker Size( 2 ),
+			Marker(
+				{x1, Eval(lowLimit1)},
+				{x1, SD1},
+				{x1, SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )}
+			),
+			Marker(
+				{x2, Eval(lowLimit2)},
+				{x2, SD2},
+				{x2, SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )}
+			),
+			Line(
+				{x1 - 0.125, Eval(lowLimit1)},
+				{x1 + 0.125, Eval(lowLimit1)}
+			), //x1 bottom
+			Line(
+				{x1, Eval(lowLimit1)},
+				{x1, SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )}
+			), //x1 Vert
+			Line(
+				{x1 - 0.125, SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )},
+				{x1 + 0.125, SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 )}
+			), //x1 top
+			Line(
+				{x2 - 0.125, Eval(lowLimit2)},
+				{x2 + 0.125, Eval(lowLimit2)}
+			),
+			Line(
+				{x2 - 0.125, SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )},
+				{x2 + 0.125, SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )}
+			),
+			Line(
+				{x2, Eval(lowLimit2)},
+				{x2, SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 )}
+			),
+		), 
+		H List Box(
+			V List Box(
+				gb5=Global Box(Alpha),
+				H List Box(
+					Panel Box( "A",
+						H List Box(
+							H List Box(
+								gb1=Global Box( Samples1 )
+							),
+							Slider Box(
+								2,
+								150,
+								Samples1,
+								B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+								B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+								a1 = Maximum( B1, B2 ) * 1.1;
+								gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+								gb << reshow;
+							)
+						),
+						H List Box(
+							H List Box(
+								gb2=Global Box( SD1 )
+							),
+							Slider Box(
+								1,
+								20,
+								SD1,
+								B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+								B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+								a1 = Maximum( B1, B2 ) * 1.1;
+								gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+								gb << reshow;
+							)
+						)
+					),
+					Panel Box( "B",
+						H List Box(
+							H List Box(
+								gb3=Global Box( Samples2 )
+							),
+							Slider Box(
+								2,
+								150,
+								Samples2,
+								B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+								B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+								a1 = Maximum( B1, B2 ) * 1.1;
+								gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+								gb << reshow;
+							)
+						),
+						H List Box(
+							H List Box(
+								gb4=Global Box( SD2 )
+							),
+							Slider Box(
+								1,
+								20,
+								SD2,
+								B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+								B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+								a1 = Maximum( B1, B2 ) * 1.1;
+								gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+								gb << reshow;
+							)
+						)
+					)
+				)
+			)
+		)
+	);
+	
+	gb1<<Setscript(
+		B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+		B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+		a1 = Maximum( B1, B2 ) * 1.1;
+		gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+		gb << reshow;
+	);
+	gb2<<Setscript(
+		B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+		B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+		a1 = Maximum( B1, B2 ) * 1.1;
+		gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+		gb << reshow;
+	);
+	gb3<<Setscript(
+		B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+		B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+		a1 = Maximum( B1, B2 ) * 1.1;
+		gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+		gb << reshow;
+	);
+	gb4<<Setscript(
+		B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+		B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+		a1 = Maximum( B1, B2 ) * 1.1;
+		gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+		gb << reshow;
+	);
+	gb5<<Setscript(
+		B1 = SD1 / Root( ChiSquare Quantile( alpha / 2, Samples1 - 1 ) / (Samples1 - 1), 2 );
+		B2 = SD2 / Root( ChiSquare Quantile( alpha / 2, Samples2 - 1 ) / (Samples2 - 1), 2 );
+		a1 = Maximum( B1, B2 ) * 1.1;
+		gb << Set Y Axis( {Max( a1 ), inc( a1 / 4 )} );
+		gb << reshow;
+	);

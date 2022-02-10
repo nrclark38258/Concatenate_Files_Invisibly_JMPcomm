@@ -1,0 +1,418 @@
+//Author(s)
+//NClark, ZHelm, SDarling
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calibrates QSDMA lots
+
+//------------------Revision History for both script and Help File--
+//
+//	1.0 NClark xxxxxx
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+//-----------Variable Declarations (above Main for easy access)--
+
+	If(HostIs("MAC"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("USERNAME");
+	);
+	addinID = "com.idexx.RoswellQCTools_QSDMA_calibration";
+
+	minJMPver = "15.2";
+
+//-----------/Variable Declarations-----------------------
+
+//INCLUDES HERE
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+subLotcharFunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, cont},
+	{default local}, 
+	
+	parseColNamesublot = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamesublot = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	If( cont == "Yes", 
+	
+		dtSubsum2 = table << Summary( Group( parseColNamecoating ), Freq( "None" ), Weight( "None" ), Link to original data table( 0 ), Invisible );
+	
+		posCount = Max( Column( table, posCol ) << Get Values );
+	
+		dtTempcount = New Table( "Arbritrary Positions", New Column( posCol, Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
+	
+		dtTempcount << New Column( "Sublot Position_Char",
+			Character,
+			Nominal,
+			Set Formula( If( parseColNamesublot < 10, "0" || Char( parseColNamesublot ), Char( parseColNamesublot ) ) )
+		);
+		Column( dtTempcount, "Sublot Position_Char" ) << Delete Formula;
+		dtTempcount << New Column( "Predicted Mean AR", Numeric, Continuous );
+	
+		dtSubsum = dtSubsum2 << Join( With( dtTempcount ), Cartesian Join, Invisible );
+		dtSubsum2 << Close Window;
+		dtTempcount << Close Window;
+		
+		splineFit = table << Bivariate(
+			Y( Parse( colNameresponse ) ),
+			X( Parse( colNamesublot ) ),
+			By( Parse( colNamecoating ) ),
+			Fit Spline( 5, {Line Color( {212, 73, 88} )} )
+		);
+	
+		splineFit << (Curve[1] << Save Predicteds);
+	
+		splineFormula = Column( table, "Spline Predictor for " || respCol || " By " || slideLotvar ) << Get Formula;
+	
+		Column( dtSubsum, "Predicted Mean AR" ) << Set Formula( Name Expr( splineFormula ) );
+		splineFit << Close Window;
+	, 
+	
+		dtSubsum = table << Summary(
+			Group( parseColNamedose, parseColNamesublot, parseColNamecoating ),
+			Mean( parseColNameresponse ),
+			Freq( "None" ),
+			Weight( "None" ),
+			Link to original data table( 0 )
+		)
+	);
+	Return( dtSubsum );
+);
+
+calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, fitType},
+	{default local}, 
+	
+	parseColNamesublot = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	colNamesublot = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamedose = Eval Insert( ":name(\!"^fluidCol^\!" )" );
+	
+	If(
+		fitType == "3P",
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ) ),
+				Fit Exponential 3P
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+			dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 );, 
+	
+		fitType == "Rodbard", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ) ),
+				Fit Logistic 4P Rodbard
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+			dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 );, 
+	
+		fitType == "Quad", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ) ),
+				Fit Quadratic
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+			dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 );, 
+	
+		fitType == "Linear", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ) ),
+				Fit Linear
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+			dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 );, 
+	
+		fitType == "Cubic", 
+	
+			calFit = table << Fit Curve( Y( parseColNameresponse ), X( parseColNamedose ), By( parseColNamesublot, parseColNamecoating ), Fit Cubic );
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+			dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 );, 
+	
+		Empty()
+	);
+	
+	Return( dt_Calparams );
+);
+
+calInterpolation = Function( {table1, table2, posCol, respCol, slideLotvar},
+	{default local}, 
+	//table1 = sub lot characterization function output
+	//table2 = calibration function output
+
+	parseColNamesublot = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamesublot = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	tableOut = table1 << Join(
+		With( table2 ),
+		Merge Same Name Columns,
+		By Matching Columns( Parse( colNamesublot ) = Parse( colNamesublot ), Parse( colNamecoating ) = Parse( colNamecoating ) ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 ),
+		Invisible
+	);
+	
+	paramFitting = tableOut << Bivariate(
+		Y( :Estimate ),
+		X( Parse( colNameresponse ) ),
+		Fit Line( {Line Color( {212, 73, 88} )} ),
+		By( :Parameter, Parse( colNamecoating ) )
+	);
+	
+	Wait( 0 );
+	paramForms = Report( paramFitting[1] )[Outline Box( "Linear Fit" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+	Make Combined Data Table;
+	Report( paramFitting[1] ) << Close Window;
+
+	paramsReady = paramForms << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( Parse( colNamecoating ), :Parameter ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		Invisible
+	);
+	
+	Column( paramsReady, respCol ) << Set Name( "Slope" );
+	
+	paramCalcs = table1 << Join(
+		With( paramsReady ),
+		Merge Same Name Columns,
+		By Matching Columns( Parse( colNamecoating ) = Parse( colNamecoating ) ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 ),
+		Invisible
+	);
+	
+	paramCalcs << New Column( "Param Value", Numeric, Continuous, Set Formula( parseColNameresponse * :Slope + :Intercept ) );
+
+	paramsFinal = paramCalcs << Split(
+		Split By( :Parameter ),
+		Split( :Param Value ),
+		Group( parseColNamesublot, parseColNamecoating ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property
+	);
+	
+	paramCalcs << Close Window;
+	paramsReady << Close Window;
+	paramForms << Close Window;
+	tableOut << Close Window;
+	
+	Return( paramsFinal );
+);
+
+instTypecorrection = Function( {table1, doseCol, fluidCol, slideLotvar, instTypecol},
+	{default local}, 
+
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^doseCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameinst = Parse( Eval Insert( ":name(\!"^instTypecol^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^doseCol^\!)\!" )" ) );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	tableOut = table1 << Summary(
+		Group( parseColNamecoating, parseColNamedose ),
+		Mean( parseColNameresponse ),
+		Subgroup( parseColNameinst ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 )
+	);
+	
+	tableOut << New Column( "CatDx Dose Space Offset Correction", Numeric, Continuous, Set Formula( As Column( 5 ) - As Column( 4 ) ) );
+	Column( tableOut, "CatDx Dose Space Offset Correction" ) << Delete Formula;
+	
+	Return( tableOut );
+);
+
+patientOffset = Function( {table, speciesCol, respCol, sampleCol, slideLotvar, slideLottype, slideLottrigger, speciesCorrtrigger},
+	{default local}, 
+	
+	parseColNamespecies = Parse( Eval Insert( ":name(\!"^speciesCol^\!" )" ) );
+	parseColNamesample = Parse( Eval Insert( ":name(\!"^sampleCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameslidelottype = Parse( Eval Insert( ":name(\!"^slideLottype^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	parseColNameresponsemean2 = Parse( Eval Insert( ":name(\!"Mean(Mean(\!^respCol^\!))\!" )" ) );
+	colNamespecies = Eval Insert( ":name(\!"^speciesCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamesample = Eval Insert( ":name(\!"^sampleCol^\!" )" );
+	colNameslidelottype = Eval Insert( ":name(\!"^slideLottype^\!" )" );
+	
+	table1 = table << Summary(
+		Group( parseColNamespecies, parseColNamesample, parseColNameslidelottype, parseColNamecoating ),
+		Mean( parseColNameresponse ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+
+	table2 = table1 << Summary(
+		Group( parseColNamespecies, parseColNamesample, parseColNameslidelottype ),
+		Mean( parseColNameresponsemean ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+	
+	table2 << Select Where( parseColNameslidelottype != slideLottrigger ) << Delete Rows();
+	Column( table2, 5 ) << Set Name( "Target Value" );
+	table2 << Delete Columns( 3, 4 );
+	/*
+	string1 = "table3 = table1 << Join(
+		With( table2 ),
+		Merge Same Name Columns,
+		By Matching Columns( "; 
+		
+	string2 = Eval Insert( "\!"^sampleCol^\!"" ); 
+	
+	string3 = Eval Insert( "\!"^speciesCol^\!"" );
+	
+	string4 = " ),
+		Drop Multiples( 0, 0 ),
+		Include Nonmatches( 1, 1 ),
+		Preserve main table order( 1 )
+	);";
+	
+	stringAll = string1 || Parse( string2 ) || "=" || Parse( string2 ) || ", " || Parse( string3 ) || "=" || Parse( string3 ) || string4;
+	
+	Eval( Parse( stringAll ) );
+	*/
+	
+	Eval(
+		Eval Expr(
+			table3 = table1 << Join(
+				With( table2 ),
+				By Matching Columns(
+					Column( Expr( sampleCol ) ) = Column( Expr( sampleCol ) ),
+					Column( Expr( speciesCol ) ) = Column( Expr( speciesCol ) )
+				),
+				Merge Same Name Columns
+			)
+		)
+	);
+	
+	table3 << New Column( "Bias", Numeric, Continuous, Set Formula( (As Column( 7 ) - As Column( 8 )) * -1 ) );
+	Column( table3, "Bias" ) << Delete Formula;
+	table3 << Select Where( parseColNameslidelottype == slideLottrigger ) << Delete Rows();
+	
+	If( speciesCorrtrigger == "Yes",
+		tableOut = table3 << Summary(
+			Group( Parse( colNamecoating ), Parse( colNamespecies ) ),
+			Mean( :Bias ),
+			Freq( "None" ),
+			Weight( "None" ),
+			Link to original data table( 0 )
+		);
+		
+		Column( tableOut, "Mean(Bias)" ) << Set Name( "Patient Fine Tune Offset" );
+	,
+		tableOut = table3 << Summary(
+			Group( Parse( colNamecoating ) ),
+			Mean( :Bias ),
+			Freq( "None" ),
+			Weight( "None" ),
+			Link to original data table( 0 )
+		);
+		
+		Column( tableOut, "Mean(Bias)" ) << Set Name( "Patient Fine Tune Offset" );
+	);
+	
+	table3 << Close Window;
+	table2 << Close Window;
+	table1 << Close Window;
+	
+	Return( tableOut );
+);
+
+calParamoutput = Function( {shapeParamtable, instTypeoffsettable, patientOffsettable, coatingCol, speciesCorr},
+	{default local}, 
+	
+	table1 = shapeParamtable << Join( With( instTypeoffsettable ), By Matching Columns( coatingCol = coatingCol ), Merge Same Name Columns );
+	
+	If( speciesCorr == "Yes", 
+	
+		tableOut = table1 << Join( With( patientOffsettable ), By Matching Columns( coatingCol = coatingCol ), Merge Same Name Columns );
+	
+		tableOut << New Column( "CatOne Offset", Numeric, Continuous, Set Formula( :Patient Fine Tune Offset ) );
+		tableOut << New Column( "CatDx Offset", Numeric, Continuous, Set Formula( :Patient Fine Tune Offset + :CatDx Dose Space Offset Correction ) );
+		Column( tableOut, "CatDx Offset" ) << Delete Formula;
+		Column( tableOut, "CatOne Offset" ) << Delete Formula;
+		table1 << Close Window;
+		tableOut << Delete Columns( "Match Flag", "Patient Fine Tune Offset", "CatDx Dose Space Offset Correction" );
+	, 
+	
+		tableOut = table1;
+		Column( tableOut, "CatDx Dose Space Offset Correction" ) << Set Name( "CatDx Offset" );
+		tableOut << New Column("CatOne Offset", Numeric, Continuous, Set Formula( 0 ) );
+		Column( tableOut, "CatOne Offset" ) << Delete Formula;
+		tableOut << Delete Columns( "Match Flag" );
+	);
+	
+	Return( tableOut );
+);
+
+
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+

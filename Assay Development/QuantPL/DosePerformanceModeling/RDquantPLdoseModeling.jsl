@@ -1,0 +1,1703 @@
+﻿//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates the dose response model for Quant PL
+
+//------------------Revision History for both script and Help File--
+//
+//	1.5.0.0 NClark 101921
+//		-> Feline Y scale for dose vs dose SD changed to max of 20
+//		-> Progress Curve file should no longer be invisible
+//		-> Value ordering maintained from main table to other tables for Species Name and Slide Condition
+//	1.4.0.0 NClark 062121
+//		-> Updated graphing for large report so the correct index var is applied so the conditions produce different graphs
+//	1.3.0.0 NClark 051021
+//		-> Updated AR calls to be AR-Script soas not to get in the way of existing AR column, if present
+//	1.2.0.1 NClkark 042621
+//		-> Updated fit curve table scripts to work if only one BY condition present
+//	1.2.0.0 NClark 042321
+//		-> added rowstate handler function to assist with method to 'intelligently' graph fit curve in Fit Y by X platform
+//		-> added tablescript function to update dtstack for fitcurve graphs for AR meth and for Slide cond
+//		-> Removes 'Make justResults' script from JR table
+//		-> Added section to use informtation in stacked file (ar method, slide cond, coefficients) to make associative array stored in table variable coeff3P
+//	1.1.0.1 NClark 042121
+//		-> updated start and delta indexes to ensure ranges go out far enough for currentfeline data
+//			-> one day could perhaps have separate for canine and feline, but no necessary now
+//	1.1.0.0 NClark 042021
+//		-> Updated so it should work for feline or canine data - not at the same time yet
+//			-> updated variables to include axis settings for Canine or Feline data for dose and bias charts
+//			-> Update graphics section to use Eval(EvalExpr()) to properly handle axis settings - bonus it makes it easier to harvest script from report to use elsewhere
+//			-> updated scriptDoseModel function to pass in axis settings and species to match above with Eval(EvalExpr())
+//	1.0.0.1 NClark 041721
+//		-> Updated AddinID to be QuantPL instead of qPL in vars and affirmation function
+//		-> Used preinterp function to get dry read avg
+//		-> Added normlized RD column
+//		-> Changed table script additions to ref Axis X as "1" and Y as "2" and not the actual axis names
+//			-> Seems to be so it works in JMP 15 (16 used axis names)
+//		-> Changed final graphics to ref Axis X as "1" and Y as "2" and not the actual axis names
+//			-> Seems to be so it works in JMP 15 (16 used axis names)
+//		-> No change but noticed that the Local Data Table for FitCurve does not work in JMP15 -- seems not to be an option at all
+//	1.0 NClark 041721
+//		-> 1st Version in full infrastructure
+//		-> Questionable support for Feline
+//	beta1 NClark 041521
+//		-> beta1 version
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+//-----------Variable Declarations (above Main for easy access)--
+
+	//gathers user information
+	If(HostIs("MAC"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("USERNAME");
+	);
+	addinID = "com.idexx.RnD_QuantPL_DoseModel";
+	updateIDs = {"com.idexx.assayDevLibraries2", "com.idexx.RnD_QuantPL_DoseModel"};
+	minJMPver = "14";
+	
+	dynamicRange = Associative Array(
+		{
+			{
+				"CANINE",{0, 2000, 50}
+			}
+			,
+			{
+				"FELINE",{0, 50, 1}
+			}
+		}
+	);
+	doseModel_xAxis = Associative Array(
+		{
+			{
+				"CANINE",{-5, 2010, 200}
+			}
+			,
+			{
+				"FELINE",{-1, 55, 10}
+			}
+		}
+	);
+	doseModel_yAxis = Associative Array(
+		{
+			{
+				"CANINE",{-10, 300, 50}
+			}
+			,
+			{
+				"FELINE",{-5, 20, 10}
+			}
+		}
+	);
+	bias_yAxis = Associative Array(
+		{
+			{
+				"CANINE",{800, 50}
+			}
+			,
+			{
+				"FELINE",{40, 10}
+			}
+		}
+	);
+	
+	//To calculate start and end times for slope calculations
+	//each delta added to each start time to create end time
+	startIndexList = {10, 220, 10};
+	deltaIndexList = {45, 180, 15};
+	///----- eventually need to work in additional AR methods (angle, AUC, etc)
+	// ------------- AUC stuff can be harvested from qSDMA AR script
+
+//-----------/Variable Declarations-----------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_FunctionLibrary2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_TablePreparation2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+
+//used for row state handler to put biv Local filter in finaloutput
+rowStFunct = Function( {a},
+		
+	Try(Current Data Table() << delete scripts( "Filter" ));
+	obj << to data table;
+	Wait(0.01)
+
+);
+
+checkVersion = Function( {minVer},
+	{default local},
+	currVer = JMP Version();
+	minWords = words(minVer,".");
+	currWords = words(currVer,".");
+	For(i=1,i<=nitems(minWords),i++, 
+		If( Num(minWords[i]) < Num( currWords[i] ),
+			Return(1)
+			,
+			Num(minWords[i]) == Num( currWords[i] ),
+			Continue()
+			,
+			Num(minWords[i]) > Num( currWords[i] ),
+			Return(0)
+		)
+	);
+	Return(1);
+);
+
+iterSlopeFunct = Function({mainDT,timesDT},{default local},
+	For Each Row(timesDT,
+		colNametemp7 = "Slope (" || Char( timesDT[Row(), 1] ) || "-" || Char( timesDT[Row(), 2] ) || ")";
+		genericInterpMetric(
+			mainDT,
+			"ReflDens_avg",
+			"TimeFromSampleDispense:sec",
+			"uniqueAssayID",
+			colNametemp7,
+			timesDT[Row(), 1],
+			timesDT[Row(), 2],
+			"Slope"
+		);
+	);
+
+	stackList = {};
+	For(i=0,i<nrow(timesDT),i++,
+		name = Column(mainDT,ncol(mainDT) - i) << get name;
+		insertInto(stackList,name);
+		
+	);
+	Reverse(stackList);
+	Return(stackList);
+);
+
+makeJustResults = Function({dtName,uniqueCol},{default local},
+	//dtName = dt;
+	//uniqueCol = "uniqueAssayID";
+	dtName << clear column selection;
+	tableName = dtName << get name;
+	Try( newName = Munger( tableName, 1, "_progCurves", "" ), newName = tableName );
+	//show(newName);
+	dtName << SelectWhere( AsColumn(uniqueCol) != Lag( AsColumn(uniqueCol), 1 ) );
+	justResults = dtName << Subset( Selected Rows( 1 ),output table name( newName || "_justResults" ) );
+	dtName << select all rows;
+	dtName << invert row selection;
+	Return(justResults);
+);
+
+stackARcols = Function({dtName,stackColList},{default local},
+	stacked  = dtName << Stack(
+		columns( stackColList ),
+		Source Label Column( "AR Method" ),
+		Stacked Data Column( "AR-Script" )
+	);
+	Return(stacked);
+);
+
+/// update below to work for diff species
+cartJoin = Function({condList,arMethList,rangeIter},{default local},
+	//condList = {"condA","condB","condC"};
+	//arMethList = {"Slope(10-20)","Slope(10-30)","Slope(10-40)"};
+	//rangeList = {0,2000};
+	//iteration = 50; 
+	rangeMtrx = Transpose(index(rangeIter[1],rangeIter[2],rangeIter[3]));
+	condTbl = New Table(
+		"Condition Tbl",
+		Add Rows(nitems(condList)),
+		New Column(
+			"Slide Condition",
+			Character(10),
+			Set Values(
+				condList
+			)
+		),
+		private
+	);
+	arMethTbl = New Table(
+		"AR Meth Tbl",
+		Add Rows(nitems(condList)),
+		New Column(
+			"AR method",
+			Character(10),
+			Set Values(
+				arMethList
+			)
+		),
+		private
+	);
+	rangeTbl = New Table(
+		"Dose Tbl",
+		Add Rows(nrow(rangeMtrx)),
+		New Column(
+			"SpecPL",
+			//Numeric,
+			//"Continuous",
+			//Format( "Best", 12),
+			Set Values(
+				rangeMtrx
+			)	
+		),
+		private
+	);
+		
+	temp1 = condTbl << Join(
+		With( arMethTbl ),
+		Cartesian Join,
+		private
+	);
+	cartJoinTbl = temp1 << Join(
+		With( rangeTbl ),
+		Cartesian Join
+	);
+	
+	condTbl << close window;
+	arMethTbl << close window;
+	rangeTbl << close window;
+	temp1 << close window;
+	Return(cartJoinTbl);
+);
+
+createTimeTable = Function({startIndex,deltaIndex},{default local},
+	
+	startMtrx = Transpose(index(startIndex[1],startIndex[2],startIndex[3]));
+	deltaMtrx = Transpose(index(deltaIndex[1],deltaIndex[2],deltaIndex[3]));
+	
+	startTbl = New Table(
+		"start table",
+		Add Rows(nrow(startMtrx)),
+		New Column(
+			"StartTime",
+			Set Values(
+				startMtrx
+			)
+		),
+		private
+	);
+	deltaTbl = New Table(
+		"start table",
+		Add Rows(nrow(deltaMtrx)),
+		New Column(
+			"DeltaTime",
+			Set Values(
+				deltaMtrx
+			)
+		),
+		private
+	);
+	cartJoinTbl = startTbl << Join(
+		With(deltaTbl),
+		Cartesian Join,
+		private
+	);
+	
+	temp = cartJoinTbl << New Column(
+		"EndTime",
+		Formula(
+			:"StartTime"n + :"DeltaTime"n
+		)
+	);
+	temp << delete formula;
+	cartJoinTbl << delete columns("DeltaTime");
+	
+	startTbl << close window;
+	deltaTbl << close window;
+	Return(cartJoinTbl)
+);
+
+missingColumns = Function({missingList},{default local},
+	//missingList = {"Spec PL (µg/L)", "Slide Condition"};
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Whoa there! You are missing some key items to continue!", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "You need the following columns to continue - Case matters:", <<setfontstyle( "bold" ), <<setfontsize( 10 ) ),
+		Text Box( "" ),
+		Text Box( ConcatItems(missingList,", "), << Font Color("red"), <<setfontstyle( "bold" ), <<setfontsize( 10 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+dailyAffirmation = Function({user},{default local},
+	//user = "cduffey";
+	
+	Try(
+		dt = Open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\Daily Affirmations\Daily Affirmations.jmp",private);
+		dt << Save("$ADDIN_HOME(com.idexx.RnD_QuantPL_DoseModel)\Daily Affirmations.jmp");
+		,
+		dt = Open("$ADDIN_HOME(com.idexx.RnD_QuantPL_DoseModel)\Daily Affirmations.jmp",private);
+	);	
+	
+	dt << select where(:"Name"n == user | :"Name"n == "") << invert row selection << delete rows;
+	
+	rand = randominteger(1,nrows(dt));
+	comment = dt:"UpliftingComment"n[rand];
+	dt << close window();
+	Return(comment);
+);
+
+dailyAffMsg = Function({comment},{default local},
+	//missingList = {"Spec PL (µg/L)", "Slide Condition"};
+	New Window( "Starting off the analysis right!",
+		//<<Modal,
+		Show Menu(0),
+		Show Toolbars(0),
+		HlistBox(
+		Text Box( "    " ),
+		Text Box( comment, <<setfontstyle( "bold" ), <<setfontsize( 36 ), << set wrap(800) ),
+		Text Box( "    " )
+		)
+	);
+	
+);
+
+collateMissingCols = Function({dtName,colsCheck},{default local},
+	
+	missing = {};
+	For(i=1,i<=nitems(colsCheck),i++,
+		If(IsList(colsCheck[i]),
+			colList = dtName << get column names (string);
+			For(j=1,j<=nitems(colsCheck[i]),j++,
+				If(contains(colList,colsCheck[i][j]) == 0 & j == nitems(colsCheck[i]),
+					cols = "one of following {"||concatitems(colsCheck[i],"; ")||"; Species Name}";
+					insertinto(missing,cols)
+					,
+					contains(colList,colsCheck[i][j]) == 0,
+					Continue()
+				)
+			)
+			,
+			Try(
+				IsScriptable(Column(dtName,colsCheck[i]))
+				,
+				insertinto(missing,colsCheck[i])
+			)
+		);
+	);
+	//show(missing);
+	Return(missing);
+);
+
+scriptJustResults = Function({tableName,uniqueCol},{default Local},
+	dt_algorithm = tableName;
+	parseUnique = EvalInsert(":Name(\!"^uniqueCol^\!")");
+	Eval(
+		EvalExpr(
+			dt_algorithm << New Script("Make justResults",
+				tblName = currentdatatable()<<Getname;
+				datatable(tblName) << clear column selection;
+				datatable(tblName) << select all rows;
+				datatable(tblName) << invert row selection;
+				Try(newName = Munger(tblName,1,"_progCurves",""),newName = tblName);
+				datatable(tblName) << SelectWhere(Expr(Parse(parseUnique)) != Lag(Expr(parse(parseUnique)),-1));
+				datatable(tblName) << Subset(
+					output table name( newName|| "_justResults" )
+				);
+				datatable(tblName) << select all rows;
+				datatable(tblName) << invert row selection;
+			)
+		)
+	);
+);
+
+scriptDoseModel = Function({tableName,xAxisArray,yAxisArray,speciesInfo},{default local},
+	//speciesinfo should be single species in quotes
+	//speciesInfo = "Feline";
+	//tableName = doseModel;
+	Eval(
+		EvalExpr(
+			tableName << New Script("Dose Model for ARMeth",
+				window = new window("DoseModeling_for AR Method",
+					hbox = Hlistbox()
+				);
+				hbox << append(
+					Current Data Table() << Data Filter(
+						Location( {233, 233} ),
+						Mode( Show( 1 ) ),
+						Add Filter(
+							columns( :AR method ),
+							Display( :AR method, N Items( 15 ), Find( Set Text( "" ) ) )
+						),
+						Animation( Animate Column( :AR method ), Animate Rate( 80 ) )
+					)
+				);
+				hbox << append(vbox = VlistBox());
+				vbox  << append(
+					doseBiv = Bivariate(
+						Y( :SpecPL SD ),
+						X( :SpecPL ),
+						By( :Slide Condition  ),
+						SendToReport(
+							Dispatch(
+								{},
+								"1",
+								ScaleBox,
+								{Min( Expr(xAxisArray[Uppercase(speciesInfo)][1]) ), Max( Expr(xAxisArray[Uppercase(speciesInfo)][2]) ), Inc( Expr(xAxisArray[Uppercase(speciesInfo)][3]) ), Minor Ticks( 1 )}
+							),
+							Dispatch(
+								{},
+								"2",
+								ScaleBox,
+								{Min( Expr(yAxisArray[Uppercase(speciesInfo)][1]) ), Max( Expr(yAxisArray[Uppercase(speciesInfo)][2]) ), Inc( Expr(yAxisArray[Uppercase(speciesInfo)][3]) ), Minor Ticks( 1 )}
+							),
+							Dispatch(
+								{},
+								"Bivar Plot",
+								FrameBox,
+								{Frame Size( 436, 354 ),
+								Add Graphics Script(
+									4,
+									Description( "" ),
+									Line Style( "DashDot" );
+									Pen Size( 4 );
+									Y Function( x / 10 + 0, x );
+								), Row Legend(
+									AR method,
+									Color( 1 ),
+									Color Theme( "Jet" ),
+									Marker( 0 ),
+									Marker Theme( "" ),
+									Continuous Scale( 0 ),
+									Reverse Scale( 0 ),
+									Excluded Rows( 0 )
+								)}
+							)
+						)
+					)
+				)
+			);
+			tableName << New Script("Dose Model for Slide Cond",
+				window = new window("DoseModeling_for Slide Condition",
+					hbox = Hlistbox()
+				);
+				hbox << append(
+					Current Data Table() << Data Filter(
+						Location( {233, 233} ),
+						Mode( Show( 1 ) ),
+						Add Filter(
+							columns( :"Slide Condition"n ),
+							Display( :"Slide Condition"n, N Items( 15 ), Find( Set Text( "" ) ) )
+						),
+						Animation( Animate Column( :"Slide Condition"n ), Animate Rate( 80 ) )
+					)
+				);
+				hbox << append(vbox = VlistBox());
+				vbox  << append(
+					doseBiv = Bivariate(
+						Y( :SpecPL SD ),
+						X( :SpecPL ),
+						By( :"AR Method"n  ),
+						SendToReport(
+							Dispatch(
+								{},
+								"1",
+								ScaleBox,
+								{Min( Expr(xAxisArray[Uppercase(speciesInfo)][1]) ), Max( Expr(xAxisArray[Uppercase(speciesInfo)][2]) ), Inc( Expr(xAxisArray[Uppercase(speciesInfo)][3]) ), Minor Ticks( 1 )}
+							),
+							Dispatch(
+								{},
+								"2",
+								ScaleBox,
+								{Min( Expr(yAxisArray[Uppercase(speciesInfo)][1]) ), Max( Expr(yAxisArray[Uppercase(speciesInfo)][2]) ), Inc( Expr(yAxisArray[Uppercase(speciesInfo)][3]) ), Minor Ticks( 1 )}
+							),
+							Dispatch(
+								{},
+								"Bivar Plot",
+								FrameBox,
+								{Frame Size( 436, 354 ),
+								Add Graphics Script(
+									4,
+									Description( "" ),
+									Line Style( "DashDot" );
+									Pen Size( 4 );
+									Y Function( x / 10 + 0, x );
+								), Row Legend(
+									Slide Condition,
+									Color( 1 ),
+									Color Theme( "Jet" ),
+									Marker( 0 ),
+									Marker Theme( "" ),
+									Continuous Scale( 0 ),
+									Reverse Scale( 0 ),
+									Excluded Rows( 0 )
+								)}
+							)
+						)
+					)
+				)
+			)
+		)
+	);
+);
+
+scriptARSDmodel = Function({tableName},{default local},
+	
+	tableName << New Script("ARSD Model for ARMeth",
+		window = new window("ARSD Model_for AR Method",
+			hbox = Hlistbox()
+		);
+		hbox << append(
+			Current Data Table() << Data Filter(
+				Location( {233, 233} ),
+				Mode( Show( 1 ), Include( 1 ) ),
+				Add Filter(
+					columns( :AR method ),
+					Display( :AR method, N Items( 15 ), Find( Set Text( "" ) ) )
+				),
+				Animation( Animate Column( :AR method ), Animate Rate( 80 ) )
+			)
+		);
+		hbox << append(vbox = VlistBox());
+		vbox << append(
+			biv1 = Bivariate(
+				Y( :"Std Dev(AR-Script)"n ),
+				X( :"Mean(AR-Script)"n ),
+				Group By (:"AR Method"n),
+				By( :"Slide Condition"n ),
+				Automatic Recalc( 1 ),
+				Fit Line(),
+				SendToReport(
+					Dispatch(
+						{},
+						"Bivar Plot",
+						FrameBox,
+						{Row Legend(
+							:"AR Method"n,
+							Color( 1 ),
+							Color Theme( "Jet" ),
+							Marker( 0 ),
+							Marker Theme( "" ),
+							Continuous Scale( 0 ),
+							Reverse Scale( 0 ),
+							Excluded Rows( 0 )
+						)}
+					)
+				)
+			)
+		);
+	);
+	tableName << New Script("ARSD Model for Slide Cond",
+		window = new window("ARSD Model_for Slide Condition",
+			hbox = Hlistbox()
+		);
+		hbox << append(
+			Current Data Table() << Data Filter(
+				Location( {233, 233} ),
+				Mode( Show( 1 ), Include( 1 ) ),
+				Add Filter(
+					columns( :"Slide Condition"n ),
+					Display( :"Slide Condition"n, N Items( 15 ), Find( Set Text( "" ) ) )
+				),
+				Animation( Animate Column( :"Slide Condition"n ), Animate Rate( 80 ) )
+			)
+		);
+		hbox << append(vbox = VlistBox());
+		vbox << append(
+			biv1 = Bivariate(
+				Y( :"Std Dev(AR-Script)"n ),
+				X( :"Mean(AR-Script)"n ),
+				Group By (:"Slide Condition"n),
+				By( :"AR Method"n ),
+				Automatic Recalc( 1 ),
+				Fit Line(),
+				SendToReport(
+					Dispatch(
+						{},
+						"Bivar Plot",
+						FrameBox,
+						{Row Legend(
+							:"Slide Condition"n,
+							Color( 1 ),
+							Color Theme( "Jet" ),
+							Marker( 0 ),
+							Marker Theme( "" ),
+							Continuous Scale( 0 ),
+							Reverse Scale( 0 ),
+							Excluded Rows( 0 )
+						)}
+					)
+				)
+			)
+		);
+	);
+);
+
+scriptFitCurves = Function({tableName},{default local},
+	
+	tableName << New Script("Fit Curves for ARMeth",
+		f = Function( {a},
+		
+			Try(Current Data Table() << delete scripts( "Filter" ));
+			obj << to data table;
+			Wait(0.01)
+
+		);
+		rs = currentdatatable() << make rowstate handler( f );
+
+		window = New Window( "FitCurves_for AR Method", hbox = H List Box() );
+
+		hbox << append(
+			obj = Current Data Table() << Data Filter(
+				Location( {233, 233} ),
+				Mode( Show( 1 ) ),
+				Add Filter(
+					columns( :AR method ),
+					Display( :AR method, N Items( 15 ), Find( Set Text( "" ) ) )
+				),
+				Animation( Animate Column( :AR method ), Animate Rate( 70 ) )
+			)
+		);
+		hbox << append( vbox = V List Box() );
+		vbox << append(
+			fitBiv = Bivariate(
+				Y( :"AR-Script"n ),
+				X( :"Spec PL (µg/L)"n ),
+				By( :Slide Condition ),
+				SendToReport(
+					Dispatch(
+						{},
+						"Bivar Plot",
+						FrameBox,
+						{Frame Size( 436, 354 ),
+						Row Legend(
+							AR method,
+							Color( 1 ),
+							Color Theme( "Jet" ),
+							Marker( 0 ),
+							Marker Theme( "" ),
+							Continuous Scale( 0 ),
+							Reverse Scale( 0 ),
+							Excluded Rows( 0 )
+						)}
+					)
+				)
+			)
+		);
+
+		rep = fitBiv << Get As Report;
+		array = Eval(Parse(:coeff3P));
+		Try(
+			Nitems(rep);
+			For( i = 1, i <= N Items( rep ), i++,
+				slidCond = Substr(
+					Report( rep[i] )[Outline Box( 1 )] << get title,
+					Contains( Report( rep[i] )[Outline Box( 1 )] << get title, "=" ) + 1
+				);
+				framebox = Report( rep[i] )[frame box( 1 )];
+				Eval(
+					Eval Expr(
+						framebox << Add Graphics Script(
+							2,
+							Description( "" ),
+							slideCond = Expr( slidCond );
+							Wait( 0.01 );
+							filterCB = Char( Current Data Table() << get script( "Filter" ) );
+							arMethKey = Try(
+								Trim(
+									Substitute(
+											Word( 2, Substitute( filterCB, "\!"", "" ), "==" ),
+										"))", ")"
+									)
+								),
+								""
+							);
+							keyForAa = slideCond || arMethKey;
+							Try(
+								Y Function(
+									array[keyForAa][1] + array[keyForAa][3] *
+									Exp( array[keyForAa][2] * x ),
+									x
+								)
+							);
+						)
+					)
+				);
+			);
+			,
+			slidCond = Substr(
+				Report( rep )[Outline Box( 1 )] << get title,
+				Contains( Report( rep )[Outline Box( 1 )] << get title, "=" ) + 1
+			);
+			framebox = Report( rep )[frame box( 1 )];
+			Eval(
+				Eval Expr(
+					framebox << Add Graphics Script(
+						2,
+						Description( "" ),
+						slideCond = Expr( slidCond );
+						Wait( 0.01 );
+						filterCB = Char( Current Data Table() << get script( "Filter" ) );
+						arMethKey = Try(
+							Trim(
+								Substitute(
+										Word( 2, Substitute( filterCB, "\!"", "" ), "==" ),
+									"))", ")"
+								)
+							),
+							""
+						);
+						keyForAa = slideCond || arMethKey;
+						Try(
+							Y Function(
+								array[keyForAa][1] + array[keyForAa][3] *
+								Exp( array[keyForAa][2] * x ),
+								x
+							)
+						);
+					)
+				)
+			);
+		)
+	);
+	tableName << New Script("Fit Curves for Slide Cond",
+		f = Function( {a},
+			Try( Current Data Table() << delete scripts( "Filter" ) );
+			obj << to data table;
+			Wait( 0.01 );
+		);
+		rs = Current Data Table() << make rowstate handler( f );
+		window = New Window( "FitCurves_for Slide Condition", hbox = H List Box() );
+		hbox << append(
+			obj = Current Data Table() << Data Filter(
+				Location( {233, 233} ),
+				Mode( Show( 1 ) ),
+				Add Filter(
+					columns( :"Slide Condition"n ),
+					Display( :"Slide Condition"n, N Items( 15 ), Find( Set Text( "" ) ) )
+				),
+				Animation( Animate Column( :"Slide Condition"n ), Animate Rate( 70 ) )
+			)
+		);
+		hbox << append( vbox = V List Box() );
+		vbox << append(
+			fitBiv = Bivariate(
+				Y( :"AR-Script"n ),
+				X( :Name( "Spec PL (µg/L)" ) ),
+				By( :"AR Method"n ),
+				SendToReport(
+					Dispatch(
+						{},
+						"Bivar Plot",
+						FrameBox,
+						{Frame Size( 436, 354 ), Row Legend(
+							Slide Condition,
+							Color( 1 ),
+							Color Theme( "Jet" ),
+							Marker( 0 ),
+							Marker Theme( "" ),
+							Continuous Scale( 0 ),
+							Reverse Scale( 0 ),
+							Excluded Rows( 0 )
+						)}
+					)
+				)
+			)
+		);
+		rep = fitBiv << Get As Report;
+		array = Eval( Parse( :coeff3P ) );
+		Try(
+			Nitems(rep);
+			For( i = 1, i <= N Items( rep ), i++,
+				arMeth = Substr(
+					Report( rep[i] )[Outline Box( 1 )] << get title,
+					Contains( Report( rep[i] )[Outline Box( 1 )] << get title, "=" ) + 1
+				);
+				framebox = Report( rep[i] )[frame box( 1 )];
+				Eval(
+					Eval Expr(
+						framebox << Add Graphics Script(
+							2,
+							Description( "" ),
+							arMeth = Expr( arMeth );
+							Wait( 0.01 );
+							filterCB = Char( Current Data Table() << get script( "Filter" ) );
+							slideCondKey = Try(
+								Trim(
+									Word( 2, Substitute( Munger(filterCB,length(filterCB),")",""), "\!"", "" ), "==" )
+								),
+								""
+							);
+							keyForAa = slideCondKey || arMeth;
+							Try(
+								Y Function(
+									array[keyForAa][1] + array[keyForAa][3] *
+									Exp( array[keyForAa][2] * x ),
+									x
+								)
+							);
+						)
+					)
+				);
+			)
+			,
+			For( i = 1, i <= N Items( rep ), i++,
+				arMeth = Substr(
+					Report( rep )[Outline Box( 1 )] << get title,
+					Contains( Report( rep )[Outline Box( 1 )] << get title, "=" ) + 1
+				);
+				framebox = Report( rep )[frame box( 1 )];
+				Eval(
+					Eval Expr(
+						framebox << Add Graphics Script(
+							2,
+							Description( "" ),
+							arMeth = Expr( arMeth );
+							Wait( 0.01 );
+							filterCB = Char( Current Data Table() << get script( "Filter" ) );
+							slideCondKey = Try(
+								Trim(
+									Word( 2, Substitute( Munger(filterCB,length(filterCB),")",""), "\!"", "" ), "==" )
+								),
+								""
+							);
+							keyForAa = slideCondKey || arMeth;
+							Try(
+								Y Function(
+									array[keyForAa][1] + array[keyForAa][3] *
+									Exp( array[keyForAa][2] * x ),
+									x
+								)
+							);
+						)
+					)
+				);
+			)
+		)
+	);
+);
+
+doseModelCalc = Function({tableName},{default local},
+	//tableName = currentdatatable();
+	uniqueCol = "uniqueCurveID";
+	
+	tblGetName = tableName << GetName;
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	titleName = Word(1,tblGetName,"-");
+	dateName = If(Munger(tblGetName, 1, "-" ) == 0,
+		""
+		,
+		"-" || Substr(tblGetName,Munger(tblGetName, 1, "-" )+1,6);
+	);
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+	
+	//creates list of all possible cols which become Species Name
+	colNameArray = possColNames();
+	possSpeciesCol = {};
+	checkCols = {};
+	currentKey = colNameArray << first;
+	For(i=1,i<=nitems(colNameArray),i++,
+		If(colNameArray[currentKey][2] == "Species Name",
+			insertinto(possSpeciesCol,currentKey)
+		);
+		currentKey = colNameArray << Next(currentKey);
+	);
+	//sets up list of above plus cols of interest for this script to run
+	insertInto(possSpeciesCol,"Species Name");
+	insertinto(checkCols,{"Spec PL (µg/L)", "Slide Condition"});
+	insertinto(checkCols,EvalList(List(possSpeciesCol)));
+	//check for necessary metadata columns
+	colListMissing = collateMissingCols(tableName,checkCols);
+	If(nitems(colListMissing) > 0,
+		missingColumns(colListMissing);
+		Stop();
+	);
+	
+	//tries to get value ordering for species and slide condition of the necessary columns
+	Try(
+		sppValOrd = tbleGetName:"Species Name"n << Get Property("Value Ordering");
+	);
+	Try(
+		condValOrd = tbleGetName:"Slide Condition"n << Get Property("Value Ordering");
+	);
+	//determines if any AR tool has been run before
+	//makes new table if first time use
+	If(
+		Contains(tblGetName,"_progCurves") > 0,
+		newTable = 0;
+		dt_algorithm = tableName; //also assume that _progCurves has been table prepped
+		,	
+		newTable = 1;
+		//Creates working copy of data table so original data is never 'touched'
+		//tablepreps subset
+		dt_algorithm = tableName << Subset(Output Table( tblGetName ), All Rows,Selected columns only( 0 ));//,invisible);
+		dt_algorithm = tablePrep(dt_algorithm)
+	);
+
+	preDevelopmentMetric(dt_algorithm,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","AvgDry","Avg","Dry");
+	dt_Algorithm << New Column("DryNorm RD",
+		Formula(
+			:"ReflDens_avg"n - :"AvgDry"n
+		)
+	);
+	
+	//creates all the times/offsets for slope calculations
+	//calculates all the slope values
+	dtTimes = createTimeTable(startIndexList,deltaIndexList);
+	arColList = iterSlopeFunct(dt_algorithm,dtTimes);
+	dtTimes << close window;
+	
+	//names the original subset
+	If(newTable == 1,
+		dt_algorithm << SetName(
+			titleName||dateName||"_"||"quantPLdoseModel_"||nextTodayDate|| "_progCurves" 
+		);
+		parseUnique = EvalInsert(":Name(\!"^uniqueCol^\!")");
+		Eval(
+			EvalExpr(
+				dt_algorithm << New Script("Make justResults",
+					tblName = currentdatatable()<<Getname;
+					Try(newName = Munger(tblName,1,"_progCurves",""),newName = tblName);
+					datatable(tblName) << SelectWhere(Expr(Parse(parseUnique)) != Lag(Expr(Parse(parseUnique)),1));
+					datatable(tblName) << Subset(
+						output table name( newName|| "_justResults" )
+					);
+					datatable(tblName) << select all rows;
+					datatable(tblName) << invert row selection;
+				)
+			)
+		);
+		,
+		Empty()
+	);
+	jstRslts = makeJustResults(dt_algorithm,uniqueCol);
+	Try( jstRslts << delete scripts( "Make justResults" ) );
+	dtStack = stackARcols(jstRslts,arColList);
+	dtStack << Set Name((jstRslts << get name) ||"_"||"stacked");
+	
+	///////////////////////////////////////
+	//    ARSD Stuff ___ make function??
+	///////////////////////////////////////
+	arSDtbl = dtStack << Summary(
+		Group( :"Species Name"n, :AR Method, :"Spec PL (µg/L)"n, :Slide Condition ),
+		Mean( :"AR-Script"n ),
+		Std Dev( :"AR-Script"n ),
+		Freq( "None" ),
+		Weight( "None" )
+	);
+	arSDfit = arSDtbl << Fit Model(
+		Y( :"Std Dev(AR-Script)"n ),
+		By( :"Species Name"n, :AR Method, :Slide Condition ),
+		Effects( :"Mean(AR-Script)"n ),
+		Personality( "Standard Least Squares" ),
+		Emphasis( "Minimal Report" ),
+		Run(
+			:"Std Dev(AR-Script)"n << {Summary of Fit( 0 ), Analysis of Variance( 0 ),
+			Parameter Estimates( 1 ), Effect Tests( 0 ), Effect Details( 0 ),
+			Lack of Fit( 0 ), Scaled Estimates( 0 ), Plot Actual by Predicted( 0 ),
+			Plot Regression( 0 ), Plot Residual by Predicted( 0 ),
+			Plot Studentized Residuals( 0 ), Plot Effect Leverage( 0 ),
+			Plot Residual by Normal Quantiles( 0 ), Box Cox Y Transformation( 0 )},
+			Effect Summary( 0 )
+		),
+		invisible
+	);
+	arSDlinParams = Report(arSDfit[1])["Parameter Estimates"][Table Box( 1 )] << make combined datatable;
+	arSDfit << close window;
+
+	For(i=ncol(arSDlinParams),i>=1,i--,
+		name = Column(arSDlinParams,i) << get name;
+		If(name == "Slide Condition" | name == "AR Method" | name == "Term" | name == "Estimate" | name == "Species Name",
+			Empty()
+			,
+			arSDlinParams << delete columns(name)
+		)
+	);
+	arSDparamsSplit = arSDlinParams << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( :"Species Name"n, :Slide Condition, :AR Method ),
+		Sort by Column Property,
+		//private
+	);
+	arSDparamsSplit:"Mean(AR-Script)"n << set name("arsdSlope");
+	arSDlinParams << close window;
+	
+	baseName = dtStack << get name;
+	SubstituteInto(baseName,"_justResults_stacked","");
+	arSDtbl << Set Name("ARSDs_"||baseName);
+
+	//-------------------------------------
+	//    end ARsd stuff
+	//-------------------------------------
+	
+	///////////////////////////////////////
+	//    Dose 3p Fit Stuff ___ make function??
+	///////////////////////////////////////
+		//this was faster than doing it in nonlinear
+	threePfit = dtStack << Fit Curve(
+		Y( :"AR-Script"n ),
+		X( :"Spec PL (µg/L)"n ),
+		Fit Exponential 3P,
+		SendToReport( Dispatch( {}, "Plot", OutlineBox, {Close( 1 )} ) ),
+		By(:"Species Name"n, :AR Method, :Slide Condition),
+		invisible
+	);
+	dose3Pparams = Report(threePfit[1])["Parameter Estimates"][Table Box( 1 )] << make combined datatable;
+	threePfit << close window;
+
+	For(i=ncol(dose3Pparams),i>=1,i--,
+		name = Column(dose3Pparams,i) << get name;
+		If(name == "Slide Condition" | name == "AR Method" | name == "Parameter" | name == "Estimate" | name == "Species Name",
+			Empty()
+			,
+			dose3Pparams << delete columns(name)
+		)
+	);
+	dose3PparamsSplit = dose3Pparams << Split(
+		Split By( :Parameter ),
+		Split( :Estimate ),
+		Group( :"Species Name"n, :Slide Condition, :AR Method ),
+		Sort by Column Property,
+		//private
+	);
+	dose3Pparams << close window;
+	//-------------------------------------
+	//    end 3p dose stuff
+	//-------------------------------------
+	
+	///////////////////////////////////////
+	//    Dose Model Stuff ___ make function??
+	///////////////////////////////////////
+		// will rely on output from arsd and dose3p stuff
+		//below also used for graphing
+	Summarize(dtStack,condList = By(:"Slide Condition"n));
+	Summarize(dtStack,arMethList = By(:"AR Method"n));
+	Summarize(dtStack,speciesinfo = By(:"Species Name"n));
+		/// for diff species, do this function n times, one for each species??
+	doseModel = cartJoin(condList,arMethList,dynamicRange[Uppercase(speciesinfo[1])]);
+
+	///dose model updates / new cols in for loop, one per species
+	doseModel << Update(
+		With( arSDparamsSplit ),
+		Match Columns( :Slide Condition = :Slide Condition, :AR method = :AR Method )
+	);
+	doseModel << Update(
+		With( dose3PparamsSplit ),
+		Match Columns( :Slide Condition = :Slide Condition, :AR method = :AR Method )
+	);
+	doseModel << New Column(
+		"PredAR(Spec PL)",
+		Formula(
+			:Asymptote + :Scale * Exp( :Growth Rate * :"SpecPL"n )
+		)
+	);
+	doseModel << New Column(
+		"PredARSD",
+		Formula(
+			:arsdSlope * :"PredAR(Spec PL)"n + :Intercept
+		)
+	);
+	doseModel << New Column(
+		"PredAR Derivative",
+		Formula(
+			Eval(
+				Derivative(
+					:Asymptote + :Scale * Exp( :Growth Rate * :"SpecPL"n ),
+					:"SpecPL"n
+				)
+			)
+		)
+	);
+	doseModel << New Column(
+		"SpecPL SD",
+		Formula(
+			:PredARSD * (1 / :PredAR Derivative)
+		)
+	);
+	baseName = dtStack << get name;
+	SubstituteInto(baseName,"_justResults_stacked","");
+	doseModel << Set Name("DoseModel_"||baseName);
+	//-------------------------------------
+	//    end dose model stuff
+	//-------------------------------------
+	
+		//relies on out put from dose3P stuff
+	dtStack << Update(
+		With( dose3PparamsSplit ),
+		Match Columns( :Slide Condition = :Slide Condition, :AR method = :AR Method )
+	);
+	dtStack << New Column("Predicted SpecPL",
+		Formula(
+			Log( (:"AR-Script"n - :Asymptote) / :Scale ) / :Growth Rate
+		)
+	);
+	dtStack << New Column("AutoCorrelated Bias",
+		Formula(
+			:Predicted Spec PL - :"Spec PL (µg/L)"n
+		)
+	);
+	dtStack << new Column("ar-cond",
+		Formula(
+			:"Slide Condition"n || :"AR Method"n
+		)
+	);
+	dtStack << new column("coeffs",Expression,
+		Formula(
+			EvalList(List(:Asymptote,:Growth Rate,:Scale))
+		)
+	);
+	conAa = Associative Array(
+		dtStack:"ar-cond"n, dtStack:"coeffs"n
+	);
+	dtStack << new table variable("coeff3P",Char(conAa));
+	dtStack << delete columns({"ar-cond","coeffs"});
+		//remname close accordingly
+	arSDparamsSplit << close window;
+	dose3PparamsSplit << close window;
+	
+	scriptDoseModel(doseModel,doseModel_xAxis,doseModel_yAxis,speciesInfo[1]); // run twice if two species?
+	scriptARSDmodel(arSDtbl); // don't adjust as arsd doesn't have specific axis settings yet
+	scriptFitCurves(dtStack); // update for separate species?
+	
+	Try(
+		doseModel:"Species Name"n << Set Property("Value Ordering", sppValOrd);
+	);
+	Try(
+		doseModel:"Slide Condition"n << Set Property("Value Ordering", condValOrd);
+	);
+	Try(
+		arSDtbl:"Species Name"n << Set Property("Value Ordering", sppValOrd);
+	);
+	Try(
+		arSDtbl:"Slide Condition"n << Set Property("Value Ordering", condValOrd);
+	);
+	Try(
+		dtStack:"Species Name"n << Set Property("Value Ordering", sppValOrd);
+	);
+	Try(
+		dtStack:"Slide Condition"n << Set Property("Value Ordering", condValOrd);
+	);
+
+	///////////////////////////////////////
+	//    Making Graph Stuff ___ make function??
+	///////////////////////////////////////
+	nw = New Window("Graphs_By Slide Condition");
+	spOlb = {};
+	olb = {};
+	hlb = {};
+	For(j=1,j<=nitems(condList),j++,
+		nw << append(
+			spOlb[j] = OutlineBox(condList[j])
+		);
+		For(i=1,i<=nitems(speciesinfo),i++,
+			spOlb[j] << append(
+				olb[(-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j] = Outlinebox(speciesinfo[i],
+					hlb[(-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j] = H List Box()
+				)
+			)
+		);
+	);
+				/*For(j=1,j<=nitems(arMethList),j++,
+					nw << append(
+						spOlb[j] = OutlineBox(arMethList[j])
+					);
+					For(i=1,i<=nitems(speciesinfo),i++,
+						spOlb[j] << append(
+							olb[(-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j] = Outlinebox(speciesinfo[i],
+								hlb[(-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j] = H List Box()
+							)
+						)
+					);
+				);*/
+
+	biv1 = {};
+	doseBiv = {};
+	fc = {};
+	biasBiv = {};
+	//Show (Get Preference( Categorical Color Theme ));
+	Set Preference( Categorical Color Theme( "Jet" ) ); // CHANGE THE COLOR THEME BEFORE CALLING Fit Curve
+	//Show (Get Preference( Categorical Color Theme ));
+
+	//Show(doseModel_yAxis[Uppercase(speciesinfo[1])][1]);
+	//May need to do an Eval(EvalExpr()) so species and condition are part of the 'where' and not just variables
+	For(j=1,j<=nitems(condList),j++,
+		For(i=1,i<=nitems(speciesinfo),i++,
+			newI = (-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j;
+			Eval(
+				EvalExpr(
+					hlb[newI] << append(
+						doseBiv[newI] = doseModel << Bivariate(
+							Y( :SpecPL SD ),
+							X( :"SpecPL"n ),
+							Local Data Filter(
+								Add Filter(
+									columns( :"AR Method"n ),
+									Mode( Include( 0 ) ),
+									Display(
+										:"AR Method"n,
+										N Items( 15 ),
+										Size( 161, 255 ),
+										Find( Set Text( "" ) )
+									)
+								),
+								Animation( Animate Column( :"AR Method"n ), Animate Rate( 80 ) )
+							),
+							SendToReport(
+								Dispatch(
+									{},
+									"2",
+									ScaleBox,
+									{Min( Expr(doseModel_yAxis[Uppercase(speciesinfo[i])][1]) ), Max( Expr(doseModel_yAxis[Uppercase(speciesinfo[i])][2]) ), Inc( Expr(doseModel_yAxis[Uppercase(speciesinfo[i])][3]) ), Minor Ticks( 1 )}
+								),
+								Dispatch(
+									{},
+									"1",
+									ScaleBox,
+									{Min( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][1]) ), Max( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][2]) ), Inc( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][3]) ), Minor Ticks( 1 )}
+								),
+								Dispatch(
+									{},
+									"Bivar Plot",
+									FrameBox,
+									{Frame Size( 436, 354 ),
+									Add Graphics Script(
+										4,
+										Description( "" ),
+										Line Style( "DashDot" );
+										Pen Size( 4 );
+										Y Function( x / 10 + 0, x );
+									), Row Legend(
+										AR Method,
+										Color( 1 ),
+										Color Theme( "Jet" ),
+										Marker( 0 ),
+										Marker Theme( "" ),
+										Continuous Scale( 0 ),
+										Reverse Scale( 0 ),
+										Excluded Rows( 0 )
+									)}
+								)
+							),
+							Where(/*:"Species Name"n == speciesinfo[j] &*/ :"Slide Condition"n == Expr(condList[j]))
+						)
+					);
+					((Report(doseBiv[newI])[FrameBox(1)] << parent) << sib) << delete;
+					hlb[newI] << append(
+						fc[newI] = dtStack << Fit Curve(
+							Y( :"AR-Script"n ),
+							X( :"Spec PL (µg/L)"n ),
+							Group( :"AR Method"n ),
+							Fit Exponential 3P,
+							Where( /*:"Species Name"n == speciesinfo[j] &*/ :"Slide Condition"n == Expr(condList[j]) ),
+							Local Data Filter(
+								Add Filter(
+									columns( :"AR Method"n ),
+									Display(
+										:"AR Method"n,
+										N Items( 15 ),
+										Size( 161, 255 ),
+										Find( Set Text( "" ) )
+									)
+								),
+								Animation( Animate Column( :"AR Method"n ), Animate Rate( 80 ) )
+							),
+							SendToReport(
+								Dispatch( {}, "Model Comparison", OutlineBox, {Close( 1 )} ),
+								//Dispatch( {}, "Plot", OutlineBox, {Close( 1 )} )
+								Dispatch(
+									{"Plot"},
+									"Fit Curve Report",
+									FrameBox,
+									{Row Legend(
+										AR Method,
+										Color( 1 ),
+										Color Theme( "Jet" ),
+										Marker( 0 ),
+										Marker Theme( "" ),
+										Continuous Scale( 0 ),
+										Reverse Scale( 0 ),
+										Excluded Rows( 0 )
+									)}
+								)
+							)
+						)
+					);
+					(Report(fc[newI])[FrameBox(1)] << sib) << delete;
+					hlb[newI] << append(
+						biv1[newI] = arSDtbl << Bivariate(
+							Y( :"Std Dev(AR-Script)"n ),
+							X( :"Mean(AR-Script)"n ),
+							Group By (:"AR Method"n),
+							Where(/*:"Species Name"n == speciesinfo[j] &*/ :"Slide Condition"n == Expr(condList[j])),
+							Local Data Filter(
+								Add Filter(
+									columns( :"AR Method"n ),
+									Display(
+										:"AR Method"n,
+										N Items( 15 ),
+										Size( 161, 255 ),
+										Find( Set Text( "" ) )
+									)
+								),
+								Animation( Animate Column( :"AR Method"n ), Animate Rate( 80 ) )
+							),
+							Fit Line(),
+							SendToReport(
+								Dispatch(
+									{},
+									"Bivar Plot",
+									FrameBox,
+									{Row Legend(
+										:"AR Method"n,
+										Color( 1 ),
+										Color Theme( "Jet" ),
+										Marker( 0 ),
+										Marker Theme( "" ),
+										Continuous Scale( 0 ),
+										Reverse Scale( 0 ),
+										Excluded Rows( 0 )
+									)}
+								)
+							)
+						)
+					);
+					((Report(biv1[newI])[FrameBox(1)] << parent) << sib) << delete;
+					hlb[newI] << append(
+						biasBiv[newI] = dtStack << Bivariate(
+							Y( :AutoCorrelated Bias ), 
+							X( :"Spec PL (µg/L)"n ),
+							Where( /*:"Species Name"n == speciesinfo[j] &*/ :"Slide Condition"n == Expr(condList[j]) ),
+							Local Data Filter(
+								Add Filter(
+									columns( :"AR Method"n ),
+									Display(
+										:"Slide Condition"n,
+										N Items( 15 ),
+										Size( 161, 255 ),
+										Find( Set Text( "" ) )
+									)
+								),
+								Animation( Animate Column( :"AR Method"n ), Animate Rate( 80 ) )
+							),
+							SendToReport(
+								Dispatch(
+									{},
+									"1",
+									ScaleBox,
+									{Min( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][1]) ), Max( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][2]) ), Inc( Expr(doseModel_xAxis[Uppercase(speciesinfo[i])][3]) ), Minor Ticks( 1 )}
+								),
+								Dispatch(
+									{},
+									"2",
+									ScaleBox,
+									{Min( -1*Expr(bias_yAxis[Uppercase(speciesinfo[i])][1]) ), Max( Expr(bias_yAxis[Uppercase(speciesinfo[i])][1]) ), Inc( Expr(bias_yAxis[Uppercase(speciesinfo[i])][2]) ), Minor Ticks( 1 )},
+									Add Ref Line( 0, "Solid", "Black", "", 1 )
+								),
+								Dispatch(
+									{},
+									"Bivar Plot",
+									FrameBox,
+									{Frame Size( 401, 350 ),
+									Add Graphics Script(
+										4,
+										Description( "" ),
+										Line Style( "DashDot" );
+										Pen Size( 2 );
+										Y Function( x / 10 + 0, x );
+										Y Function( -x / 10 + 0, x );
+									), Row Legend(
+										:"AR Method"n,
+										Color( 1 ),
+										Color Theme( "Jet" ),
+										Marker( 0 ),
+										Marker Theme( "" ),
+										Continuous Scale( 0 ),
+										Reverse Scale( 0 ),
+										Excluded Rows( 0 )
+									)}
+								)
+							)
+						)
+					)
+				)
+			);
+			((Report(biasBiv[newI])[FrameBox(1)] << parent) << sib) << delete;	
+		);
+	);
+
+					/*For(j=1,j<=nitems(arMethList),j++,
+						For(i=1,i<=nitems(speciesinfo),i++,
+							newI = (-nitems(speciesinfo)) + 1 * i + nitems(speciesinfo) * j;
+						
+							hlb[newI] << append(
+								biv1[newI] = arsdTbl << Bivariate(
+									Y( :"Std Dev(AR)"n ),
+									X( :"Mean(AR)"n ),
+									Group By (:Slide Condition),
+									Where(/*:Species Name == speciesinfo[j] &*/ :AR Method == arMethList[i]),
+									Local Data Filter(
+										Add Filter(
+											columns( :Slide Condition ),
+											Display(
+												:Slide Condition,
+												N Items( 15 ),
+												Size( 161, 255 ),
+												Find( Set Text( "" ) )
+											)
+										),
+										Animation( Animate Column( :Slide Condition ), Animate Rate( 80 ) )
+									),
+									Fit Line(),
+									SendToReport(
+										Dispatch(
+											{},
+											"Bivar Plot",
+											FrameBox,
+											{Row Legend(
+												:Slide Condition,
+												Color( 1 ),
+												Color Theme( "Jet" ),
+												Marker( 0 ),
+												Marker Theme( "" ),
+												Continuous Scale( 0 ),
+												Reverse Scale( 0 ),
+												Excluded Rows( 0 )
+											)}
+										)
+									)
+								)
+							);
+							hlb[newI] << append(
+								fc[newI] = jstRslts << Fit Curve(
+									Y( :AR ),
+									X( :"Spec PL (µg/L)"n ),
+									Group( :Slide Condition ),
+									Fit Exponential 3P,
+									Where( /*:Species Name == speciesinfo[j] &*/ :AR Method == arMethList[i] ),
+									Local Data Filter(
+										Add Filter(
+											columns( :Slide Condition ),
+											Display(
+												::Slide Condition,
+												N Items( 15 ),
+												Size( 161, 255 ),
+												Find( Set Text( "" ) )
+											)
+										),
+										Animation( Animate Column( :Slide Condition ), Animate Rate( 80 ) )
+									),
+									SendToReport(
+										Dispatch( {}, "Model Comparison", OutlineBox, {Close( 1 )} ),
+										Dispatch( {}, "Plot", OutlineBox, {Close( 1 )} )
+									)
+								)
+							);
+							hlb[newI] << append(
+								biasBiv[newI] = jstRslts << Bivariate(
+									Y( :AutoCorrelated Bias ),
+									X( :"Spec PL (µg/L)"n ),
+									Where( /*:Species Name == speciesinfo[j] &*/ :AR Method == arMethList[i] ),
+									Local Data Filter(
+										Add Filter(
+											columns( :Slide Condition ),
+											Display(
+												:AR method,
+												N Items( 15 ),
+												Size( 161, 255 ),
+												Find( Set Text( "" ) )
+											)
+										),
+										Animation( Animate Column( :Slide Condition ), Animate Rate( 80 ) )
+									),
+									SendToReport(
+										Dispatch(
+											{},
+											"Spec PL (µg/L)",
+											ScaleBox,
+											{Min( -60.15625 ), Max( 2000 ), Inc( 500 ), Minor Ticks( 1 )}
+										),
+										Dispatch(
+											{},
+											"AutoCorrelated Bias",
+											ScaleBox,
+											{Min( -800 ), Max( 800 ), Inc( 100 ), Minor Ticks( 1 ),
+											Add Ref Line( 0, "Solid", "Black", "", 1 )}
+										),
+										Dispatch(
+											{},
+											"Bivar Plot",
+											FrameBox,
+											{Add Graphics Script(
+												4,
+												Description( "" ),
+												Line Style( "DashDot" );
+												Pen Size( 2 );
+												Y Function( x / 10 + 0, x );
+												Y Function( -x / 10 + 0, x );
+											), Row Legend(
+												:Slide Condition,
+												Color( 1 ),
+												Color Theme( "Jet" ),
+												Marker( 0 ),
+												Marker Theme( "" ),
+												Continuous Scale( 0 ),
+												Reverse Scale( 0 ),
+												Excluded Rows( 0 )
+											)}
+										)
+									)
+								)
+							);
+							hlb[newI] << append(
+								doseBiv[newI] = doseSDtbl << Bivariate(
+									Y( :SpecPL SD ),
+									X( :"SpecPL"n ),
+									Local Data Filter(
+										Add Filter(
+											columns( :Slide Condition ),
+											Display(
+												:AR method,
+												N Items( 15 ),
+												Size( 161, 255 ),
+												Find( Set Text( "" ) )
+											)
+										),
+										Animation( Animate Column( :Slide Condition ), Animate Rate( 80 ) )
+									),
+									SendToReport(
+										Dispatch(
+											{},
+											"Spec PL (ug/L)",
+											ScaleBox,
+											{Min( -43.75 ), Max( 1100 ), Inc( 200 ), Minor Ticks( 1 )}
+										),
+										Dispatch(
+											{},
+											"Dose SD",
+											ScaleBox,
+											{Min( -14.1333333333333 ), Max( 302.5 ), Inc( 50 ), Minor Ticks( 1 )}
+										),
+										Dispatch(
+											{},
+											"Bivar Plot",
+											FrameBox,
+											{Add Graphics Script(
+												4,
+												Description( "" ),
+												Line Style( "DashDot" );
+												Pen Size( 4 );
+												Y Function( x / 10 + 0, x );
+											), Row Legend(
+												Slide Condition,
+												Color( 1 ),
+												Color Theme( "Jet" ),
+												Marker( 0 ),
+												Marker Theme( "" ),
+												Continuous Scale( 0 ),
+												Reverse Scale( 0 ),
+												Excluded Rows( 0 )
+											)}
+										)
+									),
+									Where(/*:Species Name == speciesinfo[j] &*/ :AR Method == arMethList[i])
+								)
+							);
+							
+						);
+					);*/
+
+	whereTb = nw << XPath("//TextBox[contains(text(), 'Where(')]");
+	whereTb << Delete;
+
+	linOLB = nw << XPath("//OutlineBox[contains(text(), 'Linear')]");
+	linOLB << Close(1);
+
+	Set preference (Categorical Color Theme ("JMP Default")); //RESTORES JMP Default Color Theme
+	//Show (Get Preference( Categorical Color Theme ));
+	//-------------------------------------
+	//    end making graph stuff
+	//-------------------------------------
+	
+);
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If( Length( Include File List() ) == 1,
+	batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+	If( checkVersion( minJMPver ) == 1,
+
+		//Gets data table if non opened
+		If( N Table() == 0,
+			dt_start = Open(),
+			dt_start = Current Data Table()
+		);
+		dailyAff = dailyAffirmation(u);
+		dailyAffMsg(dailyAff);
+		
+		doseModelCalc(dt_start);
+		,
+		wrongVer( minJMPver );
+	)
+	,
+	Print( "quantPL Dose Model scipt was included from another source" );
+);
+
+
+//--------------------
+// lots of extra stuff I don't know if i want / need yet :)
+//--------------------
+/*doseModelSumm = doseModel << Summary(
+	Group( :"Slide Condition"n, :"AR method"n ),
+	Mean( :"SpecPL SD"n ),
+	Freq( "None" ),
+	Weight( "None" )
+);
+doseModelSumm << SelectWhere(:"Mean(SpecPL SD)"n <= 100);
+
+trimmedDoseModel = doseModel << Subset(Selected Rows(1),Selected Columns(0));*/
+
+/*
+doseDoseSDbiv = trimmedDoseModel << Bivariate(
+	Y( :SpecPL SD ),
+	X( :SpecPL ),
+	By( :Slide Condition ),
+	Local Data Filter(
+		Add Filter(
+			columns( :AR method ),
+			Display(
+				:AR method,
+				N Items( 15 ),
+				Size( 161, 255 ),
+				Find( Set Text( "" ) )
+			)
+		),
+		Animation( Animate Column( :AR method ), Animate Rate( 80 ) )
+	),
+	SendToReport(
+		Dispatch(
+			{},
+			"2",
+			ScaleBox,
+			{Format( "Best", 10 ), Min( -10 ), Max( 300 ), Inc( 20 ),
+			Minor Ticks( 1 )}
+		),
+		Dispatch(
+			{},
+			"Bivar Plot",
+			FrameBox,
+			{Add Graphics Script(
+				4,
+				Description( "" ),
+				Pen Color( "Blue" );
+				Pen Size( 3 );
+				Y Function( x / 10, x );
+			), Grid Line Order( 2 ), Reference Line Order( 3 ),
+			DispatchSeg(
+				TopSeg( 1 ),
+				{Set Script(
+					Pen Color( "Blue" );
+					Pen Size( 3 );
+					Y Function( x / 10, x );
+				)}
+			)}
+		)
+	)
+);

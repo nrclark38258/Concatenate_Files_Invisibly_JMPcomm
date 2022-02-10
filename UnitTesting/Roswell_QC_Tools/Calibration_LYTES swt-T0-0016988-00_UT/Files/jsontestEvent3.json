@@ -1,0 +1,44 @@
+{
+    "cat1": {
+        "lots": [
+            {"a":70,"b":90,"c":110,"chemCode":41,"crosswebs": [
+                {"a":440,"b":441,"c":442,"crossweb_end":4,"crossweb_start":1,"d":443,"e":444,"f":445,"g":446,"h":447},
+                {"a":448,"b":449,"c":450,"crossweb_end":5,"crossweb_start":2,"d":451,"e":452,"f":453,"g":454,"h":455},
+                {"a":456,"b":457,"c":458,"crossweb_end":6,"crossweb_start":3,"d":459,"e":460,"f":461,"g":462,"h":463}
+            ],"d":130,"foils": [
+                {"a":1056,"b":1057,"foil":1},
+                {"a":1058,"b":1059,"foil":2},
+                {"a":1060,"b":1061,"foil":3}
+            ],"lot":11,"numWavelengths":30,"species":50}
+        ]
+    },
+    "ctdx": {
+        "lots": [
+            {"a":63,"b":83,"c":103,"chemCode":41,"crosswebs": [
+                {"a":272,"b":273,"c":274,"crossweb_end":4,"crossweb_start":1,"d":275,"e":276,"f":277,"g":278,"h":279},
+                {"a":280,"b":281,"c":282,"crossweb_end":5,"crossweb_start":2,"d":283,"e":284,"f":285,"g":286,"h":287},
+                {"a":288,"b":289,"c":290,"crossweb_end":6,"crossweb_start":3,"d":291,"e":292,"f":293,"g":294,"h":295}
+            ],"d":123,"foils": [
+                {"a":1018,"b":1019,"foil":1}
+            ],"lot":4,"numWavelengths":23,"species":43},
+            {"a":64,"b":84,"c":104,"chemCode":41,"crosswebs": [
+                {"a":296,"b":297,"c":298,"crossweb_end":4,"crossweb_start":1,"d":299,"e":300,"f":301,"g":302,"h":303},
+                {"a":304,"b":305,"c":306,"crossweb_end":5,"crossweb_start":2,"d":307,"e":308,"f":309,"g":310,"h":311},
+                {"a":312,"b":313,"c":314,"crossweb_end":6,"crossweb_start":3,"d":315,"e":316,"f":317,"g":318,"h":319}
+            ],"d":124,"foils": [
+                {"a":1020,"b":1021,"foil":1},
+                {"a":1022,"b":1023,"foil":2},
+                {"a":1024,"b":1025,"foil":3}
+            ],"lot":5,"numWavelengths":24,"species":44},
+            {"a":65,"b":85,"c":105,"chemCode":41,"crosswebs": [
+                {"a":320,"b":321,"c":322,"crossweb_end":4,"crossweb_start":1,"d":323,"e":324,"f":325,"g":326,"h":327},
+                {"a":328,"b":329,"c":330,"crossweb_end":5,"crossweb_start":2,"d":331,"e":332,"f":333,"g":334,"h":335},
+                {"a":336,"b":337,"c":338,"crossweb_end":6,"crossweb_start":3,"d":339,"e":340,"f":341,"g":342,"h":343}
+            ],"d":125,"foils": [
+                {"a":1026,"b":1027,"foil":1},
+                {"a":1028,"b":1029,"foil":2},
+                {"a":1030,"b":1031,"foil":3}
+            ],"lot":6,"numWavelengths":25,"species":45}
+        ]
+    }    
+}

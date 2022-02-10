@@ -1,0 +1,598 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+
+//-----------------Revision History for both script and Help File--
+//
+//	1.0.1 NClark 090321
+//		-> Updated prepCalTable to name the PHBR calibration table
+//		-> updated "# chem+" to "#  chem+" (two spaces vs one)
+//	1.0.0 NClark 090221
+//		-> First Version Released
+//
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+path = ConvertFilePath("");
+include(ConvertFilePath(path||"Utilities\utilities.jsl"));
+
+//////////////////////////////////////////////////
+//       Here variable declaration              //
+//////////////////////////////////////////////////
+
+    assayName = "PHBR";
+    u = Get Environment Variable("username");
+	addinID = "com.idexx.IDEXXSlideCalTools_PHBR";
+
+    updateIDs = {"com.idexx.IDEXXSlideCalTools_PHBR"};
+    
+    minJMPver = "15.2";
+
+//////////////////////////////////////////////////
+
+
+checkVersion = Function( {minVer},
+	{default local},
+	currVer = JMP Version();
+	currWords = words(currVer,".");
+	minWords = words(minVer,".");
+	minBackHalf = If(nitems(minWords)==1,"0",concatitems(minWords[2::nitems(minWords)],""));
+	backHalf = If(nitems(currWords)==1,"0",concatitems(currWords[2::nitems(currWords)],""));
+	newNumVer = Num(currWords[1]||"."||backHalf);
+	newMinVer = Num(minWords[1]||"."||minBackHalf);
+	
+	If(newNumVer >= newMinVer, Return(1),Return(0));
+);
+
+wrongVer = Function( {maxVer},
+	{Default Local},
+	New Window( "Requires JMP " || Char( maxVer ),
+		<<Modal,
+		Text Box( "This addin requires the used of JMP " || Char( maxVer ) || "+" ),
+		Button Box( "OK" )
+	)
+);
+
+phbrCalDialog = Function({},{default local},
+	nw = New Window("Operator inputs",
+		//show Menu(0),
+		//show toolbars(0),
+		<< modal,
+		//<< on validate(show(buildNumberText << get text);buildNumberText << get text != ""),
+		//<< on validate(phbrDataPath << get text != ""),
+		<< on validate(
+			//show(buildNumberText << get items);
+			Right(phbrDataPath << get text,5) == ".xlsx" & 
+			IsFile(phbrDataPath << get text) & 
+			Is Directory Writable(ccSaveFolder << get text) &
+			(Right(ccSaveFolder << get text,1) == "/" | Right(ccSaveFolder << get text,1) == "\") &
+			nitems(buildNumberText << get selected) == 1 & 
+			buildNumberText << get items != {"None in file, please choose different file"}
+		),
+		<< return result,
+		V List Box(
+			TextBox("",<<set font size(10)),
+			TextBox("Enter or navigate to each file and click 'Ok' to continue", << set font style("Bold"), << set font size(10)),
+			TextBox("",<<set font size(5)),
+			TextBox("Select Location of PHBR Cal Data .xlsx File",<<set font size(10)),
+			H List Box(
+				phbrDataPath = TextEditBox("",
+					<< set width(300),
+					<< set script(
+						path = phbrDataPath << get text;
+						startDTs=associative array(Get Data Table List());
+
+						dt = Open(
+							path,
+							//Worksheets( "CatOne" ), //can do all the sheets here
+							//we assume all sheets in a workbook are organized the same ???
+							//if not, we can custom per sheet if needed
+							//Use for all sheets( 1 ), 
+							Concatenate Worksheets( 0 ),
+							Create Concatenation Column( 0 ),
+							Worksheet Settings(//really only need to specific the settings you want, nonlisted gets default treatment
+								1,
+								Has Column Headers( 1 ),
+								Number of Rows in Headers( 1 ),
+								Headers Start on Row( 1 ),
+								Data Starts on Row( 2 ),
+								Data Starts on Column( 1 ),
+								//Data Ends on Row( 5 ),
+								Data Ends on Column( 0 ),
+								Replicated Spanned Rows( 1 ),
+								Replicated Spanned Headers( 0 ),
+								Suppress Hidden Rows( 1 ),
+								Suppress Hidden Columns( 1 ),
+								Suppress Empty Columns( 1 ),
+								Treat as Hierarchy( 0 ),
+								Multiple Series Stack( 0 ),
+								Import Cell Colors( 0 ),
+								Limit Column Detect( 0 ),
+								Column Separator String( "-" )
+							),
+							//invisible//private //this will be good to clean up things and reduce RAM usage when we don't need to see things for testing
+							//private
+						);
+						Try(Summarize(dt,a = by(:"Text182"n)),a={"None in file, please choose different file"});
+						If(a[1] == "", RemoveFrom(a,1));
+						ReverseInto(a);
+						
+						endDTs = associative array(Get Data Table List());
+						intersection = startDTs;
+						intersection << intersect(endDTs);
+						uncommon = endDTs;
+						uncommon << remove(intersection);
+						dts = uncommon<<getkeys;
+						For(q=1,q<=nitems(dts),q++,
+							dts[q] << close window
+						);						
+				
+						buildNumberText << set items(a)
+					);
+				),
+				TextBox("  "),
+				buttonbox("",
+					<< Set Icon( "WinFileOpen" ),
+					<< set script(
+						file = Pick File(
+							,
+							,
+							{"All Files|xlsx"},
+							1,
+							0,
+							,
+							//Multiple
+						);
+						phbrDataPath << set text(file);
+						path = phbrDataPath << get text;
+						startDTs=associative array(Get Data Table List());
+
+						dt = Open(
+							path,
+							//Worksheets( "CatOne" ), //can do all the sheets here
+							//we assume all sheets in a workbook are organized the same ???
+							//if not, we can custom per sheet if needed
+							//Use for all sheets( 1 ), 
+							Concatenate Worksheets( 0 ),
+							Create Concatenation Column( 0 ),
+							Worksheet Settings(//really only need to specific the settings you want, nonlisted gets default treatment
+								1,
+								Has Column Headers( 1 ),
+								Number of Rows in Headers( 1 ),
+								Headers Start on Row( 1 ),
+								Data Starts on Row( 2 ),
+								Data Starts on Column( 1 ),
+								//Data Ends on Row( 5 ),
+								Data Ends on Column( 0 ),
+								Replicated Spanned Rows( 1 ),
+								Replicated Spanned Headers( 0 ),
+								Suppress Hidden Rows( 1 ),
+								Suppress Hidden Columns( 1 ),
+								Suppress Empty Columns( 1 ),
+								Treat as Hierarchy( 0 ),
+								Multiple Series Stack( 0 ),
+								Import Cell Colors( 0 ),
+								Limit Column Detect( 0 ),
+								Column Separator String( "-" )
+							),
+							//invisible//private //this will be good to clean up things and reduce RAM usage when we don't need to see things for testing
+							//private
+						);
+						Try(Summarize(dt,a = by(:"Text182"n)),a={"None in file, please choose different file"});
+						If(a[1] == "", RemoveFrom(a,1));
+						ReverseInto(a);
+						
+						endDTs = associative array(Get Data Table List());
+						intersection = startDTs;
+						intersection << intersect(endDTs);
+						uncommon = endDTs;
+						uncommon << remove(intersection);
+						dts = uncommon<<getkeys;
+						For(q=1,q<=nitems(dts),q++,
+							dts[q] << close window
+						);						
+				
+						buildNumberText << set items(a)
+					);
+				); 
+				/*a = TextBox("", << set width(300)),
+				//phbrDataPath = a << get text,
+				TextBox("  "),
+				buttonbox("",
+					<< Set Icon( "WinFileOpen" ),
+					<< set script(
+						file = Pick File(
+							,
+							,
+							{"All Files|xlsx"},
+							1,
+							0,
+							,
+							//Multiple
+						);
+						a << set text(file)
+					);
+				);*/
+			),
+			TextBox("",<<set font size(2)),
+			TextBox("Select where to save the .cc file",<<set font size(10)),
+			H List Box(
+				ccSaveFolder = TextEditBox("", << set width(300)),
+				TextBox("  "),
+				buttonbox("",
+					<< Set Icon( "WinFileOpen" ),
+					<< set script(
+						dir = Pick Directory();
+						ccSaveFolder << set text(dir);
+					)
+				); 
+			),
+			TextBox("",<<set font size(2)),
+			TextBox("Choose the desired build number",<<set font size(10)),
+			H List Box(
+				//buildNumberText = TextEditBox("", << set width(300)),
+				//TextBox("  "),
+				buildNumberText = ListBox({}, << set width(300), maxselected(1)),
+				TextBox("  "),
+				
+			),
+			/*TextBox("",<<set font size(5)),
+			H List Box(
+				tb3 = TextEditBox("", << set width(300)),
+				TextBox("  "),
+				buttonbox("Navigate to Q file",
+					file3 = Pick File(
+						,
+						,
+						{"All Files|cc"},
+						1,
+						0,
+						,
+						//Multiple
+					);
+					tb3 << set text(file);
+				); 
+			)
+			,*/
+			TextBox("",<<set font size(5)),
+			H List Box(
+				ButtonBox("Ok"),
+				ButtonBox("Cancel")
+			)
+		)
+	);
+
+	If(nw["Button"] == -1, Return(0), Return(nw));
+);
+
+curvePointInterp = Function({tableName,crvPtCalc,crvPtMtrx,yCol,xCol,curvePtCol,curveNumCol,fit,final = 0},{default local},
+	//tableName = dt;
+	//curvePtCol = "CURVEPOINTNUM";
+	//crvPtMtrx = [2,3];
+	//fit = "Linear";
+	//curveNumCol = "CURVENUM";
+	//yCol = "Final AR";
+	//xCol = "Conc1";
+	//crvPtCalc = 5; // this is the point we are interpolating for
+	tableName << Select Where(AsColumn(curvePtCol) != crvPtMtrx[1]);
+	For(i=2,i<=nrow(crvPtMtrx),i++,
+		tableName << Select Where(AsColumn(curvePtCol) != crvPtMtrx[i], current selection("restrict"));
+	);
+	tableName << exclude(1);
+	
+	parseYcol = Parse(EvalInsert(":\!"^ycol^\!"n"));
+	parseXcol = Parse(EvalInsert(":\!"^xcol^\!"n"));
+	parseCrvCol = Parse(EvalInsert(":\!"^curveNumCol^\!"n"));
+	Summarize(tableName,curveCount = By(parseCrvCol));
+	//need to add for JMP15 as only one lot crashed program when 'Group' done JMP17 fixes, unsure about JMP16
+	fitCurve = If(nitems(curveCount) > 1,
+		Match(Uppercase(fit),
+			"LINEAR",
+				tableName << Fit Curve( Y( parseYcol ), X(parseXcol ), Group( parseCrvCol ), Fit Linear({Save Prediction Formula()}), invisible );
+			,
+			"QUADRATIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Group( parseCrvCol ), Fit Quadratic({Save Prediction Formula()}), invisible );
+			,
+			"CUBIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Group( parseCrvCol ), Fit Cubic({Save Prediction Formula()}), invisible );
+		);
+		,
+		nitems(curveCount) == 1,
+		Match(Uppercase(fit),
+			"LINEAR",
+				tableName << Fit Curve( Y( parseYcol ), X(parseXcol ), Fit Linear({Save Prediction Formula()}), invisible );
+			,
+			"QUADRATIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Fit Quadratic({Save Prediction Formula()}), invisible );
+			,
+			"CUBIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Fit Cubic({Save Prediction Formula()}), invisible );
+		)
+	);
+	Match(final,
+		0,
+			fitCurve << close window;
+			ptNames = char(crvPtMtrx);
+			substituteinto(ptNames,"[","");
+			substituteinto(ptNames,"]","");
+			substituteinto(ptNames," ","");
+			fitShort = Match(Uppercase(fit),
+				"LINEAR", "lin"
+				,
+				"QUADRATIC", "quad"
+				,
+				"CUBIC", "cub"
+			);
+			
+			lastCol = Column(tableName,ncol(tableName)) << set name("CP"||char(crvPtCalc)||"_CP"||ptNames||"("||fitShort||")");
+			
+			For Each Row(tableName,If(AsColumn(curvePtCol) == crvPtCalc, AsColumn(yCol) = AsColumn(lastCol << get name)));
+			tableName << clear row states;
+			Return(1)
+		,
+		1,
+			coeffTable = Report( fitCurve )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible);
+			fitCurve << close window;
+			For(i=ncol(coeffTable),i>=1,i--,
+				name = Column(coeffTable,i) << get name;
+				If(name == "Parameter" | name == "Group" | name == "Estimate",
+					Empty()
+					,
+					coeffTable << delete columns(name)
+				)
+			);
+			If(nitems(curveCount) > 1,
+				finalCoeffs = coeffTable << Split(
+					Split By( :"Parameter"n ),
+					Split( :"Estimate"n ),
+					Group( :"Group"n ),
+					Sort by Column Property
+				);
+				coeffTable << close window;
+				,
+				finalCoeffs = coeffTable << Split(
+					Split By( :"Parameter"n ),
+					Split( :"Estimate"n ),
+					Sort by Column Property
+				);
+				coeffTable << close window;
+				finalCoeffs << New Column("Group",Numeric,<< set each value(num(curveCount[1])));
+			);
+			
+			Column(tableName,ncol(tableName)) << set name("Final Curve");
+			tableName << clear row states;
+			Return(finalCoeffs)
+	);
+	
+);
+
+createCC = Function({tableName,path,fileName},{default local},
+
+	tableName << New Column("#  chem+",Numeric, Continuous, << set each value(25));
+	tableName << New Column("NUMBEROFWAVELENGTHS",Numeric, Continuous, << set each value(1));
+	tableName << New Column("species",Numeric, Continuous, << set each value(999));
+	tableName:"Group"n << set name("chemlot");
+	tableName:"Cubic"n << set name("cubic");
+	tableName:"Intercept"n << set name("intercept");
+	tableName:"Quadratic"n << set name("quad");
+	tableName:"Slope"n << set name("lin");
+
+	tableName:chemlot << set data type(numeric) << set modeling type(continuous);
+
+	tableName << Move Selected Columns(
+		{
+			"#  chem+",
+			"chemlot",
+			"NUMBEROFWAVELENGTHS",
+			"species",
+			"intercept",
+			"lin",
+			"quad",
+			"cubic"
+		},
+		To First
+	);
+
+	tableName << Save(path||fileName||".csv");
+	Rename File(path||fileName||".csv", fileName||".cc");
+	Return(tableName)
+);
+
+prepCalTable = Function({tableName, buildNum},{default local},
+
+	For each row(
+		tableName,
+		If(IsMissing(:"Text177"n),
+			:"Text177"n = Lag(:"Text177"n,1); //makes the value of the existing row the value of the row right above
+			:"Text178"n = Lag(:"Text178"n,1);
+			:"Text176"n = Lag(:"Text176"n,1);
+			:"Text187"n = Lag(:"Text187"n,1);
+			:"Text188"n = Lag(:"Text188"n,1);
+			:"Text184"n = Lag(:"Text184"n,1);
+			:"Text174"n = Lag(:"Text174"n,1);
+			:"Text182"n = Lag(:"Text182"n,1);
+			:"Text183"n = Lag(:"Text183"n,1);
+			:"Text190"n = Lag(:"Text190"n,1);
+		)
+	);
+	tableName:"Text187"n << Set Name("SPECIES");
+	tableName:"Text176"n << Set Name("CHEMABBR");
+	tableName:"Text178"n << Set Name("CURVENUM");
+	tableName:"Text182"n << Set Name("BUILD ID");
+	calTable = tableName << select where(:"BUILD ID"n == buildNum) << Subset(
+		Selected Rows( 1 ),
+		columns( :"CURVENUM"n, :"BUILD ID"n, :"CURVEPOINTNUM"n, :"Conc1"n, :"AR"n )
+	);
+	calTable << select where(:"CURVEPOINTNUM"n > 3 | IsMissing(:"CURVEPOINTNUM"n)) << delete rows;
+	Summarize(calTable,curveCount = By(:"CURVENUM"));
+	For(i=1,i<=nitems(curveCount),i++,
+		For(j=4,j<9,j++,
+			conc = Match(j,
+				4,34.9
+				,
+				5,31.4
+				,
+				6,19.8
+				,
+				7,4.3
+				,
+				8,48
+			);
+			calTable << Add Rows({:"CURVENUM"n = Num(curveCount[i]), :"CURVEPOINTNUM"n = j, :"Conc 1"n = conc})
+		);
+	);
+	calTable << New Column("Final AR",Numeric,Continuous, Set Values(calTable:"AR"n << get as matrix));
+
+	calTable << set name("PHBR Calibration Table build " || buildNum);
+	Return(calTable);
+);
+
+calibrationGraphs = Function({calibrationTable},{default local},
+
+	calibrationTable << Color or Mark by Column(:"CURVENUM"n, ColorTheme("Jet"));
+	
+	calibrationTable << select where (:"CURVEPOINTNUM"n == 1 | :"CURVEPOINTNUM"n == 2 | :"CURVEPOINTNUM"n == 3 ) << exclude(1) << markers(2);
+	calibrationTable << select all rows;
+	calibrationTable << invert row selection;
+
+	yAxisMax = Max(calibrationTable:"Final AR"n << get as matrix) * 1.1;
+	yAxisMin = Min(calibrationTable:"Final AR"n << get as matrix) * 0.9;
+	xAxisMax = Max(calibrationTable:"Conc1"n << get as matrix) * 1.1;
+	biv = calibrationTable << Bivariate(
+		Y( :"Final AR"n ),
+		X( :"Conc1"n ),
+		Group By(:"CURVENUM"n),
+		Fit Special(
+			Degree( 3 ),
+			Centered Polynomial( 0 ),
+		),
+		SendToReport(
+			Dispatch(
+				{},
+				"1",
+				ScaleBox,
+				{Min( 0 ), Max( xAxisMax ), Inc( 10 ), Minor Ticks( 1 )}
+			),
+			Dispatch(
+				{},
+				"2",
+				ScaleBox,
+				{Min( yAxisMin ), Max( yAxisMax ), Inc( 0.001 ),
+				Minor Ticks( 0 )}
+			),
+			Dispatch(
+				{},
+				"Bivar Plot",
+				FrameBox,
+				{Frame Size( 706, 481 ), Row Legend(
+					CURVENUM,
+					Color( 0 ),
+					Marker( 0 ),
+					Marker Theme( "" ),
+					Continuous Scale( 0 ),
+					Reverse Scale( 0 ),
+					Excluded Rows( 0 )
+				)}
+			)
+		)
+	);
+	Summarize(calibrationTable, a=by(:"CURVENUM"n));
+	lots = ConcatItems(a,", ");
+	biv << set window title("PHBR Calibration Graph");
+	Report(biv)[outlinebox(1)] << set title("PHBR Lots "|| lots || " Calibration Curves");
+	ob = Report(biv) << xpath("//OutlineBox");
+	For(i=1,i<=nitems(ob),i++,
+		If(
+			Contains(ob[i]<<get title,"Polynomial") > 0, ob[i] << close(1)
+		)
+	);
+	calibrationTable << select where (:"CURVEPOINTNUM"n == 1 | :"CURVEPOINTNUM"n == 2 | :"CURVEPOINTNUM"n == 3 ) << Colors(0);
+	calibrationTable << select all rows;
+	calibrationTable << invert row selection;
+
+	report = New Window("PHBR Calibration Report", <<journal);
+	report << append(Report(biv));
+
+	Return(biv,report)
+);
+
+phbrCal = Function({openPath,saveDir,buildNum},{default local},
+
+	dt = Open(
+		openPath,
+		Concatenate Worksheets( 0 ),
+		Create Concatenation Column( 0 ),
+		Worksheet Settings(				1,
+			Has Column Headers( 1 ),
+			Number of Rows in Headers( 1 ),
+			Headers Start on Row( 1 ),
+			Data Starts on Row( 2 ),
+			Data Starts on Column( 1 ),
+			Data Ends on Column( 0 ),
+			Replicated Spanned Rows( 1 ),
+			Replicated Spanned Headers( 0 ),
+			Suppress Hidden Rows( 1 ),
+			Suppress Hidden Columns( 1 ),
+			Suppress Empty Columns( 1 ),
+			Treat as Hierarchy( 0 ),
+			Multiple Series Stack( 0 ),
+			Import Cell Colors( 0 ),
+			Limit Column Detect( 0 ),
+			Column Separator String( "-" )
+		)
+	);
+	calTbl = prepCalTable(dt,buildNum);
+	
+	curvePointInterp(calTbl,4,[1,2,3],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","quadratic");
+	curvePointInterp(calTbl,5,[2,3],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","linear");
+	curvePointInterp(calTbl,6,[1,2],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","linear");
+	curvePointInterp(calTbl,7,[1,2,3,4],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","linear");
+	curvePointInterp(calTbl,8,[4,5],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","linear");
+
+	curvCoeffs = curvePointInterp(calTbl,.,[4,5,6,7,8],"Final AR","Conc1","CURVEPOINTNUM","CURVENUM","cubic",1);
+
+	date = shortdate(today());
+	substituteinto(date,"/","");
+	Summarize(curvCoeffs, a = by(:"Group"n));
+	lotNums = ConcatItems(a,"-");
+	coeffFileName = "PHBR_" || buildNum || "_lot" || lotNums || "_" || date;
+	//coeffTableName = "PHBR_" || buildNum || "_lot" || lotNums || "_" || date;
+
+	curvCoeffs << set name(coeffFileName);
+	curvCoeffs = createCC(curvCoeffs,saveDir,coeffFileName);
+
+	finalGraphs = calibrationGraphs(calTbl);
+	
+	Return(dt,calTbl,curvCoeffs,finalGraphs)
+);
+
+
+
+//////////////////////////////////////////////////
+//                                              //
+//               Main                           //
+//                                              //
+//////////////////////////////////////////////////
+
+If( Length( Include File List() ) == 1,
+	//batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+    If( checkVersion( minJMPver ) == 1,
+			
+		phbrStarts = phbrCalDialog();
+		If(phbrStarts == 0,
+			Stop()
+			,
+			phbrCal(phbrStarts["phbrDataPath"],phbrStarts["ccSaveFolder"],phbrStarts["buildNumberText"][1]);
+		)
+		,
+		wrongVer( minJMPver );
+	)
+    ,
+	Print( "PHBR Cal script was included from another source" );
+
+);

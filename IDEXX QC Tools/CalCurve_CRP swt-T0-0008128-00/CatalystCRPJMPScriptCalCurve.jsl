@@ -1,0 +1,359 @@
+//Author(s)
+//NClark (JSL), NHills (R)
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates a Calibration curve for assay
+
+//------------------Revision History for both script and Help File--
+//
+//	1.3 NClark 013017
+//		-> Updated bug where a needed variable was populated empty
+//	1.2 NClark 112216
+//		-> Updated bug where dialog popped up to delete rows when no rows were selected to delete
+//	1.1 NClark 111616
+//		-> Updated concentration column name to Cal Conc (mg/dL)
+//		-> Updated formula to reference 'AR'
+//	NClark 1.0 072116
+//		-> 1st version released created from CRP v2.2 calCurve
+//------------------------------------------------------------------
+
+crpCal = New Namespace( "crpCalibration" );
+//clearglobals();
+crpCal:DataTable = currentDataTable();
+If(IsEmpty(crpCal:DataTable),crpCal:DataTable=open());
+crpCal:nc = ncol(crpCal:DataTable);
+crpCal:lbWidth = 130;
+crpCal:notImplemented = expr(New Window("Feature Not Available",<<Modal,TextBox("This feature has not been implemented yet."),ButtonBox("OK")));
+
+::globalListcrpCal = {::ba1ListcrpCal,::ba2ListcrpCal,::ba3ListcrpCal}; //global list for column lists
+
+::lbListcrpCal = Expr({::colListYcrpCal,::colListBcrpCal,::colListXcrpCal});
+
+//////////////// Recalls global variables to fill in previous choices /////////////////
+crpCal:recallItems = Expr(
+//Is List will produce error if ba1List is not declared
+//If error, declare vars, otherwise get vars
+	crpCal:colList = crpCal:DataTable << Get Column Names(String);
+	Try(
+		For(i=1,i<=N Items(::globalListcrpCal),i++,
+			crpCal:nextList = ::globalListcrpCal[i];
+			For(j=1,j<=N Items(crpCal:nextList),j++,
+				If(N Row(Loc(crpCal:colList,crpCal:nextList[j])) > 0,
+					Eval(
+						Substitute(
+							Expr(lb << Append(item)),
+							Expr(lb),::lbListcrpCal[i],
+							Expr(item),crpCal:nextList[j]
+						)
+					)
+				)
+			)
+		),
+		Print("No columns to recall.")
+	);
+);
+//////////////// END Recalls global variables to fill in previous choices /////////////
+
+//////////////// Modal Dialog explaining incomplete variable choices //////////////////
+crpCal:wrongCols = Expr(
+	New Window( "Incomplete Column Selection",
+		<<Modal,
+		Text Box("One or more variables are missing or incorrect for data type",<<setfontstyle("bold"),<<setfontsize(12)),
+		Text Box(""),
+
+		Text Box("Both Concentration and Analyzer Resp require a single, continuous input",<<setfontstyle("bold")),
+		Button Box( "OK"),
+	);
+);
+//////////////// End Modal Dialog explaining incomplete variable choices //////////////
+
+//////////////// Checks constraints and populates globals /////////////////////////////
+crpCal:populateGlobals = Expr(
+	//Checks to make sure adequete number of columns added to boxes	
+	If(Nitems(::colListYcrpCal<<get items) == 0 | Nitems(::colListXcrpCal<<get items) == 0,
+		Eval(crpCal:wrongCols);throw()
+	);
+
+	//Populates Global Variables
+	For(i=1,i<=N Items(::globalListcrpCal),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar);
+					glVar = lb << Get Items;
+					Lock Globals(glVar);
+				),
+				Expr(lb),::lbListcrpCal[i],
+				Expr(glVar),Name Expr(::globalListcrpCal[i])
+			)
+		);
+	);
+	//show(::ba1ListcrpCal);
+	//show(::ba1ListcrpCal,::ba2ListcrpCal,::ba3ListcrpCal);
+	Eval(crpCal:calibrationCurve);
+);
+//////////////// END Checks constraints and populates globals /////////////////////////
+
+//////////////// Sends data to R and compiles final curves /////////////////////////////
+crpCal:calibrationCurve = Expr(
+	crpCal:Diag << Close Window;
+
+	//makes a list of column names and finds location of AR and Conc columns
+	crpCal:colList = {};
+	For(i=1,i<=ncol(crpCal:DataTable),i++,
+		crpCal:colName = Column(crpCal:DataTable,i)<<getname;
+		insertInto(crpCal:colList,crpCal:colName)
+	);
+
+	//Gets the names of the columns and then creates a ':' version of the first column in each list
+	//for this script there will only be one column in each list anyways
+	crpCal:ycol = ::colListXcrpCal<<getitems; 
+	crpCal:xcol = ::colListYcrpCal<<getitems;
+	crpCal:byCol = ::colListBcrpCal<<getitems;
+	crpCal:Yvar = Parse( Eval Insert( ":name( \!"^crpCal:ycol[1]^\!" )" ) );
+	crpCal:Xvar = Parse( Eval Insert( ":name( \!"^crpCal:xcol[1]^\!" )" ) );
+	Try(crpCal:zVar = Parse( Eval Insert( ":name( \!"^crpCal:byCol[1]^\!" )" ) ));
+	//find the AR and Conc column in the datatable by column number
+	arCol = Contains(crpCal:colList,crpCal:ycol[1]);
+	concCol = Contains(crpCal:colList, crpCal:xcol[1]);
+
+	//show(crpCal:ycol,arCol,concCol);
+
+	//creates duplicate subset for excluded to be deleted w/o affecting main table
+	crpCal:subsetDT = crpCal:DataTable << Subset(
+		Copy formula( 0 ),
+		All rows,
+		Selected columns only( 0 ),
+		private
+	);
+	//show(crpCal:subsetDT);
+	//selects and deletes excluded rows
+	//if not deleted, the raw data is transferred to R and used in calculations
+	crpCal:subsetDT<<selectwhere(excluded(rowstate(row()))==1);
+	For(i=1,i<=nrow(crpCal:subsetDT),i++,
+		If(selected(rowstate(i))==1,crpCal:subsetDT<<deleterows();break(),empty())
+	);
+
+	//Creates a number of private subsets, one for each 'By' category
+	//these will be sent to R separately so R doesn't have to parse the data, JMP does it
+	crpCal:subsets={};
+	colName = ::colListBcrpCal<<getitems;
+	If(nitems(::ba2ListcrpCal) == 1,
+		Summarize(
+			crpCal:byVars = by( Column(colName) )
+		);
+		For(j=1, j<=nitems(crpCal:byVars),j++,
+			crpCal:subsets[j] = crpCal:subsetDT<<selectwhere(crpCal:zVar==crpCal:byVars[j])<< Subset(
+				Copy formula( 0 ),
+				Selected Rows( 1 ),
+				Selected columns only( 0 ),
+				Private
+			)
+		);
+	,
+		crpCal:subsets[1] = crpCal:subsetDT<<Subset(
+			Copy formula( 0 ),
+			Selected Rows( 0 ),
+			Selected columns only( 0 ),
+			Private
+		);
+	);
+	//show(crpCal:subsets);
+	close(crpCal:subsetDT,nosave);
+
+	//converts the default addin path to something useable by R
+	crpCal:addinPATH = getpathvariable("$ADDIN_HOME(com.idexx.IDEXXQCTools_CRPcalCurve)");
+	crpCal:filePATH = crpCal:addinPATH||"R_LnTranformCubic_fit.txt";
+	crpCal:truFilePATH = Munger(crpCal:filePATH,1,"/","");
+	
+	//Opens R and runs the file
+	//This file is for a natural log tranformation of the data (conc + 1) with a cubic fit
+	crpCal:coefficients = {};
+	R Init();
+	R Send(arCol);
+	R Send(concCol);
+	For(i=1, i<=nitems(crpCal:subsets),i++,
+		crpCal:rDataTable = DataTable(crpCal:subsets[i]);
+		R Send(crpCal:rDataTable, R Name("calDataTable"));
+		
+		R Submit File(crpCal:truFilePath);
+		crpCal:coefficients[i] = R Get (coefs);
+	);
+	R Term();
+	//show(crpCal:coefficients);
+	For(k=1, k<=nitems(crpCal:subsets),k++,
+		close(crpCal:subsets[k],nosave);
+	);
+
+	//Creates a large list of text representing the inside of the 'Match()' function for building the final formula
+	crpCal:allFormulas = {};
+	Try(
+		For(i=1,i<=nitems(crpCal:coefficients),i++,
+			r = evalInsert("\!"^crpCal:byVars[i]^\!"");
+			crpCal:allFormulas[i] = r || "," || Char(EvalExpr(Exp(
+				(Expr( crpCal:coefficients[i][4] ) * :Name("AR") ^ 3 + Expr( crpCal:coefficients[i][3] ) * :Name("AR") ^ 2
+				 + Expr( crpCal:coefficients[i][2] ) * :Name("AR") + Expr( crpCal:coefficients[i][1] ))
+			) - 1))
+		),
+		For(i=1,i<=nitems(crpCal:coefficients),i++,
+			//r = evalInsert("\!"^crpCal:byVars[i]^\!"");
+			crpCal:allFormulas[i] = Char(EvalExpr(Exp(
+				(Expr( crpCal:coefficients[i][4] ) * :Name("AR") ^ 3 + Expr( crpCal:coefficients[i][3] ) * :Name("AR") ^ 2
+				 + Expr( crpCal:coefficients[i][2] ) * :Name("AR") + Expr( crpCal:coefficients[i][1] ))
+			) - 1))
+		)
+	);
+	//show(crpCal:allFormulas);
+	crpCal:concatForms = ConcatItems(crpCal:allFormulas,","); //Concatenates all the list items into one final string
+	//show(crpCal:concatForms);
+	
+	//creates ":...." column name, in quotes (not like parse that removes the quotes)
+	//then creates first half of match column insesrting 'By' column
+	//then creates end of whole formula
+	
+	Try(
+		crpCal:zVar1 = Eval Insert( ":name( \!"^crpCal:byCol[1]^\!" )" );
+		crpCal:startFormula = "crpCal:DataTable<<newcolumn(\!"Calc Conc (mg/dL)\!",
+			Formula(
+				Match("||crpCal:zVar1||",";
+		crpCal:endForm = ")))"
+	,
+		crpCal:startFormula = "crpCal:DataTable<<newcolumn(\!"Calc Conc (mg/dL)\!",
+			Formula(";
+		crpCal:endForm = "))"
+	);
+	
+
+	//combines all pieces into final huge string to create column with large formula
+	crpCal:finalConcat = Concat(crpCal:startFormula,crpCal:concatForms,crpCal:endForm);
+	//show(crpCal:finalConcat);
+	//Parse(crpCal:finalConcat);
+	Eval(Parse(crpCal:finalConcat)); //evaluates the parsed version
+
+	//graphs data from original table, one By 'By' varaiable, one combined
+	If(colName == {},
+		crpCal:fullBiv = crpCal:dataTable<<Bivariate(
+			Y( ::colListYcrpCal<<getItems ), 
+			X( ::colListXcrpCal<<getItems )	
+		);
+	,
+		crpCal:biv = crpCal:dataTable<<Bivariate( 
+			Y( ::colListYcrpCal<<getItems ), 
+			X( ::colListXcrpCal<<getItems ),
+			By(::colListBcrpCal<<getItems)
+		);
+		crpCal:fullBiv = crpCal:dataTable<<Bivariate(
+			Y( ::colListYcrpCal<<getItems ), 
+			X( ::colListXcrpCal<<getItems )	
+		);
+	);
+	
+	If(colName == {},
+		Empty()
+	,
+		Report(crpCal:fullBiv)[FrameBox(1)]<<Row Legend(crpCal:byCol[1],Color(1),Color Theme("JMP Default")); //adds row legend for full graph
+	);
+
+	crpCal:colorList = {"Red","Blue","Black","Gray","Yellow","Brown"};//should update for full list order
+	//adds a custom script that graphs the equation over data
+	If(colName == {},	
+		Eval(EvalExpr(Report(crpCal:fullBiv)[FrameBox(1)]<<Add Graphics Script(
+					1,
+					Description( "Cal Curve From R" ),
+					PenColor(Expr(crpCal:colorList[1]));
+					Y Function(
+						Exp(
+							Expr(crpCal:coefficients[1][4]) * x ^ 3 + Expr(crpCal:coefficients[1][3]) * x ^ 2
+							+Expr(crpCal:coefficients[1][2]) * x + Expr(crpCal:coefficients[1][1])
+						) - 1,
+						x
+					)
+				)
+			)
+		);
+	,	
+		For(j=1, j<=nitems(crpCal:biv),j++,
+			Eval(EvalExpr(Report(crpCal:biv[j])[FrameBox(1)]<<Add Graphics Script(
+						1,
+						Description( "Cal Curve From R" ),
+						PenColor(Expr(crpCal:colorList[j]));
+						Y Function(
+							Exp(
+								Expr(crpCal:coefficients[j][4]) * x ^ 3 + Expr(crpCal:coefficients[j][3]) * x ^ 2
+								+Expr(crpCal:coefficients[j][2]) * x + Expr(crpCal:coefficients[j][1])
+							) - 1,
+							x
+						)
+					)
+				)
+			);
+			Eval(EvalExpr(Report(crpCal:fullBiv)[FrameBox(1)]<<Add Graphics Script(
+						1,
+						Description( "Cal Curve From R" ),
+						PenColor(Expr(crpCal:colorList[j]));
+						Y Function(
+							Exp(
+								Expr(crpCal:coefficients[j][4]) * x ^ 3 + Expr(crpCal:coefficients[j][3]) * x ^ 2
+								+Expr(crpCal:coefficients[j][2]) * x + Expr(crpCal:coefficients[j][1])
+							) - 1,
+							x
+						)
+					)
+				)
+			);
+		);
+	);
+);
+//////////////// END Sends data to R and compiles final curves /////////////////////////
+
+//-------------- Main Dialog Box -----------------------------------------------------//
+crpCal:Diag = New Window( "LnTransform Cubic Calibration",
+	Border Box( Left( 3 ), top( 2 ),
+		V List Box(
+			Text Box( "Choose columns for Control and Analyzer Response" ),
+			H List Box(
+				V List Box(
+					Panel Box( "Select Columns",
+						colListData = Col List Box(
+							All,
+							width( crpCal:lbWidth ),
+							nLines( Min( crpCal:nc, 10 ) )
+						)
+					),
+				),
+				Panel Box( "Cast Selected Columns into Roles",
+					Lineup Box( N Col( 2 ), Spacing( 3 ),
+						Button Box( "Concentration",
+							::colListYcrpCal << Append( colListData << GetSelected )
+						),
+						::colListYcrpCal = Col List Box( width( crpCal:lbWidth ), minitems(1), maxitems( 1 ), nLines( 3 ), numeric ),
+						Button Box( "Analyzer Resp",
+							::colListXcrpCal << Append( colListData << GetSelected )
+						),
+						::colListXcrpCal = Col List Box( width( crpCal:lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ), numeric ),
+						Button Box( "By",
+							::colListBcrpCal << Append( colListData << GetSelected )
+						),
+						::colListBcrpCal = Col List Box( width( crpCal:lbWidth ), nLines( 1 ), maxitems( 1 ))
+					)
+				),
+				Panel Box( "Action",
+					Lineup Box( N Col( 1 ),
+						Button Box( "OK", Eval(crpCal:populateGlobals)),
+						Button Box( "Cancel", Eval(crpCal:exprCancel) ),
+						Text Box( " " ),
+						Button Box( "Remove",
+							::colListYcrpCal << RemoveSelected;
+							::colListBcrpCal << RemoveSelected;
+							::colListXcrpCal << RemoveSelected;
+						),
+						Button Box( "Recall", Eval(crpCal:recallItems) )
+					)
+				)
+			)
+		)
+	)
+);
+
+crpCal:exprCancel = Expr(crpCal:Diag << Close Window);

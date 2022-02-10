@@ -1,0 +1,458 @@
+﻿//Author(s)
+//DPelletier, NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Script created from "TT4 Angle AR Algorithm, 0.5 Sec Read Interval, Rev. 7.0 BETA 2.jsl"
+Names Default To Here( 1 );
+Clear Globals();
+	//Script Version
+	arCalcVer = "v1.1";
+	//Known Chemistry to be used if assay info not available.
+	knownChemType = "TT4";
+
+//------------------Revision History for both script and Help File--
+//
+//	1.1 NClark 051017
+//		-> Updated calc concentrations to have correct Chem code for TT430
+//	1.0 NClark 050217
+//		-> Update flagging threshold name to TT430
+//		-> Updated TT4 to TT30 for table names
+//		-> Rest of script is identical to below
+// ---- Copied from TT4 AR Calculator v6.1 assumption is assays will be identical save for Flag thresholds
+//------------------------------------------------------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries)\AssayDev_FunctionLibrary.jsl");
+//include("R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Library Files\AssayDev_FunctionLibrary.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries)\AssayDev_ChemCodes.jsl");
+tablePrep = Expr(include("$ADDIN_HOME(com.idexx.assayDevLibraries)\AssayDev_TablePreparation.jsl"));
+
+//Designed to only work with one input file
+//Input File can be file saved to TransferVars namespace from other script
+//Allows user to use topmost data table if desired or to open a table
+If(IsNamespace(Namespace("TransferVars")), transNS = Namespace("TransferVars")
+,
+	transNS = NewNamespace("TransferVars")
+);
+//Try(Print(transNS:dt_start),Print("no table"));
+If(isEmpty(transNS:dt_start),
+	If(Ntable()==0,
+		transNS:dt_start = Open(),
+		transNS:dt_start = currentdatatable()
+	)
+,
+	Empty();
+);
+startName = transNS:dt_start << GetName();
+dt_input = transNS:dt_start << Subset(Output Table( startName ), All Rows,Selected columns only( 0 ));
+
+//-----------Variable Declarations-----------------
+
+	//Define the table variables for use in formulas.
+	normTime = 40;
+	threshTime = 15;
+	threshArea = 1;
+	numRegressPoints = 10;
+	numRegressFlag5 = 98;
+	
+	//Error Flag Limits
+	tt430Flags = {
+		{dryReadFlag, 0.05, 0.13, "Dry[*77]"},
+		{sampConjMinusDry, 0.25, 0.54, "S/C - DR[*78]"},
+		{washMinusSampConj, -0.25, -0.03, "Wash - S/C[*79]"},
+		{subMinusWash, -0.01, 0.35, "Sub - Wash[*80]"},
+		{anomProgCurve10_60, 0.00001, 0.011, "m10-60[*82]"},
+		{avgAllFlag, 0.29, 0.41, "avgAll[85]"},
+		{anomInitSlopeVSub, 0.06, -0.0157, 0.036, -0.0158, "linBound[*86]"},
+		{lateSlope50_60, 0.0, 0.1, "m50-60[*87]"}
+	};
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	tableName = transNS:dt_start<<GetName; //changed from dt_input to support addition of subset to leave original untouched
+	titleName = Word(1,tableName,"-");
+	dateName = Substr(tableName,Munger( tableName, 1, "-" )+1,6);
+
+//-----------/Variable Declarations-----------------
+
+////////////////////////////////////////// Table Prep Expr() - may vary depending on data source ///////////////////
+
+Eval(tablePrep);
+
+////////////////////////////////////////// End Table Prep //////////////////////////////////////////////
+
+////////////////////////////////////////// Table Analysis //////////////////////////////////////////////
+
+//Add all algorithm formulas:
+dt_algorithm = dt_input;
+
+dt_algorithm << New Column("R&D AR Calc Version",Character(10),
+	Formula(Eval(arCalcVer))
+);
+Column(dt_algorithm,"R&D AR Calc Version")<<DeleteFormula;
+
+genericAngleCalc(dt_algorithm,normTime,threshTime,threshArea,numRegressPoints,"False");
+
+////////////////////////////////////////// End Table Analysis //////////////////////////////////////////
+
+////////////////////////////////////////// Flagging Analysis ///////////////////////////////////////////
+/*function reference
+	preDevelopmentMetric(tableName,columnName,metric="sp",direction="Dry",eventOneTime="NULL",eventTwoTime="NULL",singlePoint=1);
+	genericInterpMetric(tableName,columnName,startingTime,endingTime,metric);
+*/
+//Adding several metrics from the curve that are useful in diagnosing errant runs
+
+preDevelopmentMetric(dt_algorithm,"Dry Read","sp","dry",-116,"null","last");
+
+preDevelopmentMetric(dt_algorithm,"Sample Mix","sp","wet",-116);
+
+preDevelopmentMetric(dt_algorithm,"Wash","sp","wet",-39);
+
+genericInterpMetric(dt_algorithm,"Substrate",1,10.136,"EP");
+
+genericInterpMetric(dt_algorithm,"Slope (10-60s)",10,60,"Slope");
+
+genericInterpMetric(dt_algorithm,"Slope (50-60s)",50,60,"Slope");
+
+genericInterpMetric(dt_algorithm,"Slope (10-20s)",10,20,"Slope");
+
+genericInterpMetric(dt_algorithm,"Slope (6-16s)",6,16,"Slope");
+
+//Adding 6 columns (one per flag that require math and 2 for the linBound comparision) with the ending trigger value for easier troubleshooting/run comparisions
+dt_algorithm << New Column("SampMix - Dry",
+	Formula(:Name( "Sample Mix" ) - :Dry Read)
+);
+dt_algorithm << New Column("Wash - SampMix",
+	Formula(:Wash - :Name( "Sample Mix" ))
+);
+dt_algorithm << New Column("Sub - Wash",
+	Formula(:Substrate - :Wash)
+);
+dt_algorithm << New Column("avgAll",
+	Formula((:Dry Read + :Name( "Sample Mix" ) + :Wash + :Substrate)/4)
+);
+dt_algorithm << New Column("LowerLinBound",
+	Formula(Round( tt430Flags[7][4] * :Substrate + tt430Flags[7][5], 10 ))
+);
+dt_algorithm << New Column("UpperLinBound",
+	Formula(Round( tt430Flags[7][2] * :Substrate + tt430Flags[7][3], 10 ))
+);
+
+//Applies flagging based on math below
+//Limits are adjusted above with variable declaration
+
+assayDevFlagging(dt_algorithm,tt430Flags,"TT4");
+
+Try(
+	If(
+		instID == "CatDx" & colPresence == 1,
+			dt_algorithm << New Column( "CDx IM Error Flags", Character(60),
+				Formula(
+					result= "";
+					numWords = N Items( Words( :Algorithm IM Error Flags ) );
+					For( j = 1, j <= numWords, j++,
+						If( Is Missing( Num( Words( :Algorithm IM Error Flags )[j] ) ),
+							Empty(),
+							result = result||Words( :Algorithm IM Error Flags )[j]||" "
+						)
+					);
+					Trim(result)
+				)
+			);
+			dt_algorithm << New Column( "CDx Conc Error Flags", Character(60),
+				Formula(
+					result1= "";
+					numWords = N Items( Words( :Algorithm Conc Error Flags ) );
+					For( j = 1, j <= numWords, j++,
+						If( Is Missing( Num( Words( :Algorithm Conc Error Flags )[j] ) ),
+							Empty(),
+							result1 = result1||Words( :Algorithm conc Error Flags )[j]||" "
+						)
+					);
+					Trim(result1)
+				)
+			)
+	);
+	Column(dt_algorithm,"CDx IM Error Flags")<<DeleteFormula();
+	Column(dt_algorithm,"CDx Conc Error Flags")<<DeleteFormula();
+);
+
+//Adds AR column that is the same as Angle unless flags are present, then AR = -1
+dt_algorithm << New Column( "AR-Script",
+	Formula(
+		If(
+			:Angle == -999, -2
+		, 
+			Contains( :Flag, "NF(Dry[*77])" ) == 0 |
+			Contains( :Flag, "NF(S/C - DR[*78])" ) == 0 | 
+			Contains( :Flag, "NF(Wash - S/C[*79])" ) == 0 | 
+			Contains( :Flag, "NF(Sub - Wash[*80])" ) == 0 | 
+			Contains( :Flag, "NF(m10-60[*82])" ) == 0 |
+			Contains( :Flag, "NF(linBound[*86])" ) == 0 |
+			Contains( :Flag, "NF(m50-60[*87])" ) == 0, -1
+		,
+			:Angle
+		)
+	)
+);
+
+////////////////////////////////////////// End Flagging Analysis ///////////////////////////////////////
+
+////////////////////////////////////////// Finisihing Touches //////////////////////////////////////////
+//Finishing touches will be Assay and User (R&D, Ops, etc) specific
+
+//calculates concentrations
+chemCalculatedConcentration(30,"nonCubic",dt_algorithm,"Calc_Dose_All","biExp_4P","Angle");
+
+dt_algorithm << New Column("Calc Dose",
+	Formula(
+		If(:Name("AR-Script") == -1 | :Name("AR-Script") == -2,
+			:Name("AR-Script")
+		,
+			Match(:Species Name,
+				"Canine",
+				If(:Calc_Dose_All > 15, -3, :Calc_Dose_All)
+			,
+				"canine",
+				If(:Calc_Dose_All > 15, -3, :Calc_Dose_All)
+			,
+				"Feline",
+				If(:Calc_Dose_All > 50, -3, :Calc_Dose_All)
+			,
+				"feline",
+				If(:Calc_Dose_All > 50, -3, :Calc_Dose_All)
+			)
+		)
+	)
+);
+Column(dt_algorithm,"Calc Dose")<<DeleteFormula;
+dt_algorithm << New Column("Units_script",
+	Formula("ug/dL")
+);
+Column(dt_algorithm,"Units_script")<<Deleteformula;
+
+//Add columns specific to running CatOne or CDx data
+//Inst Type is CatOne or CatDx
+//commonRunID is a common and unique run ID for both instruments
+dt_algorithm << New Column("Inst Type",Character(10),
+	Formula(instID)
+);
+Column(dt_algorithm,"Inst Type") << Delete Formula;
+dt_algorithm << New Column("commonRunID",Character(10),
+	Formula(Char( MDYHMS( :Time ) ) || "_" || :Instrument ID || "_" || Char( :Segment ))
+);
+Column(dt_algorithm,"commonRunID") << Delete Formula;
+
+//Renames deonoting progress curve file
+dt_algorithm << SetName(
+	titleName||"-"||dateName||"_"||"TT430 AR_"||nextTodayDate|| "_progCurves" 
+);
+
+//Moves most important columns within table
+//Try() functions move columns not in common beteween table origins
+
+dt_algorithm << MoveSelectedColumns(
+	{
+		"AR-Script",
+		"Angle", //replace with AR metric for specific Assays
+		"Calc Dose",
+		"Units_script",
+		"Flag",
+		"Flag_nums",
+		"commonRunID",
+		"R&D AR Calc Version",
+		"Chem Type",
+		"Inst Type",
+		"TimeFromSampleDispense:sec",
+		"ReflDens_avg",
+		"Instrument ID"
+	},
+	To First
+);
+
+//Moves Upper and Lower Linbound columns around the Slope (10-60s) column as that is what the bounds are for
+dt_algorithm << MoveSelectedColumns(
+	{
+		"LowerLinBound"
+	},
+	After("Slope (10-60s)")
+);
+dt_algorithm << MoveSelectedColumns(
+	{
+		"UpperLinBound"
+	},
+	After("Substrate")
+);
+
+//Try() statments cover a number of columns that may be present but may not depending on data source
+//Column movement Try() commands done in reverse order as JMP doesn't allow a move 'before' only 'after'
+//So to maintain correct order in case some of colums are there but others aren't, reverse ensures correct ordering 'after' a given column
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Flags"
+		},
+		After("Flag_nums")
+	);
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"CDx Conc Error Flags"
+		},
+		After("Flag_nums")
+	);
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"CDx IM Error Flags"
+		},
+		After("Flag_nums")
+	);
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"condition 4"
+		},
+		To First
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"condition 3"		
+		},
+		To First
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"condition 2"		
+		},
+		To First
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"condition 1"		
+		},
+		To First
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Configuration"		
+		},
+		After("commonRunID")
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Script Version"		
+		},
+		After("commonRunID")
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Foil Found"		
+		},
+		After("commonRunID")
+	)
+
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Barcode"		
+		},
+		After("commonRunID")
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Metering Firmware"		
+		},
+		After("R&D AR Calc Version")
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Species Name"		
+		},
+		After("Inst Type")
+	)
+);
+Try(
+	dt_algorithm << MoveSelectedColumns(
+		{
+			"Species"		
+		},
+		After("Inst Type")
+	)
+);
+
+
+//Hides and groups all columns that are listed in 'hidecols'
+//Default is for any column to be unhidden unless added to this list
+hideCols = {"Alg Calc Ar Error Status :4", "Algorithm Conc Error Flags", "Algorithm IM Error Flags", "Algorithm Status",
+"AR Qualifer", "AR Qualifier", "AR2", "AR2 Qualifer", "AR2 Qualifier", "Concentration units", "Curve Area",
+"Curve Cubic", "Curve Fifth", "Curve File Version", "Curve Intercept", "Curve Linear", "Curve Quad",
+"Curves Version :5", "Date", "Date-orig", "Dilution Parts", "Dilution Type", "Discrepant Type",
+"Dry Read Finish", "Dry Read Start", "DryReadingMean", "Final Scalar", "Flag :3", "Flag1 :4", "Flag2 :4",
+"Flag3 :4", "From Optics Module", "Gain Applied", "Gain Applied :4", "Gain Applied 2", "GMTime",
+"ID Source :2", "Log Entry Timestamp :3", "Normalized RD", "Num Dry Reads :2", "Num Of Assays",
+"Num Of Points :2", "Num Of Readings :2", "Num Wavelengths Used :4", "Offset Applied", "Offset Applied :4",
+"Offset Applied Type", "Paired Results Flag :4", "Point :3", "Post Analysis Notes", "Progress Curve Analysis",
+"Qual :4", "Qualifier", "RD Normalization Reading", "Read Point", "Reading Time", "Reading2 :3",
+"Reflective :2", "Re-Review of Consumable/Slide", "Run Done Timestamp", "Run Fault", "Sample Container",
+"Sample_conjugate_alq2", "Scalar", "Scalar Adjustment", "Segment", "Slide Load Position :4", "Spot Time",
+"Stored Wet Offset", "Stored WLC Offset", "Substrate_alq1", "Time", "Time Offset :2", "Time-orig",
+"Timeseries pt", "Timeseries RD2", "TS Read Flag", "uldry Intensity", "ulfalse light Molded", "ulfalselight",
+"ulfalselight Laminate", "ulwet Intensity", "Units :4", "Units :5", "Wash 1 End", "Wash 2 End", "Wash1_alq3",
+"Wavelength", "Wavelength2", "Wavelength3", "Wavelengths Used", "X Intersect", "Y Intersect"};
+
+hideGroupCols = {};
+For(i = 1, i<=ncols(dt_algorithm),i++,
+	a = column(dt_algorithm,i)<<getname;
+	If(Contains(hideCols,a) > 0,
+		Column(dt_algorithm,i)<<hide(1);
+		InsertInto(hideGroupCols,a)
+	)
+);
+dt_algorithm<<groupcolumns("Hidden Columns",hideGroupCols);
+dt_algorithm<<MoveColumnGroup(To Last, "Hidden Columns");
+
+//Selects one read from each curve to subset into table with only 1 Angle result per run
+//updated to use commonRunID instead of Time
+dt_algorithm << Select Where( :commonRunID != Lag(:commonRunID,-1) | Row() == NRow());
+
+//Get subset with just the results
+dt_justResult = dt_algorithm << Subset(
+	output table name( titleName||"-"||dateName||"_"||"TT430 AR_"||nextTodayDate|| "_justResults" )
+);
+dt_algorithm << SelectAllRows;
+dt_algorithm << InvertRowSelection;
+
+////////////////////////////////////////// End Finisihing Touches //////////////////////////////////////
+
+//////////////////////////////////////////  Final Cleanup  /////////////////////////////////////////////
+//empties namespace for deletion but other script or deletes namespace
+Try(IsScriptable(transNS:inUse);
+	transNS = Empty()
+,
+	transNS << delete
+);

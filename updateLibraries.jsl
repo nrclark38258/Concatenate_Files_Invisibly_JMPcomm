@@ -1,0 +1,92 @@
+//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	1.3 NClark 071619
+//		-> Updated for note on filenamelist
+//	1.2 NClark 071219
+//		-> Updated to work with MAC and officially unregister/delete addin load and unload and original assay libraries
+//	1.1 NClark 050218
+//		-> Updated locations for libraries and loadunload
+//		-> updated for new libraries2
+//	1.0 NClark 111716
+//		-> First Released Version
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+macTag = "\Volumes\Groups\";
+winTag = "\\FOGHORN\Groups\";
+addinLoc = "JMP User Group\JMP Addins\Production_Deployment\";
+updateLoc = "JMP User Group\JMP Addins\";
+
+//list of files to be installed for addin
+//list in the order you want them installed
+//NOT USING FILENAMELIST AS THIS SCRIPT MAY BE CALLED FROM ANOTHER ONE
+//VARIABLE SCOPING NEEDS TO BE ADDRESSED BEFORE VAR CAN BE IMPLEMENTED
+//fileNameList = {};
+
+If(Num(Word(1,jmpversion(),"."))>=11,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		Font( "Arial" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		//Font( "Arial" ),
+		//Font Size( 16 ),
+		//Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+);
+
+Unregister Addin("com.idexx.assayDevLibraries"); // will be deleted
+Unregister Addin("com.idexx.assayDevLibraries2");
+
+//new updates now, so unregistering old and will delete folders
+Unregister Addin("com.idexx.nclark.automaticUpdates-load");
+Unregister Addin("com.idexx.nclark.automaticUpdates-unLoad");
+
+If(HostIs("MAC"),
+	If(IsDirectory("\Volumes/groups/"),
+		Empty()
+		,
+		web("smb://foghorn.namerica.idexxi.com/groups");
+		nw = New Window("Mounting drive",
+			<< modal,
+			Text Box("Please enter credentials for drive to mount and click ok when complete"),
+			ButtonBox("OK"),
+			Button Box("Cancel", Return(0))
+		);
+	);
+	u = Get Environment Variable("USER");
+	Try(Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-load",unix)));
+	Try(Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",unix)));
+	Try(Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.assayDevLibraries",unix)));
+
+	Open(Convert File Path(macTag||addinLoc||"Assay_Development_Libraries2.jmpaddin", unix));
+	,
+	u = Get Environment Variable("USERNAME");
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-load",windows)));
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",windows)));
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.assayDevLibraries",windows)));
+
+	Open(Convert File Path(winTag||addinLoc||"Assay_Development_Libraries2.jmpaddin",windows));
+);
+
+Caption(remove);

@@ -1,0 +1,57 @@
+//Author:
+//Nathan Clark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+//26 July, 2012
+
+//This script allows user to add any number of rows at specific intervals in the data table.
+
+//------------------Revision History--------------------------------
+// 
+// 1.0 NClark 072612
+//		-> First released version
+//------------------------------------------------------------------
+clearglobals();
+
+runOK = Expr(
+	dt=currentdatatable();
+	addRows = addRows_box << get;
+	byRows = byRows_box << get;
+	If((nrows(dt)/byRows) - Round((nrows(dt)/byRows),0) != 0,
+		Dialog("Total rows not divisable by x rows, try again");
+		throw();
+	);
+	addRowsDlg<<closewindow;
+	show(addRows,byRows);
+	For(i=nrows(dt),i>=byRows,i-=byRows,
+		dt<<add rows(addRows,i);
+		show(i)
+	);
+);
+
+addRowsDlg = New Window( "Dynamic Add Rows", 
+	Show Toolbars(0),
+	Show Menu(0),
+	H List Box(
+		V List Box(
+			Lineup Box(
+				2,
+				Text Box( "How many rows to add" ),
+				addRows_box = Number Edit Box( 2 ),
+				Text Box( "Every x rows" ),
+				byRows_box = Number Edit Box( 3 ),
+			),
+		),
+		V List Box(
+			Lineupbox(Ncol(1),
+			Button Box( "OK",Eval(runOK)),
+			Button Box( "Cancel",Eval(exprCancel))
+			)
+		)
+	)
+);
+
+exprCancel=Expr(addRowsDlg<<closewindow);
+
+

@@ -1,0 +1,6 @@
+R Init( );
+R Submit("
+	x <- 1:5
+	x
+");
+R Term( );

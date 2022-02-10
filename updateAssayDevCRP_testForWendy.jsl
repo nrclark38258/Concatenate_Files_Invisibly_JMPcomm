@@ -1,0 +1,55 @@
+//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	1.1 NClark 110115
+//		-> Updated so Generic tools installed/updated with each revision of std. tool
+//	1.0 NClark 102215
+//		-> First Released Version
+//------------------------------------------------------------------
+
+//Unregister Addin("com.idexx.RnD_CRP");
+//Unregister Addin("com.idexx.RnD_CRPUpdate");
+//Unregister Addin("com.idexx.nclark.exactBinom");
+//Unregister Addin("com.idexx.nclark.updateFX");
+
+//With each new assay, Generic tools will be installed/updated
+//Unregister Addin("com.idexx.genericAssayDev");
+//Unregister Addin("com.idexx.genericAD_AngleTool");
+//Unregister Addin("com.idexx.genericAD_Update");
+
+newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		Font( "Arial Black" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+
+If(HostIs(Mac),
+	CRP1 = "smb://FOGHORN/Groups/JMP%20User%20Group/JMP%20Addins/Assay%20Development/com.idexx.RD_CRP_special_for_Wendy.jmpaddin";
+	CRP2 = "smb://FOGHORN/Groups/JMP%20User%20Group/JMP%20Addins/Assay%20Development/com.idexx.RD_CRP_Update-special_for_Wendy.jmpaddin";
+,
+	CRP1 = "//FOGHORN/Groups/JMP User Group/JMP Addins/Assay Development/com.idexx.RD_CRP_special_for_Wendy.jmpaddin";
+	CRP2 = "//FOGHORN/Groups/JMP User Group/JMP Addins/Assay Development/com.idexx.RD_CRP_Update-special_for_Wendy.jmpaddin";
+);
+Open(CRP1);
+Open(CRP2);
+
+//With each new assay, Generic tools will be installed/updated
+//generic1 = ConvertFilePath("//FOGHORN/Groups/JMP User Group/JMP Addins/Assay Development/com.idexx.genericAD_SlopeEP.jmpaddin",POSIX);
+//generic2 = ConvertFilePath("//FOGHORN/Groups/JMP User Group/JMP Addins/Assay Development/com.idexx.genericAD_AngleTool.jmpaddin",POSIX);
+//generic3 = ConvertFilePath("//FOGHORN/Groups/JMP User Group/JMP Addins/Assay Development/com.idexx.genericAD_Update.jmpaddin",POSIX);
+//Open(generic1);
+//Open(generic2);
+//Open(generic3);
+
+Caption(remove);

@@ -1,0 +1,1722 @@
+//////OPS PHBR Calibration jslHamcrest Unit Tests//////
+ccUpdaterUT = New Namespace("ccUpdaterUnitTests");
+ccUpdaterUT:saveFile = 0;
+ccUpdaterUT:savePath = "C:\Users\nclark\Box\NRC_Experiments\NRC-00286b_092121_ccUpdate_swt-T6-0016811-00_v1.0x Validation\C-Validation Files/";
+ccUpdaterUT:reportName = "00_swt-T6-0016811-00_v1.0_UnitTestReport.txt";
+
+ccUpdaterUT:toolPath = "D:\JSL Development\Official JMP Addin Working\IDEXX SlideCal Tools\ccFileUpdater_swt-T6-0016811-00\ccFileUpdater.jsl";
+
+Match(ccUpdaterUT:saveFile,
+	1, ut global reporter = New Object("ut collecting reporter")
+);
+//use in setup / teardown or UT Tests
+
+ccUpdaterUT:saveTable = Function({tableName,savePath,fileName,testingBOOL = 0,journalSave = 0},{default Local},
+	If( testingBOOL == 1,
+		If(journalSave == 0,
+			tableName << SaveAs(savePath||fileName)
+			,
+			tableName << Save Journal(savePath||fileName)
+		)
+		,
+		Empty()
+	);
+	Return(1);
+);
+
+//High level note that how we test table compare varies between JMP 15 and 16
+//Unit tests could be updated to test differently based on version being tested...
+ccUpdaterUT:tableCompare = Function({actual, expected},{default local},
+	result = actual << Compare Data Tables(
+		Compare with( expected ),
+		Compare Table Properties,
+		Compare Column Attributes and Properties,
+		Compare Data,
+		Show Difference Summary,
+		Show Difference Plot
+	);
+	
+	r = result << report;
+	Return(r)
+);
+
+wait(3);		
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          TEST CASES                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+varCheckTC = ut test case("A_Variable Checks")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		
+	));
+
+quickFunctionsTC = ut test case("B_Easy Function Tests")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+	));
+
+startDialogTests = ut test case("C_Starting Dialog")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		basePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\"
+	));
+	
+savingCCfile = ut test case("D_Saves Table as CC file")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\TestCoeffsForCC.jmp",invisible);
+		basePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\";
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatForCCtest.jmp",invisible);
+	));
+
+openingFiles = ut test case("E_Opening and Returning cc JMP files")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		mainPath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\mainCCfile.cc";
+		updatePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC.cc";
+		updatePath1 = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC_noColMatch.cc";
+	));
+	
+joiningFiles = ut test case("F_Joining cc Files Together")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\mainCCfile.cc.jmp",invisible);
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC.cc.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatMain.cc.jmp",invisible);
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatUpdate.cc.jmp",invisible);
+		
+	));
+
+reportOut = ut test case("G_Reporting out results")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\mainCCfileClean.jmp",invisible);
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC.cc.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\finalCCoutput.jmp",invisible);
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatMain.cc.jmp",invisible);
+		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatUpdate.cc.jmp",invisible);
+		table6 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\decimalFormatForCCtest.jmp",invisible);
+		
+		
+	));
+	
+fullMonty = ut test case("H_Whole Script Run through")
+	<<Setup(Expr(
+		Include(ccUpdaterUT:toolPath);
+		mainPath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\mainCCfile.cc";
+		updatePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC.cc";
+		updatePath1 = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\curvesToUpdateCC_noColMatch.cc";
+		folderPath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\ccUpdater _swt-T6-0016811-00_UT\Files\";
+	));
+
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          UNIT TESTS                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+		/////////////////////////////////////////////////////////////
+		//          Vars and supporting Functions                  //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "A";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(varCheckTC, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Starting Variables", 
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		uName = Get Environment Variable("username");
+
+		ut assert that(Expr(u), ut equal to(uName));
+		ut assert that(Expr(addinID), ut equal to("com.idexx.IDEXXSlideCalTools_ccUpdater"));
+		ut assert that(Expr(updateIDs), ut equal to({"com.idexx.IDEXXSlideCalTools_ccUpdater"}));
+		ut assert that(Expr(minJMPver), ut equal to("15.2"));
+		
+	)
+);
+
+ccUpdaterUT:utGroup = "B";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(quickFunctionsTC, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_JMP Version Check", 
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		//function pulls the version being executed on
+		ver = JMP Version();
+		currWords = words(ver,".");
+		backHalf = concatitems(currWords[2::nitems(currWords)],"");
+		newNumVer = Num(currWords[1]||"."||backHalf);
+
+		ut assert that(Expr(checkVersion(Char(newNumVer - 0.1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer - 1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 0.1))), ut equal to(0));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 1))), ut equal to(0));
+	)
+);
+
+ut test(quickFunctionsTC, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_JMP Version Fail Window",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				If(current window() << get window title == "Requires JMP 15.2",
+					text = (current window() << xpath("//TextBox"));
+					If( text[1] << get text == "This addin requires the used of JMP 15.2+",
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Error Dialog Executed Correctly")
+						,
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Wrong text version, Error Dialog Executed")
+					)
+					,
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+					Print("Wrong title version, Error Dialog Executed")
+				)
+			)
+		);
+		//Failures for the above should be controled at the function level as these checks ensure function has the parameter used in both the title and the text box
+		closemodal(2);
+		wrongVer(15.2);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Error Dialog Executed Correctly\!""));
+		
+		closemodal(2);
+		wrongVer(17);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Wrong title version, Error Dialog Executed\!""));
+	)
+);
+
+ut test(quickFunctionsTC, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Table Cols Don't Match Fail Window",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				If(current window() << get window title == "Fail: Column Matching",
+					text = (current window() << xpath("//TextBox"));
+					If( text[1] << get text == "The two tables did not have matching columns.",
+						If( text[2] << get text == "Please verify they are correct and try again.", 
+							(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+							Print("Error Dialog Executed Correctly")
+							,
+							(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+							Print("Wrong text2 version, Error Dialog Executed")
+						)
+						,
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Wrong text1 version, Error Dialog Executed")
+					)
+					,
+					Try(
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Dialog title incorrect")
+						,
+						Print("Dialog Not Executed")
+					);
+				)
+			)
+		);
+		//Failures for the above should be controled at the function level as these checks ensure function has the parameter used in both the title and the text box
+		closemodal(2);
+		colMatchFail();
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Error Dialog Executed Correctly\!""));
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          Starting Dialog Box                            //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "C";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(startDialogTests, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Start Dialog Text Boxes",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			textStrings = {};
+			s = Schedule(
+				timeout,
+				text = (current window() << xpath("//TextBox"));
+				For(i=1,i<=nitems(text),i++,
+					insertinto(textStrings, text[i]<<get text)
+				);
+				Insertinto(textStrings,current window() << get window title);
+				insertinto(textStrings,tb << get title);
+				(current window() << xpath("//ButtonBox[text()='Cancel']")) << click;
+			);
+		);
+		
+		closemodal(2);
+		ccUpdaterDialog();
+		
+		ut assert that(Expr(textStrings[1]), ut equal to(""));
+		ut assert that(Expr(textStrings[2]), ut equal to("Enter or navigate to each file and click 'Ok' to continue"));
+		ut assert that(Expr(textStrings[3]), ut equal to(""));
+		ut assert that(Expr(textStrings[4]), ut equal to("Main calCurve .cc File"));
+		ut assert that(Expr(textStrings[5]), ut equal to("  "));
+		ut assert that(Expr(textStrings[6]), ut equal to(""));
+		ut assert that(Expr(textStrings[7]), ut equal to(".cc File with updated information"));
+		ut assert that(Expr(textStrings[8]), ut equal to("  "));
+		ut assert that(Expr(textStrings[9]), ut equal to(""));
+		ut assert that(Expr(textStrings[10]), ut equal to("Where to save the new .cc file"));
+		ut assert that(Expr(textStrings[11]), ut equal to("  "));
+		ut assert that(Expr(textStrings[12]), ut equal to(""));
+		ut assert that(Expr(textStrings[13]), ut equal to("Operator inputs"));
+		ut assert that(Expr(textStrings[14]), ut equal to("calCurves"));
+	)
+);
+
+ut test(startDialogTests, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Returning Start Variables",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+				calCCsave << set text(basePath||"Files\");
+				calCurveUpdate << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+				
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+			);
+		);
+		
+		closemodal(2);
+		ccUpdateStarts = ccUpdaterDialog();
+		
+		ut assert that(Expr(ccUpdateStarts["calCurveMain"]), ut equal to(basePath||"\Files\fakeCCfileForDialog.cc"));
+		ut assert that(Expr(ccUpdateStarts["calCurveUpdate"]), ut equal to(basePath||"\Files\fakeCCfileForDialog.cc"));
+		ut assert that(Expr(ccUpdateStarts["calCCsave"]), ut equal to(basePath||"Files\"));
+		ut assert that(Expr(ccUpdateStarts["Button"]), ut equal to(1));
+	)
+);
+
+ut test(startDialogTests, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Populate Correct TextEditBoxes",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			textStrings = {};
+			s = Schedule(
+				timeout,
+				calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+				calCCsave << set text(basePath||"Files\");
+				calCurveUpdate << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+				
+				text = (current window() << xpath("//TextEditBox"));
+				For(i=1,i<=nitems(text),i++,
+					insertinto(textStrings, text[i]<<get text)
+				);
+				
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+			);
+		);
+		
+		closemodal(2);
+		ccUpdateStarts = ccUpdaterDialog();
+		
+		ut assert that(Expr(textStrings[1]), ut equal to(basePath||"\Files\fakeCCfileForDialog.cc"));
+		ut assert that(Expr(textStrings[2]), ut equal to(basePath||"\Files\fakeCCfileForDialog.cc"));
+		ut assert that(Expr(textStrings[3]), ut equal to(basePath||"Files\"));
+		
+	)
+);
+
+ut test(startDialogTests, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Return on Cancel",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			textStrings = {};
+			s = Schedule(
+				timeout,
+				
+				(current window() << xpath("//ButtonBox[text()='Cancel']")) << click;
+			);
+		);
+		
+		closemodal(2);
+		ccUpdateStarts = ccUpdaterDialog();
+		
+		ut assert that(Expr(ccUpdateStarts), ut equal to(0));
+	)
+);
+
+//rewrite to test for all things
+ut test(startDialogTests, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Dialog won't close until everything populated",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			textStrings = {};
+			s = Schedule(
+				timeout,
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+				If(current window() << get window title == "Operator inputs",
+					//pff
+					calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+					calCCsave << set text(basePath||"Files");
+					calCurveUpdate << set text(basePath||"\Files\nonCCbutRealFile.txt");
+					(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+					If(current window() << get window title == "Operator inputs",
+						//fpf
+						calCurveMain << set text(basePath||"\Files\fileDoesntExist.cc");
+						calCCsave << set text(basePath||"Files\");
+						calCurveUpdate << set text(basePath||"\Files\nonCCbutRealFile.txt");
+						(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+						If(current window() << get window title == "Operator inputs",
+							//ppf
+							calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+							calCCsave << set text(basePath||"Files\");
+							calCurveUpdate << set text(basePath||"\Files\nonCCbutRealFile.txt");
+							(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+							If(current window() << get window title == "Operator inputs",
+								//pfp
+								calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+								calCCsave << set text(basePath||"Files");
+								calCurveUpdate << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+								(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+								If(current window() << get window title == "Operator inputs",
+									//ppp
+									calCurveMain << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+									calCCsave << set text(basePath||"Files\");
+									calCurveUpdate << set text(basePath||"\Files\fakeCCfileForDialog.cc");
+									(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+									If(current window() << get window title == "Operator inputs",
+										Print("Something wrong")
+										,
+										Print("Dialog Closed Correctly")
+									)
+									,
+									Print("5Dialog closed with empty fields5")
+								)
+								,
+								Print("4Dialog closed with empty fields4")
+							)
+							,
+							Print("3Dialog closed with empty fields2")
+						)
+						,
+						Print("2Dialog closed with empty fields1")
+					)
+					,
+					Print("1Dialog closed with empty fields")
+				)
+			);
+		);
+		
+		closemodal(2);
+		ccUpdateStarts = ccUpdaterDialog();
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Dialog Closed Correctly\!""));
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          CC file saving                                 //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "D";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(savingCCfile,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Creating CSV and Rename CC",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			,
+			0, Empty()
+		);		
+		
+		fileName = "testCCfilename";
+		
+		ut assert that(Expr(IsFile(basePath||fileName||".csv")), ut equal to(0));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+		
+		saveNewCC(table1,basePath,fileName);
+		
+		ut assert that(Expr(IsFile(basePath||fileName||".csv")), ut equal to(0));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(1));
+		
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			Copy File(
+				basePath||fileName||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||fileName||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(basePath||fileName||".csv"));
+		Try(DeleteFile(basePath||fileName||".cc"));
+		
+		ut assert that(Expr(IsFile(basePath||fileName||".csv")), ut equal to(0));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+	)
+);
+
+ut test(savingCCfile,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Proper columns, organization",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			,
+			0, Empty()
+		);
+		
+		fileName = "testCCfilename";
+		
+		saveNewCC(table1,basePath,fileName);
+		ccFile = Open(basePath||fileName||".cc",
+			Import Settings(
+				End Of Line( CRLF, CR, LF ),
+				End Of Field( Comma, CSV( 0 ) ),
+				Strip Quotes( 1 ),
+				Use Apostrophe as Quotation Mark( 0 ),
+				Use Regional Settings( 0 ),
+				Scan Whole File( 1 ),
+				Treat empty columns as numeric( 0 ),
+				CompressNumericColumns( 0 ),
+				CompressCharacterColumns( 0 ),
+				CompressAllowListCheck( 0 ),
+				Labels( 1 ),
+				Column Names Start( 1 ),
+				Data Starts( 2 ),
+				Lines To Read( "All" ),
+				Year Rule( "20xx" )
+			)
+		);
+		//check col names/order
+		ccCols = ccFile << get column names(string);
+		Try(
+			Summarize(ccFile,chem = By(:"# chem+"n));
+			Summarize(ccFile,numWL = By(:"NUMBEROFWAVELENGTHS"n));
+			Summarize(ccFile,spp = By(:"species"n));
+			,
+			chem = .;
+			numWL = .;
+			spp = .;
+		);
+		
+		ut assert that(expr(ccCols), ut equal to(
+			{
+				"#  chem+",
+				"chemlot",
+				"NUMBEROFWAVELENGTHS",
+				"species",
+				"intercept",
+				"lin",
+				"quad",
+				"cubic"
+			}
+		));
+		ut assert that(Expr(chem), ut equal to({"0", "15", "40", "41", "42", "600", "601"}));
+		ut assert that(Expr(numWL), ut equal to({"1"}));
+		ut assert that(Expr(spp), ut equal to({"2", "6", "999"}));
+		ut assert that(Expr(ccFile:"# chem+"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"NUMBEROFWAVELENGTHS"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"species"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"chemlot"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"# chem+"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"NUMBEROFWAVELENGTHS"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"species"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"chemlot"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile[3,0]), ut equal to([15 59157 1 999 3 26 49 72]));
+		ut assert that(Expr(ccFile[7,0]), ut equal to([40 926003 1 2 6 29 52 75]));
+		ut assert that(Expr(ccFile[20,0]), ut equal to([42 918541 1 2 18 41 64 87]));
+		
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			Copy File(
+				basePath||fileName||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||fileName||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(basePath||fileName||".cc"));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+	)
+);
+
+ut test(savingCCfile,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Function Returns Coeff Table with correct information",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			,
+			0, Empty()
+		);	
+		
+		fileName = "testCCfilename";
+		
+		coeffTable = saveNewCC(table1,basePath,fileName);
+		
+		ccCols = coeffTable << get column names(string);
+		
+		Try(
+			Summarize(coeffTable,chem = By(:"#  chem+"n));
+			Summarize(coeffTable,numWL = By(:"NUMBEROFWAVELENGTHS"n));
+			Summarize(coeffTable,spp = By(:"species"n));
+			,
+			chem = .;
+			numWL = .;
+			spp = .;
+		);
+				
+		ut assert that(Expr(coeffTable:"chemlot"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(coeffTable:"chemlot"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(expr(ccCols), ut equal to(
+			{
+				"#  chem+",
+				"chemlot",
+				"NUMBEROFWAVELENGTHS",
+				"species",
+				"intercept",
+				"lin",
+				"quad",
+				"cubic"
+			}
+		));
+		ut assert that(Expr(chem), ut equal to({"0", "15", "40", "41", "42", "600", "601"}));
+		ut assert that(Expr(numWL), ut equal to({"1"}));
+		ut assert that(Expr(spp), ut equal to({"2", "6", "999"}));
+		ut assert that(Expr(coeffTable:"# chem+"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(coeffTable:"NUMBEROFWAVELENGTHS"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(coeffTable:"species"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(coeffTable:"chemlot"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(coeffTable:"# chem+"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(coeffTable:"NUMBEROFWAVELENGTHS"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(coeffTable:"species"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(coeffTable:"chemlot"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(coeffTable[3,0]), ut equal to([15 59157 1 999 3 26 49 72]));
+		ut assert that(Expr(coeffTable[7,0]), ut equal to([40 926003 1 2 6 29 52 75]));
+		ut assert that(Expr(coeffTable[20,0]), ut equal to([42 918541 1 2 18 41 64 87]));
+
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			baseName2 = coeffTable << get name;
+			ccUpdaterUT:saveTable(coeffTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			Copy File(
+				basePath||fileName||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||fileName||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(basePath||fileName||".cc"));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+	)
+);
+
+ut test(savingCCfile,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Proper columns, organization, with chem90data",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			,
+			0, Empty()
+		);	
+		
+		fileName = "testCCfilename";
+		
+		chem90string = "90,11156,1,777,{365,0.754,0.793,0.817},{405,0.835,0.849,0.860},{470,0.885,0.885,0.885},{560,0.896,0.896,0.896},{587,0.898,0.898,0.898},{645,0.902,0.902,0.902},{680,0.902,0.902,0.902}
+90,11625,1,777,{365,0.753,0.787,0.812},{405,0.83,0.844,0.853},{470,0.88,0.88,0.880},{560,0.894,0.894,0.894},{587,0.896,0.896,0.896},{645,0.898,0.898,0.898},{680,0.901,0.901,0.901}
+90,11935,1,777,{365,0.755,0.795,0.821},{405,0.838,0.851,0.860},{470,0.887,0.887,0.887},{560,0.9,0.9,0.900},{587,0.902,0.902,0.902},{645,0.904,0.904,0.904},{680,0.906,0.906,0.906}
+";
+		
+		saveNewCC(table1,basePath,fileName,chem90string);
+		ccFile = Open(basePath||fileName||".cc",
+			Import Settings(
+				End Of Line( CRLF, CR, LF ),
+				End Of Field( Comma, CSV( 0 ) ),
+				Strip Quotes( 1 ),
+				Use Apostrophe as Quotation Mark( 0 ),
+				Use Regional Settings( 0 ),
+				Scan Whole File( 1 ),
+				Treat empty columns as numeric( 0 ),
+				CompressNumericColumns( 0 ),
+				CompressCharacterColumns( 0 ),
+				CompressAllowListCheck( 0 ),
+				Labels( 1 ),
+				Column Names Start( 1 ),
+				Data Starts( 2 ),
+				Lines To Read( "All" ),
+				Year Rule( "20xx" )
+			)
+		);
+		ccFile << selectwhere(:"#  chem+"n == 90);
+		wrsDataFile = ccFile << Subset(
+			Selected Rows( 1 ),
+			Selected columns only( 0 ),
+			invisible
+		);
+		string1="";
+		For(j=1,j<=nrow(wrsDataFile),j++,
+			For(i=1,i<=ncol(wrsDataFile),i++,
+				string1 = string1 || Char(wrsDataFile[j,i]) || ",";
+			);
+			removefrom(string1,length(string1));
+			string1 = string1 ||"\!n";
+		);
+		wrsDataFile << close window;
+		
+		//check col names/order
+		ccCols = ccFile << get column names(string);
+		Try(
+			Summarize(ccFile,chem = By(:"# chem+"n));
+			Summarize(ccFile,numWL = By(:"NUMBEROFWAVELENGTHS"n));
+			Summarize(ccFile,spp = By(:"species"n));
+			,
+			chem = .;
+			numWL = .;
+			spp = .;
+		);
+		stringWords = Words(string1,",\!N");
+		chem90words = Words(chem90string,",\!N");
+		ut assert that(Expr(chem), ut equal to({"0", "15", "40", "41", "42", "90", "600", "601"}));
+		ut assert that(Expr(numWL), ut equal to({"1"}));
+		ut assert that(Expr(spp), ut equal to({"2", "6", "777", "999"}));
+		ut assert that(Expr(ccFile:"#  chem+"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"NUMBEROFWAVELENGTHS"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"species"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"chemlot"n << get data type), ut equal to("Numeric"));
+		ut assert that(Expr(ccFile:"#  chem+"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"NUMBEROFWAVELENGTHS"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"species"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile:"chemlot"n << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(ccFile[3,1::8]), ut equal to({15, 59157, 1, 999, "3", 26, 49, "72"}));
+		ut assert that(Expr(ccFile[7,1::8]), ut equal to({40, 926003, 1, 2, "6", 29, 52, "75"}));
+		ut assert that(Expr(ccFile[20,1::8]), ut equal to({42, 918541, 1, 2, "18", 41, 64, "87"}));
+		For(i=1,i<=nitems(stringWords),i++,
+			ut assert that(Expr(stringWords[i]), ut equal to(chem90words[i]));
+		);
+		
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			baseName2 = ccFile << get name;
+			ccUpdaterUT:saveTable(ccFile,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			Copy File(
+				basePath||fileName||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||fileName||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(basePath||fileName||".cc"));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+	)
+);
+
+ut test(savingCCfile,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Correct Format stored and retrieved from .cc file",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			table2 << set name(baseName2)
+			,
+			0, Empty()
+		);	
+		
+		fileName = "testCCfilename";
+		saveNewCC(table2,basePath,fileName);
+		ccFile = Open(basePath||fileName||".cc",
+			Import Settings(
+				End Of Line( CRLF, CR, LF ),
+				End Of Field( Comma, CSV( 0 ) ),
+				Strip Quotes( 1 ),
+				Use Apostrophe as Quotation Mark( 0 ),
+				Use Regional Settings( 0 ),
+				Scan Whole File( 1 ),
+				Treat empty columns as numeric( 0 ),
+				CompressNumericColumns( 0 ),
+				CompressCharacterColumns( 0 ),
+				CompressAllowListCheck( 0 ),
+				Labels( 1 ),
+				Column Names Start( 1 ),
+				Data Starts( 2 ),
+				Lines To Read( "All" ),
+				Year Rule( "20xx" )
+			)
+		);
+		For(i=1,i<=ncol(ccFile),i++,
+			column(ccFile,i) << Format("Best",64)
+		);
+		
+		coeffs1 = ccFile[3,5::8];
+		coeffs2 = ccFile[4,5::8];
+		
+		expectedCoeffs1 = [0.267526456763089	0.0658524989123605	-0.00648192428319835	0.000286327999431458];
+		expectedCoeffs2 = [0.267782371722913	0.0654222366071287	-0.00632751016684835	0.000276145999959228];
+		
+		For(i=1,i<=ncol(expectedCoeffs1),i++,
+			ut assert that(Expr(coeffs1[i]), ut equal to(expectedCoeffs1[i]))
+		);
+		For(i=1,i<=ncol(expectedCoeffs2),i++,
+			ut assert that(Expr(coeffs2[i]), ut equal to(expectedCoeffs2[i]))
+		);
+		
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			baseName3 = ccFile << get name;
+			ccUpdaterUT:saveTable(ccFile,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			Copy File(
+				basePath||fileName||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||fileName||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(basePath||fileName||".cc"));
+		ut assert that(Expr(IsFile(basePath||fileName||".cc")), ut equal to(0));
+	)
+);
+		/////////////////////////////////////////////////////////////
+		//         Opening Files and Check for cols                //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "E";
+ccUpdaterUT:utGroupTest = 0;	
+	
+ut test(openingFiles, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Open and return both .cc files",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		ccFiles = ccFileOpen(mainPath,updatePath);
+		
+		ut assert that(Expr(ccFiles[1] << get name), ut equal to("mainCCfile.cc"));
+		ut assert that(Expr(ccFiles[2] << get name), ut equal to("curvesToUpdateCC.cc"));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = ccFiles[1] << get name;
+			baseName2 = ccFiles[2] << get name;
+			ccUpdaterUT:saveTable(ccFiles[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(ccFiles[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(openingFiles, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Returns cc files if cols match",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		ccFiles = ccFileOpen(mainPath,updatePath);
+		
+		//cols must be same name AND same order
+		ut assert that(Expr(ccFiles[1] << get name), ut equal to("mainCCfile.cc"));
+		ut assert that(Expr(ccFiles[2] << get name), ut equal to("curvesToUpdateCC.cc"));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = ccFiles[1] << get name;
+			baseName2 = ccFiles[2] << get name;
+			ccUpdaterUT:saveTable(ccFiles[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(ccFiles[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(openingFiles, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Returns 0 if file cols don't match",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		ccFiles = ccFileOpen(mainPath,updatePath1);
+		
+		//cols must be same name AND same order
+		ut assert that(Expr(ccFiles), ut equal to(0));
+		
+	)
+);
+
+ut test(openingFiles, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Closes tables if cols don't match",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		ccFiles = ccFileOpen(mainPath,updatePath1);
+		
+		ut assert that(Expr(ntable()), ut equal to(0));
+		ut assert that(Expr(ccFiles), ut equal to(0));
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//         Joining Files together                          //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "F";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(joiningFiles,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Returns 3 tables and one string",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			,
+			0, Empty()
+		);	
+		
+		joinOutput = joinCCfiles(table1,table2);
+		
+		ut assert that(Expr(char(joinOutput[1])), ut contains pattern("DataTable\(.*"));
+		ut assert that(Expr(char(joinOutput[2])), ut contains pattern("DataTable\(.*"));
+		ut assert that(Expr(char(joinOutput[3])), ut contains pattern("DataTable\(.*"));
+		ut assert that(Expr(IsString(joinOutput[4])), ut equal to(1));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			baseName3 = joinOutput[1] << get name;
+			baseName4 = joinOutput[2] << get name;
+			baseName5 = joinOutput[3] << get name;
+			ccUpdaterUT:saveTable(joinOutput[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(joinOutput[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(joinOutput[3],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName5||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(joiningFiles,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Main Table scrubbed of chem90 and string made",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			,
+			0, Empty()
+		);	
+		
+		chem90string = "90,11156,1,777,{365,0.754,0.793,0.817},{405,0.835,0.849,0.860},{470,0.885,0.885,0.885},{560,0.896,0.896,0.896},{587,0.898,0.898,0.898},{645,0.902,0.902,0.902},{680,0.902,0.902,0.902}
+90,11625,1,777,{365,0.753,0.787,0.812},{405,0.83,0.844,0.853},{470,0.88,0.88,0.880},{560,0.894,0.894,0.894},{587,0.896,0.896,0.896},{645,0.898,0.898,0.898},{680,0.901,0.901,0.901}
+90,11935,1,777,{365,0.755,0.795,0.821},{405,0.838,0.851,0.860},{470,0.887,0.887,0.887},{560,0.9,0.9,0.900},{587,0.902,0.902,0.902},{645,0.904,0.904,0.904},{680,0.906,0.906,0.906}
+";
+		joinOutput = joinCCfiles(table1,table2);
+		
+		stringWords = Words(joinOutput[4],",\!N");
+		chem90words = Words(chem90string,",\!N");
+		
+		ut assert that(Expr(joinOutput[1] << get name), ut equal to("mainCCfile.cc_cleaned"));
+		ut assert that(Expr(char(joinOutput[1] << get rows where(:"#  chem+"n == 90))), ut equal to("[](0, 1)"));
+		ut assert that(Expr(ncol(joinOutput[1])), ut equal to(8));
+		For(i=ncol(joinOutput[1]),i>=1,i--,
+			colName = Column(joinOutput[1],i) << get name;
+			
+			ut assert that(Expr(joinOutput[1]:colName << get data type), ut equal to("Numeric"));
+			ut assert that(Expr(joinOutput[1]:colName << get modeling type), ut equal to("Continuous"));
+
+		);
+		ut assert that(Expr(stringWords), ut not({}));
+		For(i=1,i<=nitems(stringWords),i++,
+			ut assert that(Expr(stringWords[i]), ut equal to(chem90words[i]));
+		);
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			baseName3 = joinOutput[1] << get name;
+			ccUpdaterUT:saveTable(joinOutput[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(joiningFiles,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Correct Update Table and Joined Final table",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			,
+			0, Empty()
+		);	
+		
+		date = Substitute(shortdate(today()),"/","");
+		origMainFile = Substitute((table1<<getname),".cc","");
+		origUpdateFile = Substitute((table2<<getname),".cc","");
+		
+		joinOutput = joinCCfiles(table1,table2);
+		
+		ut assert that(Expr(joinOutput[2] << get name), ut equal to("curvesToUpdateCC.cc"));
+		ut assert that(Expr(joinOutput[3] << get name), ut equal to(date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"));
+		ut assert that(Expr(nrow(joinOutput[3])), ut equal to(nrow(joinOutput[1]) + 2));
+		ut assert that(Expr(nrow(joinOutput[3] << get rows where(:"Match Flag"n == 2))), ut equal to(2));
+		ut assert that(Expr(nrow(joinOutput[3] << get rows where(:"Match Flag"n == 3))), ut equal to(23));
+		ut assert that(Expr(nrow(joinOutput[3] << get rows where(:"Match Flag"n == 1))), ut equal to(387));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			baseName4 = joinOutput[2] << get name;
+			baseName5 = joinOutput[3] << get name;
+			ccUpdaterUT:saveTable(joinOutput[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(joinOutput[3],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName5||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(joiningFiles,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Correct Format/width in table columns and long coeffs in cells",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			baseName4 = table4 << get name;
+			ccUpdaterUT:saveTable(table4,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_pre",ccUpdaterUT:saveFile);
+			table3 << set name(baseName3);
+			table4 << set name(baseName4);
+			,
+			0, Empty()
+		);	
+		
+		joinOutput = joinCCfiles(table3,table4);
+		
+		coeffs1 = joinOutput[3][3,6::9];
+		coeffs2 = joinOutput[3][4,6::9];
+		
+		expectedCoeffs1 = [0.267526456763089	0.0658524989123605	-0.00648192428319835	0.000286327999431458];
+		expectedCoeffs2 = [0.267782371722913	0.0654222366071287	-0.00632751016684835	0.000276145999959228];
+		
+		For(i=1,i<=ncol(joinOutput[1]),i++,
+			ut assert that(Expr(Column(joinOutput[1],i) << get format), ut equal to(NameExpr(Format("Best", 64))))
+		);
+		For(i=1,i<=ncol(joinOutput[2]),i++,
+			ut assert that(Expr(Column(joinOutput[2],i) << get format), ut equal to(NameExpr(Format("Best", 64))))
+		);
+		For(i=1,i<=ncol(joinOutput[3]),i++,
+			ut assert that(Expr(Column(joinOutput[3],i) << get format), ut equal to(NameExpr(Format("Best", 64))))
+		);
+		For(i=1,i<=ncol(expectedCoeffs1),i++,
+			ut assert that(Expr(coeffs1[i]), ut equal to(expectedCoeffs1[i]))
+		);
+		For(i=1,i<=ncol(expectedCoeffs2),i++,
+			ut assert that(Expr(coeffs2[i]), ut equal to(expectedCoeffs2[i]))
+		);
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table4,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			baseName5 = joinOutput[1] << get name;
+			baseName6 = joinOutput[2] << get name;
+			baseName7 = joinOutput[3] << get name;
+			ccUpdaterUT:saveTable(joinOutput[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName5||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(joinOutput[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName6||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(joinOutput[3],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName7||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//         Reporting out changes                           //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "G";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Outputs Single Table",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		show(table1,table2,table3);
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			table3 << set name(baseName3);
+			,
+			0, Empty()
+		);	
+		
+		rptTable = ccReportOutput(table1,table2,table3);
+		show(rptTable);
+		ut assert that(Expr(char(rptTable)), ut contains pattern("DataTable\(.*"));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+	
+	)
+);
+
+//will need a test in case there is no difference, but not now
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Report Data Example1",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			table3 << set name(baseName3);
+			,
+			0, Empty()
+		);	
+		
+		rptTable = ccReportOutput(table1,table2,table3);
+		
+		ut assert that(Expr(nrow(rptTable)), ut equal to(25));
+		ut assert that(Expr(rptTable:"Status"n[1::2]), ut every item("Added"));
+		ut assert that(Expr(rptTable:"Status"n[3::25]), ut every item("Modified"));
+		For(i=1,i<=2,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(9));
+		);
+		For(i=3,i<=25,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(69));
+		);
+		For Each Row(rptTable,
+			If(
+				rptTable:"Status"n == "Added",
+				ut assert that(Expr(IsNumber(rptTable:"#  chem+"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"#  chem+ 2"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"chemlot"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"chemlot 2"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"species"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"species 2"n)), ut equal to(1));
+				,
+				rptTable:"Status"n == "Modified",
+				ut assert that(Expr(rptTable:"#  chem+"n), ut equal to(rptTable:"#  chem+ 2"n));
+				ut assert that(Expr(rptTable:"chemlot"n), ut equal to(rptTable:"chemlot 2"n));
+				ut assert that(Expr(rptTable:"species"n), ut equal to(rptTable:"species 2"n));
+				,
+				rptTable:"Status"n == "Deleted",
+				ut assert that(Expr(IsNumber(rptTable:"#  chem+ 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"#  chem+"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"chemlot 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"chemlot"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"species 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"species"n)), ut equal to(1));
+			)
+		);
+		ut assert that(Expr(rptTable[1,6::13]), ut equal to([600 9999 1 999 800 801 802 803]));
+		ut assert that(Expr(rptTable[2,6::13]), ut equal to([601 2223 1 6 700 701 702 703]));
+		ut assert that(Expr(rptTable[3,6::13]), ut equal to([0	61758	1	999	1	24	47	70]));
+		ut assert that(Expr(rptTable[3,19::22]), ut equal to([0.09351345	0.003976338	-5.311346e-6	3.439012e-9]));
+		ut assert that(Expr(rptTable[9,6::13]), ut equal to([40	926003	1	999	7	30	53	76]));
+		ut assert that(Expr(rptTable[9,19::22]), ut equal to([0.9118942	-0.007456253	0.0000348	-7.01e-8]));
+		ut assert that(Expr(rptTable[14,6::13]), ut equal to([41	926712	1	2	12	35	58	81]));
+		ut assert that(Expr(rptTable[14,19::22]), ut equal to([0.2941395	0.05632788	-0.005469304	0.000252267]));
+		ut assert that(Expr(rptTable[18,6::13]), ut equal to([42	908391	1	2	16	39	62	85]));
+		ut assert that(Expr(rptTable[18,19::22]), ut equal to([-0.1002413	0.01134233	-0.000062576	0.000000158]));
+		ut assert that(Expr(rptTable[24,6::13]), ut equal to([42	931161	1	2	22	45	68	91]));
+		ut assert that(Expr(rptTable[24,19::22]), ut equal to([-0.1549975	0.01181089	-0.000062756	0.000000144]));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+	)
+);
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Report Data Example1_make Deletions",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		table3 << delete rows([42,118,153,154]);
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			table3 << set name(baseName3);
+			,
+			0, Empty()
+		);	
+		
+		rptTable = ccReportOutput(table1,table2,table3);
+		
+		ut assert that(Expr(nrow(rptTable)), ut equal to(29));
+		ut assert that(Expr(rptTable:"Status"n[1::2]), ut every item("Added"));
+		ut assert that(Expr(rptTable:"Status"n[3::25]), ut every item("Modified"));
+		For(i=1,i<=2,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(9));
+		);
+		For(i=3,i<=25,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(69));
+		);
+		For(i=26,i<=29,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(3));
+		);
+		For Each Row(rptTable,
+			If(
+				rptTable:"Status"n == "Added",
+				ut assert that(Expr(IsNumber(rptTable:"#  chem+"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"#  chem+ 2"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"chemlot"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"chemlot 2"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"species"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"species 2"n)), ut equal to(1));
+				,
+				rptTable:"Status"n == "Modified",
+				ut assert that(Expr(rptTable:"#  chem+"n), ut equal to(rptTable:"#  chem+ 2"n));
+				ut assert that(Expr(rptTable:"chemlot"n), ut equal to(rptTable:"chemlot 2"n));
+				ut assert that(Expr(rptTable:"species"n), ut equal to(rptTable:"species 2"n));
+				,
+				rptTable:"Status"n == "Deleted",
+				ut assert that(Expr(IsNumber(rptTable:"#  chem+ 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"#  chem+"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"chemlot 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"chemlot"n)), ut equal to(1));
+				ut assert that(Expr(IsNumber(rptTable:"species 2"n)), ut equal to(1));
+				ut assert that(Expr(IsMissing(rptTable:"species"n)), ut equal to(1));
+			)
+		);
+		ut assert that(Expr(rptTable[1,6::13]), ut equal to([600 9999 1 999 800 801 802 803]));
+		ut assert that(Expr(rptTable[2,6::13]), ut equal to([601 2223 1 6 700 701 702 703]));
+		ut assert that(Expr(rptTable[3,6::13]), ut equal to([0	61758	1	999	1	24	47	70]));
+		ut assert that(Expr(rptTable[3,19::22]), ut equal to([0.09351345	0.003976338	-5.311346e-6	3.439012e-9]));
+		ut assert that(Expr(rptTable[9,6::13]), ut equal to([40	926003	1	999	7	30	53	76]));
+		ut assert that(Expr(rptTable[9,19::22]), ut equal to([0.9118942	-0.007456253	0.0000348	-7.01e-8]));
+		ut assert that(Expr(rptTable[14,6::13]), ut equal to([41	926712	1	2	12	35	58	81]));
+		ut assert that(Expr(rptTable[14,19::22]), ut equal to([0.2941395	0.05632788	-0.005469304	0.000252267]));
+		ut assert that(Expr(rptTable[18,6::13]), ut equal to([42	908391	1	2	16	39	62	85]));
+		ut assert that(Expr(rptTable[18,19::22]), ut equal to([-0.1002413	0.01134233	-0.000062576	0.000000158]));
+		ut assert that(Expr(rptTable[24,6::13]), ut equal to([42	931161	1	2	22	45	68	91]));
+		ut assert that(Expr(rptTable[24,19::22]), ut equal to([-0.1549975	0.01181089	-0.000062756	0.000000144]));
+		ut assert that(Expr(rptTable[26,6::13]), ut equal to([. . . . . . . .]));
+		ut assert that(Expr(rptTable[26,15::22]), ut equal to([15	60678	1	999	0.0000546821	0.0003270246	-2.73514e-5	1.037207e-6]));
+		ut assert that(Expr(rptTable[27,6::13]), ut equal to([. . . . . . . .]));
+		ut assert that(Expr(rptTable[27,15::22]), ut equal to([40	920303	1	2	1.045619	-0.009523735	0.0000535901	-0.000000124]));
+		ut assert that(Expr(rptTable[28,6::13]), ut equal to([. . . . . . . .]));
+		ut assert that(Expr(rptTable[28,15::22]), ut equal to([40	926753	1	999	1.001025	-0.009815796	0.0000553719	-0.000000127]));
+		ut assert that(Expr(rptTable[29,6::13]), ut equal to([. . . . . . . .]));
+		ut assert that(Expr(rptTable[29,15::22]), ut equal to([40	927643	1	2	1.08958	-0.01342183	0.0000933898	-0.000000252]));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Report Cleanup(file ref, chem type) and Col Order",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		table3[1,2] = .; // setting chem value to missing to trigger true to array result
+		table3[2,2] = .;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			table3 << set name(baseName3);
+			,
+			0, Empty()
+		);	
+		
+		rptTable = ccReportOutput(table1,table2,table3);
+		
+		ut assert that(Expr((rptTable << get column names(string))[1::5]), ut equal to({"Main File", "Update File", "Final ccFile", "Status", "Chem Type"}));
+		ut assert that(Expr(rptTable:"Main File"n << get as matrix), ut every item("mainCCfileClean"));
+		ut assert that(Expr(rptTable:"Update File"n << get as matrix), ut every item("curvesToUpdateCC.cc"));
+		ut assert that(Expr(rptTable:"Final ccFile"n << get as matrix), ut every item("finalCCoutput"));
+		ut assert that(Expr(rptTable:"Chem Type"n << get as matrix), ut equal to({"No Assay Code", "No Assay Code", "GLU", "CREA", "CREA", "CL", "CL", "CL", "CL","K", "K", "K", "K", "K", "K", "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA"}));
+		ut assert that(Expr(rptTable:"Chem Type"n << get formula), ut empty());
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Report Hidden Columns",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table1 << get name;
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table2 << get name;
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table3 << get name;
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table1 << set name(baseName1);
+			table2 << set name(baseName2);
+			table3 << set name(baseName3);
+			,
+			0, Empty()
+		);	
+		
+		rptTable = ccReportOutput(table1,table2,table3);
+		
+		ut assert that(Expr(rptTable:"NUMBEROFWAVELENGTHS"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"species"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"intercept"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"lin"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"quad"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"cubic"n << get hidden), ut equal to(1));
+		
+		ut assert that(Expr(rptTable:"NUMBEROFWAVELENGTHS 2"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"species 2"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"intercept 2"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"lin 2"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"quad 2"n << get hidden), ut equal to(1));
+		ut assert that(Expr(rptTable:"cubic 2"n << get hidden), ut equal to(1));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table1,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table2,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table3,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);	
+		
+	)
+);
+
+ut test(reportOut,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Report Data Example2",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = table4 << get name;
+			ccUpdaterUT:saveTable(table4,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_pre",ccUpdaterUT:saveFile);
+			baseName2 = table5 << get name;
+			ccUpdaterUT:saveTable(table5,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_pre",ccUpdaterUT:saveFile);
+			baseName3 = table6 << get name;
+			ccUpdaterUT:saveTable(table6,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_pre",ccUpdaterUT:saveFile);
+			table4 << set name(baseName1);
+			table5 << set name(baseName2);
+			table6 << set name(baseName3);
+			,
+			0, Empty()
+		);
+		
+		rptTable = ccReportOutput(table4,table5,table6);
+		
+		ut assert that(Expr(nrow(rptTable)), ut equal to(2));
+		ut assert that(Expr(rptTable:"Status"n << get as matrix), ut every item("Modified"));
+		
+		For(i=1,i<=2,i++,
+			ut assert that(Expr(get_cell_color( rptTable, "Status", i )), ut equal to(69));
+		);
+		ut assert that(Expr(rptTable:"#  chem+"n), ut equal to(rptTable:"#  chem+ 2"n));
+		ut assert that(Expr(rptTable:"chemlot"n), ut equal to(rptTable:"chemlot 2"n));
+		ut assert that(Expr(rptTable:"species"n), ut equal to(rptTable:"species 2"n));
+		ut assert that(Expr(rptTable[1,6::13]), ut equal to([41	910112	1	2	0.267526456763089	0.0658524989123605	-0.00648192428319835	0.000286327999431458]));
+		ut assert that(Expr(rptTable[1,19::22]), ut equal to([0.2805869	0.06326479	-0.006308133	0.000286328]));
+		ut assert that(Expr(rptTable[2,6::13]), ut equal to([41	910112	1	999	0.267782371722913	0.0654222366071287	-0.00632751016684835	0.000276145999959228]));
+		ut assert that(Expr(rptTable[2,19::22]), ut equal to([0.280762	0.06289576	-0.006159899	0.000276146]));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			ccUpdaterUT:saveTable(table4,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table5,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			ccUpdaterUT:saveTable(table6,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = rptTable << get name;
+			ccUpdaterUT:saveTable(rptTable,ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			,
+			0, Empty()
+		);
+		
+	)
+);
+
+
+		/////////////////////////////////////////////////////////////
+		//          Full Monty                                     //
+		/////////////////////////////////////////////////////////////
+ccUpdaterUT:utGroup = "H";
+ccUpdaterUT:utGroupTest = 0;
+
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Code for 'Main'_LogPrintOnInclude",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"CC Updater script was included from another source\!""));
+		
+	)
+);
+		
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Code for 'Main'_canceled",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				//phbrDataPath << Set Text(table1Path,runscript(1));
+				//ccSaveFolder << Set Text("D:\JSL Development\Official JMP Addin Working\UnitTesting\IDEXX_SlideCal_Tools\CalibCalc_PHBR_swt-T6-0016233-00_UT\Files\");
+				//buildNumberText << Set Selected(22);
+				
+				(current window() << xpath("//ButtonBox[text()='Cancel']")) << click;
+			);
+		);
+		//date = shortdate(today());
+		//substituteinto(date,"/","");
+		
+		closemodal(2);
+		
+		//trackUsage(u,addinID);
+
+		If( checkVersion( minJMPver ) == 1,
+			
+			ccStarts = ccUpdaterDialog();
+			If(ccStarts == 0,
+				Print("Dialog Canceled or X'd out of")
+				,
+				ccUpdater(ccStarts["calCurveMain"],ccStarts["calCurveUpdate"],ccStarts["calCCsave"]);
+			)
+			,
+			wrongVer( minJMPver );
+		);
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Dialog Canceled or X'd out of\!""));
+		
+	)
+);
+
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Code for 'Main'_wrong JMP Ver",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				If(current window() << get window title == "Requires JMP 99",
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+					Print("Correct Version Dialog");
+					,
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+					Print("Wrong Dialog Called");
+				)
+			);
+		);
+		//date = shortdate(today());
+		//substituteinto(date,"/","");
+		
+		closemodal(2);
+		
+		//trackUsage(u,addinID);
+
+		If( checkVersion( "99" ) == 1,
+			
+			ccStarts = ccUpdaterDialog();
+			If(ccStarts == 0,
+				Print("Dialog Canceled or X'd out of")
+				,
+				ccUpdater(ccStarts["calCurveMain"],ccStarts["calCurveUpdate"],ccStarts["calCCsave"]);
+			)
+			,
+			wrongVer( "99" );
+		);
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Correct Version Dialog\!""));
+		
+	)
+);
+
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Code for 'Main'_OK'd",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				calCurveMain << Set Text(mainPath);
+				calCurveUpdate << Set Text(updatePath);
+				calCCsave << Set Text(folderPath);
+				
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+			);
+		);
+		date = shortdate(today());
+		substituteinto(date,"/","");
+		origMainFile = "mainCCfile";
+		origUpdateFile = "curvesToUpdateCC";
+		
+		closemodal(2);
+		
+		//trackUsage(u,addinID);
+
+		If( checkVersion( minJMPver ) == 1,
+			
+			ccStarts = ccUpdaterDialog();
+			If(ccStarts == 0,
+				Print("Dialog Canceled or X'd out of")
+				,
+				ccUpdater(ccStarts["calCurveMain"],ccStarts["calCurveUpdate"],ccStarts["calCCsave"]);
+			)
+			,
+			wrongVer( minJMPver );
+		);
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut not("\!"Dialog Canceled or X'd out of\!""));
+		
+		ut assert that(Expr(IsFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc")), ut equal to(1));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			Copy File(
+				ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"
+			);
+			,
+			0, Empty()
+		);
+		Try(DeleteFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"));
+		ut assert that(Expr(IsFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc")), ut equal to(0));
+		
+	)
+);
+
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Checking Output Table Names",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				calCurveMain << Set Text(mainPath);
+				calCurveUpdate << Set Text(updatePath);
+				calCCsave << Set Text(folderPath);
+				
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+			);
+		);
+		date = shortdate(today());
+		substituteinto(date,"/","");
+		origMainFile = "mainCCfile";
+		origUpdateFile = "curvesToUpdateCC";
+		
+		closemodal(2);
+		
+		ccStarts = ccUpdaterDialog();
+		updateTables = ccUpdater(ccStarts["calCurveMain"],ccStarts["calCurveUpdate"],ccStarts["calCCsave"]);
+		
+		ut assert that(Expr(updateTables[1] << get name), ut equal to("mainCCfile.cc_cleaned"));
+		ut assert that(Expr(updateTables[2] << get name), ut equal to("curvesToUpdateCC.cc"));
+		ut assert that(Expr(updateTables[3] << get name), ut equal to(date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"));
+		ut assert that(Expr(updateTables[4] << get name), ut equal to("CC Update Report"));
+		
+		Match(ccUpdaterUT:saveFile,
+			1,
+			baseName1 = updateTables[1] << get name;
+			ccUpdaterUT:saveTable(updateTables[1],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName1||"_post",ccUpdaterUT:saveFile);
+			baseName2 = updateTables[2] << get name;
+			ccUpdaterUT:saveTable(updateTables[2],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName2||"_post",ccUpdaterUT:saveFile);
+			baseName3 = updateTables[3] << get name;
+			ccUpdaterUT:saveTable(updateTables[3],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName3||"_post",ccUpdaterUT:saveFile);
+			baseName4 = updateTables[4] << get name;
+			ccUpdaterUT:saveTable(updateTables[4],ccUpdaterUT:savePath,ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||baseName4||"_post",ccUpdaterUT:saveFile);
+			Copy File(
+				ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"
+				,
+				ccUpdaterUT:savePath||ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest)||"_"||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"
+			);
+			,
+			0, Empty()
+		);
+		
+		Try(DeleteFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"));
+		ut assert that(Expr(IsFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc")), ut equal to(0));
+		
+	)
+);
+
+ut test(fullMonty, ccUpdaterUT:utGroup||Char(ccUpdaterUT:utGroupTest+1)||"_Checks for correct fail with nonmatching columns",
+	Expr(
+		ccUpdaterUT:utGroupTest = ccUpdaterUT:utGroupTest + 1;
+		
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				calCurveMain << Set Text(mainPath);
+				calCurveUpdate << Set Text(updatePath1);
+				calCCsave << Set Text(folderPath);
+				
+				(current window() << xpath("//ButtonBox[text()='Ok']")) << click;
+			);
+		);
+		closemodal1 = Function({timeout},
+			t = Schedule(
+				timeout,
+				If(current window() << get window title == "Fail: Column Matching",
+					Print("Col Match Fail Appeared");
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+				)
+			);
+		);
+		date = shortdate(today());
+		substituteinto(date,"/","");
+		origMainFile = "mainCCfile";
+		origUpdateFile = "curvesToUpdateCC";		
+		closemodal(2);
+		
+		ccStarts = ccUpdaterDialog();
+		closemodal1(2);
+		updateTables = ccUpdater(ccStarts["calCurveMain"],ccStarts["calCurveUpdate"],ccStarts["calCCsave"]);
+		
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Col Match Fail Appeared\!""));
+		ut assert that(Expr(updateTables), ut equal to(0));
+		
+		Try(DeleteFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc"));
+		ut assert that(Expr(IsFile(ccStarts["calCCsave"]||date||"_"||origMainFile||"_with_"||origUpdateFile||"_ccUpdate"||".cc")), ut equal to(0));
+	)
+);
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          Finishing Off                                  //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+Match(ccUpdaterUT:saveFile,
+	0, ccUpdaterUT << delete,
+	1, ut global reporter:save report(ccUpdaterUT:savePath||ccUpdaterUT:reportName); ccUpdaterUT << delete;
+);

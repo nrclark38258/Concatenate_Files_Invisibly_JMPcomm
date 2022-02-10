@@ -1,0 +1,34 @@
+// Concatenate Invisibly Change log
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//------------------Revision History for script(s)---------------------
+//
+//  r7.0.1 NClark 101421
+//      -> Concat Invis
+//	    6.9.0.1 NClark 101321
+//		    -> removed the remove of caption (one doesn't exist anymore)
+//		    -> all files imported are invisible ( << show window(0)) to keep tables from flashing up
+//		    -> after import and concatenation, windows shown again
+//		    -> "File Name" column brought to first spot for all tables
+//		    -> Null column removed, if present, at end of table
+//			    -> Null column needs 100% null values and named as thought it's just a new column "Colum " || ncol()+1
+//      -> Help File
+//          -> Updated for changes listed in Concat Invis update, above
+//  r7 NClark 100921
+//      -> Concat Invis
+//	       6.9.0.0 NClark 100921
+//		    -> removed change default stuff from include If() and moved it to change default script
+//		    -> Updated check for vars to default set them if they all come up missing
+//		    -> deprecatred old ConcatInvis option for only MFI concatenation
+//		    -> replaced 'method' with Forcing concatenation vs Stacking Similar files
+//			    -> Designed so Method "1" = force concatenate which was the default for ConcatInvis option
+//		    -> Updated dialog to show 'Concat All' and 'Concat Similar', but var name and number affiliations don't change
+//      -> Change Default
+//	        1.2 NClark 020420
+//          -> Added the code to do the changes w/o using the include for of original script
+//          -> Updated check for vars to default set them if they all come up missing  
+//
+//----------------------------------------------------------------------

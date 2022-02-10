@@ -1,0 +1,2072 @@
+//Author(s)
+//NClark, ZHelm, SDarling, JFaller
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calibrates QSDMA lots
+
+//------------------Revision History for both script and Help File--
+//
+//	1.0 NClark, SDarling, ZHelm, JFaller xxxxxx
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+//-----------Variable Declarations (above Main for easy access)--
+
+//tested
+	If(HostIs("MAC"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("USERNAME");
+	);
+	addinID = "com.idexx.RoswellQCTools_LYTES_calibration";
+
+	minJMPver = "15.2";
+
+	//assaymidpoint
+	assayMidPoint = Associative Array(
+		{
+			{"40", 115},
+			{"41", 4.3},
+			{"42", 153},
+			{"CL", 115},
+			{"K", 4.3},
+			{"NA", 153}			
+		}
+	);
+	// range lo, hi
+	assayRange = Associative Array(
+		{
+			{"40", {50, 160}},
+			{"41", {0.8, 10}},
+			{"42", {85, 180}},
+			{"CL", {50, 160}},
+			{"K", {0.8, 10}},
+			{"NA", {85, 180}}		
+		}
+	);
+	//cubic coeffs for corrected 3P
+	assayCorrectedCubic = Associative Array(
+		{
+			{"40", Associative Array(
+					{
+						{"int", 11.0422244319215},
+						{"lin", 0.631429652798366},
+						{"quad", 0.00384826612677856},
+						{"cub", -0.0000126863381553078}		
+					}
+				)
+			},
+			{"41", Associative Array(
+					{
+						{"int", (0.491047025197684 + 0.01)},
+						{"lin", 0.589025966029642},
+						{"quad", 0.0928461121150412},
+						{"cub", -0.00594812663885595}		
+					}
+				)
+			},
+			{"42", Associative Array(
+					{
+						{"int", 80.2669819780055},
+						{"lin", -1.01470981530239},
+						{"quad", 0.0162340428546581},
+						{"cub", -0.0000421742221477125}	
+					}
+				)
+			},
+			{"CL", Associative Array(
+					{
+						{"int", 11.0422244319215},
+						{"lin", 0.631429652798366},
+						{"quad", 0.00384826612677856},
+						{"cub", -0.0000126863381553078}		
+					}
+				)
+			},
+			{"K", Associative Array(
+					{
+						{"int", (0.491047025197684 + 0.01)},
+						{"lin", 0.589025966029642},
+						{"quad", 0.0928461121150412},
+						{"cub", -0.00594812663885595}		
+					}
+				)
+			},
+			{"NA", Associative Array(
+					{
+						{"int", 80.2669819780055},
+						{"lin", -1.01470981530239},
+						{"quad", 0.0162340428546581},
+						{"cub", -0.0000421742221477125}		
+					}
+				)
+			}
+		}
+	);
+
+//tested above ... add new below
+	/* AR threshold EQN coeffs
+	a + b * :"RepCount"n + c *
+	:"Threshold Median AR"n + (:"RepCount"n - 7) * ((:"Threshold Median AR"n + d)
+	* e)
+	*/
+	arThresholdCoeffs = Associative Array(
+		{
+			{40, Associative Array(
+					{
+						{"a",0.00145270679520435},
+						{"b",-0.0000890475056397184},
+						{"c",0.00137756746403748},
+						{"d",-0.451724816698737},
+						{"e",-0.0000869119658323121}
+					}
+				)
+			},
+			{41, Associative Array(
+					{
+						{"a",0.000445919607298063},
+						{"b",-0.0000677707995388024},
+						{"c",0.00262129294387304},
+						{"d",-0.42886169898018},
+						{"e",-0.000160660681860337}
+					}
+				)
+			},
+			{42, Associative Array(
+					{
+						{"a",0.000948534702861681},
+						{"b",-0.000115175338670205},
+						{"c",0.0025543689215949},
+						{"d",-0.688722947498828},
+						{"e",-0.000161335526677608}
+					}
+				)
+			}
+		}
+	);
+//-----------/Variable Declarations-----------------------
+
+//INCLUDES GO HERE
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+	/////////////////////////////////////////
+	//       Support functions             //
+	/////////////////////////////////////////
+//TESTED FUNCTIONS
+checkVersion = Function( {minVer},
+	{default local},
+	currVer = JMP Version();
+	currWords = words(currVer,".");
+	minWords = words(minVer,".");
+	minBackHalf = If(nitems(minWords)==1,"0",concatitems(minWords[2::nitems(minWords)],""));
+	backHalf = If(nitems(currWords)==1,"0",concatitems(currWords[2::nitems(currWords)],""));
+	newNumVer = Num(currWords[1]||"."||backHalf);
+	newMinVer = Num(minWords[1]||"."||minBackHalf);
+	
+	If(newNumVer >= newMinVer, Return(1),Return(0));
+);
+
+wrongVer = Function( {maxVer},
+	{Default Local},
+	New Window( "Requires JMP " || Char( maxVer ),
+		<<Modal,
+		Text Box( "This addin requires the used of JMP " || Char( maxVer ) || "+" ),
+		Button Box( "OK" )
+	)
+);
+
+factorFinder = Function( {number},
+	{default local}, 
+	
+	a = number;
+	b = [];
+	b |/= a;
+	While( Modulo( a, 2 ) == 0,
+		a = a / 2;
+		b |/= a;
+	);
+	b |/= number/b;
+	
+	table = New Table( "Factor Table", <<Add Rows( N Rows( b ) ), New Column( "Factors", Numeric, Continuous, Set Values( b ) ),invisible );
+	table << Sort( Replace Table, By( :Factors ) );
+	table << Select Where( :Factors == 1 ) << Delete Rows;
+	Return( table );
+);
+
+//UNTESTED FUNCTIONS
+//nate created, needs to test
+preparation = Function( {tableName, instrumentIDcolumn}, {default local},
+	
+	//variable shortening
+	instID = instrumentIDcolumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameIDCol = EvalInsert(":\!"^instID^\!"n");
+	
+	parseIDCol = Parse(EvalInsert(":\!"^instID^\!"n"));
+
+	//this will recode an existing Inst Type column with hopefully the correct layout
+	Try(
+		IsScriptable(Column(tableName, "Inst Type"));
+		tableName << Recode Column(
+			:"Inst Type"n,
+			{lower_rcNow = Lowercase( _rcNow ); Map Value(
+				lower_rcNow,
+				{"catalyst dx", "ctdx", "catdx", "ctdx", "cat dx", "ctdx", "catalystdx", "ctdx", 
+				"catone", "cat1", "cat one", "cat1", "catalyst one", "cat1", "catalystone", "cat1", "catalyst1", "cat1", "catalyst 1", "cat1"},
+				Unmatched( lower_rcNow )
+			)},
+			Target Column(:"Inst Type"n)
+		);
+		,
+		tableName << new column("Inst Type",Character,Nominal,
+			Formula(
+				Match(Substr(parseIDCol,1,4),
+					"CTDX", "ctdx"
+					,
+					"CAT1", "cat1"
+				)
+			)
+		);
+		tableName:"Inst Type"n << delete formula;
+	);
+
+	Return(tableName);
+);
+
+//added by nate to turn Chem Types into Chem Codes
+//technically needs to be tested ... and eventually moved to libraries
+assayTypes = Function({},{default local},
+	assayTyp = Associative Array(
+		{
+			{"GLU",00},
+			{"BUN",01},
+			{"CA",03},
+			{"URIC",05},
+			{"TP",06},
+			{"TRIG",07},
+			{"CHOL",08},
+			{"ALB",09},
+			{"NH3",10},
+			{"PHOS",12},
+			{"TBIL",14},
+			{"CREA",15},
+			{"FRU",16},
+			{"CRP",17},
+			{"SDMA",18.04},
+			{"BA",21},
+			{"PROG",23},
+			{"PHBR",25},
+			{"TT4",28.30},
+			{"MG",32},
+			{"LAC",35},
+			{"CL",40},
+			{"K",41},
+			{"NA",42},
+			{"UPRO",54},
+			{"ALTV",56},
+			{"TCO2",57},
+			{"LIPA",59},
+			{"AMYL",60},
+			{"ALT",62},
+			{"LDH",63},
+			{"CK",64},
+			{"ALKP",65},
+			{"GGT",67},
+			{"UCRE",70},
+			{"AST",73},
+			{"WRS",90},
+			{.,-999}
+		}
+	);
+	Return(assayTyp)
+);
+
+
+//nate brought in, from Tim's function probably won't be tested specifically
+Recursething = Function( {resultlist, threshold},
+	{default local},
+	//**********recursive function to create the final result list*********
+
+	TempMedian = Median( resultlist );
+	TempMean = Mean( resultlist );
+	TempN = Length( resultlist );
+	If( TempN < 5,
+		Return( {"Fail"} ),
+		If( Abs( TempMedian - TempMean ) > threshold,
+			If( TempMedian - TempMean < 0,
+				resultlist = Remove( resultlist, TempN, 1 ),
+				resultlist = Remove( resultlist, 1, 1 )
+			);
+			resultlist = Recursething( resultlist, threshold );
+		,
+			Return( resultlist )
+		);
+		Return( resultlist );
+	);
+);
+
+	/////////////////////////////////////////
+	//       Main functions                //
+	/////////////////////////////////////////
+//TESTED MAIN FUNCTIONS
+
+//UNTESTED MAIN FUNCTIONS
+calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypecol, instTypecol, fitType, fitType2},
+	{default local}, 
+	
+	/*table = the calibration data table
+	posCol = the sub lot position identification
+	respCol = intended to be AR
+	fluidCol = to identify concentration for calibration purposes
+	slideLotvar = the slide lot that excludes the sublot field
+	fitType = the fit form specific to the assay*/
+	
+	parseColNamesublot = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	parseColNamechem = Parse( Eval Insert( ":name(\!"^chemTypecol^\!" )" ) );
+	parseColNameinst = Parse( Eval Insert( ":name(\!"^instTypecol^\!" )" ) );
+	
+	colNameinst = Eval Insert( ":name(\!"^instTypecol^\!" )" );
+	colNamechem = Eval Insert( ":name(\!"^chemTypecol^\!" )" );
+	colNamesublot = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamedose = Eval Insert( ":name(\!"^fluidCol^\!" )" );
+	
+	If(
+		fitType == "3P",
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+				Fit Exponential 3P
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;, 
+	
+		fitType == "Rodbard", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+				Fit Logistic 4P Rodbard
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;, 
+	
+		fitType == "Quad", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+				Fit Quadratic
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;, 
+	
+		fitType == "Linear", 
+	
+			calFit = table << Fit Curve(
+				Y( Parse( colNameresponse ) ),
+				X( Parse( colNamedose ) ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+				Fit Linear
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;, 
+	
+		fitType == "Cubic", 
+	
+			calFit = table << Fit Curve(
+				Y( parseColNameresponse ),
+				X( parseColNamedose ),
+				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+				Fit Cubic
+			);
+			Wait( 0 );
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+			Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;, 
+		
+		fitType == "Cubic-3P", 
+			/////call the Jesse function here
+			
+			Empty()
+	);
+	
+	If( fitType2 == "Master",
+		dt_Calparams1 = dt_Calparams << Summary(
+			Group( :Parameter, parseColNamecoating, parseColNamechem, parseColNameinst ),
+			Median( :Estimate ),
+			Link to Original Data Table( 0 ),
+			Invisible
+		);
+		dt_Calparams << Close Window;
+		dt_Calparams2 = dt_Calparams1 << Split(
+			Split( :Name( "Median(Estimate)" ) ),
+			Split By( :Parameter ),
+			Group( parseColNamecoating, parseColNamechem, parseColNameinst ),
+			Remaining Columns( Drop All )
+		);
+		dt_Calparams = dt_Calparams2;
+		dt_Calparams1 << Close Window;
+	,
+		dt_Calparams << Delete Columns( 5, 6, 7, 8, 9 )
+	);
+	Return( dt_Calparams );
+);
+
+subLotcharFunc = Function( {table, posCol, respCol, slideLotvar, chemTypecol, lamda, cont},
+	{default local}, 
+	
+	/*table = the loop qual data table
+	posCol = the sub lot positions are going to correct around
+	respCol = intended to be AR
+	fluidCol = to cover in the event we have multiple fluid levels in the data this identifies unique fluids
+	slideLotvar = the slide lot that excludes the sublot field
+	cont = the type of sublot pattern we are correcting for*/
+	
+	parseColNamesublot = Parse( Eval Insert( "^table^:name(\!"^posCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( "^table^:name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( "^table^:name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( "^table^:name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	parseColNamechem = Parse( Eval Insert( "^table^:name(\!"^chemTypecol^\!" )" ) );
+	
+	colNamechem = Eval Insert( ":name(\!"^chemTypecol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamesublot = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	If( cont == "Yes", 
+	
+		dtSubsum2 = table << Summary(
+			Group( parseColNamecoating, parseColNamechem ),
+			Freq( "None" ),
+			Weight( "None" ),
+			Link to original data table( 0 ),
+			Invisible
+		);
+	
+		posCount = Max( Column( table, posCol ) << Get Values );
+	
+		dtTempcount = New Table( "Arbritrary Positions", New Column( posCol, Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
+	
+		dtTempcount << New Column( "Sublot Position_Char",
+			Character,
+			Nominal,
+			Set Formula( If( parseColNamesublot < 10, "0" || Char( parseColNamesublot ), Char( parseColNamesublot ) ) )
+		);
+		Column( dtTempcount, "Sublot Position_Char" ) << Delete Formula;
+		dtTempcount << New Column( posCol || "_Predicted Correction", Numeric, Continuous );
+	
+		dtSubsum = dtSubsum2 << Join( With( dtTempcount ), Cartesian Join, Invisible );
+		dtSubsum2 << Close Window;
+		dtTempcount << Close Window;
+		
+		splineFit = table << Bivariate(
+			Y( Parse( colNameresponse ) ),
+			X( Parse( colNamesublot ) ),
+			By( Parse( colNamecoating ), Parse( colNamechem ) ),
+			Fit Spline( lamda, {Line Color( {212, 73, 88} )} )
+		);
+	
+		splineFit << (Curve[1] << Save Predicteds);
+	
+		splineFormula = Column( table, "Spline Predictor for " || respCol || " By " || slideLotvar || " By " || chemTypecol ) << Get Formula;
+	
+		Column( dtSubsum, posCol || "_Predicted Correction" ) << Set Formula( Name Expr( splineFormula ) );
+		splineFit << Close Window;
+	, 
+	
+		dtSubsum = table << Summary(
+			Group( parseColNamesublot, parseColNamecoating, parseColNamechem ),
+			Mean( parseColNameresponse ),
+			Freq( "None" ),
+			Weight( "None" ),
+			Link to original data table( 0 )
+		);
+
+	);
+	Return( dtSubsum );
+);
+
+subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx, posColy, respCol, fluidCol, slideLotvar, chemTypecol, fitType},
+	{default local}, 
+	/*table1 = sub lot characterization function output
+	table2 = calibration function output
+	posCol = the sub lot position identification
+	respCol = intended to be AR
+	slideLotvar = the slide lot that excludes the sublot field*/
+	
+	parseColNamesublotx = Parse( Eval Insert( ":name(\!"^posColx^\!" )" ) );
+	parseColNamesubloty = Parse( Eval Insert( ":name(\!"^posColy^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	parseColNamechem = Parse( Eval Insert( ":name(\!"^chemTypecol^\!" )" ) );
+	
+	colNamechem = Eval Insert( ":name(\!"^chemTypecol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamesublotx = Eval Insert( ":name(\!"^posColx^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamedose = Eval Insert( ":name(\!"^fluidCol^\!" )" );
+	colNameresponsemean = Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	tableOut = table1 << Join(
+		With( table2 ),
+		Merge Same Name Columns,
+		By Matching Columns( Parse( colNamecoating ) = Parse( colNamecoating ), Parse( colNamechem ) = Parse( colNamechem ) ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 ),
+		Invisible
+	);
+	
+	table2 << Close Window;
+	
+	If( fitType == "3P",
+		tableOut << New Column( "Predicted Dose from Master",
+			Numeric,
+			Continuous,
+			Set Formula( Log( (parseColNameresponse - :Asymptote) / :Scale ) / :Growth Rate )
+		),
+		Stop()
+	);
+	
+	/*tableOuttemp = tableOut << Select Where( calPosxL <= parseColNamesublotx <= calPosxH & parseColNamesubloty == calPosy ) <<
+	Subset( Selected Rows( 1 ), Selected Columns( 0 ), Invisible );
+	
+	tableOuttempsum = tableOuttemp << Summary(
+		Group( parseColNamedose ),
+		Mean( "Predicted Dose from Master" ),
+		Link to Original Data Table( 0 ),
+		Invisible
+	);
+	Column( tableOuttempsum, "Mean(Predicted Dose from Master)" ) << Set Name( "Target Dose" );
+	tableOut << Update(
+		With( tableOuttempsum ),
+		Match Columns( Parse( colNamedose ) = Parse( colNamedose ) ),
+		Add Columns from Update Table( :Target Dose )
+	);
+	tableOuttempsum << Close Window;
+	tableOuttemp << Close Window;*/
+	
+	Return( tableOut );
+);
+
+subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, slideLotvar, outputCol, chemTypecol, blockType},
+	{default Local}, 
+	
+	/*table = the loop qual data table
+	posCol = the sub lot x positions are going to correct around
+	blockCol = a value that the data needs to be blocked for to measure the posCol more accurately
+	respCol = intended to be AR
+	fluidCol = to cover in the event we have multiple fluid levels in the data this identifies unique fluids
+	slideLotvar = the slide lot that excludes the sublot field
+	cont = the type of sublot pattern we are correcting for*/
+	
+	parseColNamesublotx = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
+	parseColNameblocker = Parse( Eval Insert( ":name(\!"^blockCol^\!" )" ) );
+	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
+	parseColNameresponse = Parse( Eval Insert( ":name(\!"^respCol^\!" )" ) );
+	parseColNamecoating = Parse( Eval Insert( ":name(\!"^slideLotvar^\!" )" ) );
+	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
+	parseColNamechem = Parse( Eval Insert( ":name(\!"^chemTypecol^\!" )" ) );
+	
+	colNamechem = Eval Insert( ":name(\!"^chemTypecol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNamesublotx = Eval Insert( ":name(\!"^posCol^\!" )" );
+	colNameblocker = Eval Insert( ":name(\!"^blockCol^\!" )" );
+	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
+	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	
+	If(
+		blockType == "Relative",
+			table << New Column( Char( outputCol ),
+				Numeric,
+				Continuous,
+				Set Formula(
+					Col Mean(
+						parseColNameresponse - Col Mean( parseColNameresponse, parseColNameblocker, parseColNamedose ),
+						parseColNamesublotx,
+						parseColNamedose
+					)
+				)
+			);
+			Column( table, Char( outputCol ) ) << Delete Formula;, 
+	
+		blockType == "Absolute",
+			table << New Column( Char( outputCol ),
+				Numeric,
+				Continuous,
+				Set Formula( Col Mean( parseColNameresponse - parseColNameblocker, parseColNamesublotx, parseColNamedose ) )
+			);
+			Column( table, Char( outputCol ) ) << Delete Formula;,
+		Throw()
+	);
+);
+
+//nate included, will cover UTs for function
+buildJSONarray = Function({mainCurveTable,crosswebTable,foilTable,jsonSavePath},{default local},
+	///function should probably check to ensure first three are data tables and last is an associative array
+	// ... not a must have, but would be good practice
+	
+	//additional parameters
+	// loop qual table (or species cal table) to harvest dry read start/end)
+	// build info
+	// event info
+	// lots covered
+	//.... incorporate last 3 into JSON file name at event level (master only needs build level)
+	// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
+	//.... ClipLot becomes cliplot ExpirationDate become exp_date
+	//.... delete clip type
+	//.... convert chemabbr to chemcode ... don't use array of chem codes, call function to get them and add function to overarching list of functions
+	//.... other stuff too based on what comes in with this file
+	//.... format Expiration dates as follows below
+	//.... make format YYYY.MM.DD (not YYYY-MM-DD)
+		/*Data Table( "basicTest_expDates" ):ExpirationDate <<
+			Format(
+				"Custom",
+				Formula(
+					Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+						1, "0" || Char( Month( value ) ),
+						2, Char( Month( value ) )
+					) || "." || Match( Length( Char( Day( value ) ) ),
+						1, "0" || Char( Day( value ) ),
+						2, Char( Day( value ) )
+					)
+				),
+				10,
+				0
+			);
+		*/
+	//.... make date column character to be properly maintained in array and to JSON
+	//.... update to main curves by code AND lot
+	// save (0/1) default to 1
+	// json Save path
+	
+	/*
+	mainCurveTable = Datatable("QSDMA Master Curve Table for 10_72_112221");
+	crosswebTable = Datatable("QSDMA crosswebs");
+	foilTable = Datatable("QSDMA foils");
+	*/
+	//buildInfo = ;//maybe get from json Path?
+	//eventInfo = "event500";//maybe get from loop qual table name?
+	//lotRangeInEvent = "900-920";//maybe get from loop qual table name?
+	//jsonSavePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\cumulativeJSONtest\Build test99.99\";
+
+	//variable size reduction
+	mainDT = mainCurveTable;
+	cwDT = crosswebTable;
+	fDT = foilTable;
+	lotRange = lotRangeInEvent;
+	jsonPath = jsonSavePath;
+	
+	pathWords = Words(jsonPath,"/\");
+	For(i=1,i<=nitems(pathWords),i++,
+		If(Contains(pathWords[i],"Build") > 0,buildLocale = i;break())
+	);
+	buildNum = Try(pathWords[buildLocale],"NULL");
+	
+	allJSONfiles = Files In Directory(jsonPath);
+	If(nitems(allJSONfiles) == 0,
+		jsonFiles = {};
+		,
+		masterLocale = Contains(allJSONfiles,"master_"||buildNum||".json");
+		jsonFiles = Remove(allJSONfiles,masterLocale)
+	);
+		
+	// goes through crossweb and foil data to turn all both into two entries, duplicate (one for each platform)
+	For each row(cwDT,
+		If(
+			Uppercase(Word(1,:"ID"n,"_")) == "BOTH",
+				w = Uppercase(Word(1,:"ID"n,"_"));
+				values = cwDT[Row(),0];
+				:"ID"n = substitute(:"ID"n,w,"ctdx");
+				cwDT << add rows(1);
+				cwDT[nrow(cwDT),0] = values;
+				cwDT:"ID"n[nrow(cwDT)] = substitute(:"ID"n,w,"cat1");
+			,
+			Empty()
+		);
+	);
+	For each row(fDT,
+		If(
+			Uppercase(Word(1,:"ID"n,"_")) == "BOTH",
+				w = Uppercase(Word(1,:"ID"n,"_"));
+				values = fDT[Row(),0];
+				:"ID"n = substitute(:"ID"n,w,"ctdx");
+				fDT << add rows(1);
+				fDT[nrow(fDT),0] = values;
+				fDT:"ID"n[nrow(fDT)] = substitute(:"ID"n,w,"cat1");
+			,
+			Empty()
+		);
+	);
+	
+	mainArray = AssociativeArray(mainDT:"ID"n);
+	cwArray = AssociativeArray(cwDT:"ID"n);
+	fArray = AssociativeArray(fDT:"ID"n);
+	
+	//improvement would be to check where "ID" is and if it's not there, error out
+	mainCols = mainDT << get column names( string );
+	cwCols = cwDT << get column names( string );
+	fCols = fDT << get column names( string );
+	removefrom(mainCols,1);//assumes ID is in 1st position
+	removefrom(cwCols,1);//assumes ID is in 1st position
+	removefrom(fCols,1);//assumes ID is in 1st position
+	
+	//sets of loops to create arrays from each of the three tables
+	currentKey = mainArray << first;
+	For(i=1,i<=nitems(mainArray),i++,
+		idRow = mainDT << get rows where(:"ID"n == currentKey);//should only be 1 row
+		mainArray[currentKey] = Associative Array();
+		For(j=1,j<=nitems(mainCols),j++,
+			mainArray[currentKey][mainCols[j]] = AsColumn(mainDT,mainCols[j])[idRow][1];
+		);
+		currentKey = mainArray << next(currentKey);
+	);
+	currentKey = cwArray << first;
+	For(i=1,i<=nitems(cwArray),i++,
+		idRow = cwDT << get rows where(:"ID"n == currentKey);//may be more than 1 row
+		cwArray[currentKey] = {};
+		For(k=1,k<=nitems(idRow),k++,
+			insertinto(cwArray[currentKey], associative array());
+			For(j=1,j<=nitems(cwCols),j++,
+				cwArray[currentKey][k][cwCols[j]] = AsColumn(cwDT,cwCols[j])[idRow][k];
+			)
+		);
+		currentKey = cwArray << next(currentKey);
+	);
+	currentKey = fArray << first;
+	For(i=1,i<=nitems(fArray),i++,
+		idRow = fDT << get rows where(:"ID"n == currentKey);//may be more than 1 row
+		fArray[currentKey] = {};
+		For(k=1,k<=nitems(idRow),k++,
+			insertinto(fArray[currentKey], associative array());
+			For(j=1,j<=nitems(fCols),j++,
+				fArray[currentKey][k][fCols[j]] = AsColumn(fDT,fCols[j])[idRow][k];
+			)
+		);
+		currentKey = fArray << next(currentKey);
+	);
+	
+	//combine the three arrays into the one, main array
+	currentKey = mainArray << first;
+	For(i=1,i<=nitems(mainArray),i++,
+		subID =Substitute(currentKey,"_"||Word(length(Words(currentKey,"_")),currentKey,"_"),"");
+		show(currentKey,subID);
+		mainArray[currentKey]["crosswebs"] = cwArray[subID];	
+		mainArray[currentKey]["foils"] = fArray[subID];
+		currentKey = mainArray << next(currentKey);
+	);
+	
+	//building the final JSON matching the curve IDs to the correct assays and codes
+	intermediateChems = associative array({{"ctdx", {} },{"cat1", {} }});
+	finalChemArray = associative array({{"ctdx",associative array({{ "lots",{} }})},{"cat1",associative array({{ "lots",{} }})}});
+	
+	platformKey = finalChemArray << first;
+	For(k=1,k<=nitems(finalChemArray),k++,
+		currentKey1 = mainArray << first;
+		For(j=1,j<=nitems(mainArray),j++,
+			idPlatform = Word(1,currentKey1,"_");
+			if(
+				idPlatform == platformKey,
+				insertinto(intermediateChems[platformKey],currentKey1);
+				,
+				empty()
+			);
+			currentKey1 = mainArray << next(currentKey1);
+		);
+		platformKey = finalChemArray << next(platformKey)
+	);
+	
+	platformKey = intermediateChems << first;
+	For(i=1,i<=nitems(intermediateChems),i++,
+		For(j=1,j<=nitems(intermediateChems[platformKey]),j++,
+			insertinto(finalChemArray[platformKey]["lots"],mainArray[intermediateChems[platformKey][j]])
+		);
+		platformKey = intermediateChems << next(platformKey);
+	);
+	
+	eventJSONexpr = AsJSONExpr(finalChemArray);
+	//save finalChemArray for singular event
+	Save Text File(jsonPath || buildNum || "_" || eventInfo || "_" || lotRange || "_datetime.json", eventJSONexpr);
+	
+	For(i=1,i<=nitems(jsonFiles),i++,
+		tempJSONArray = ParseJSON(
+			load text file(jsonPath || jsonFiles[i])
+		);
+		platformKey = finalChemArray << first;
+		For(j=1,j<=nitems(finalChemArray),j++,
+			insertinto(
+				finalChemArray[platformKey]["lots"]
+				,
+				tempJSONArray[platformKey]["lots"]
+			);
+			platformKey = finalChemArray << Next(platformKey)
+		)
+	);
+		
+	jsonExpr = AsJSONExpr(finalChemArray);
+	
+	//save final chem array as new master
+	Save Text File(jsonPath || "master_" || buildNum || ".json", jsonExpr);
+	
+	Return(eventJSONexpr,jsonExpr)
+);
+
+//from jesses work. Nate needs to test and integrate into calFitFunc
+//untested
+lytesCubicTo3P = Function({table,responseColumn,concentrationColumn,slideLotColumn,assayColumn,instrumentTypeColumn},{default local},
+	
+	//will only work with Assay Code, currently. ChemType is not supported
+	
+	//table = currentdatatable();
+	//responseColumn = "AR";
+	//concentrationColumn = "Target";
+	//slideLotColumn = "Lot";
+	//assayCodeColumn = "Assay";
+	
+	//variable shortening
+	respCol = responseColumn;
+	concCol = concentrationColumn;
+	lotCol = slideLotColumn;
+	assayCol = assayColumn;
+	instTypeCol = instrumentTypeColumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
+	nameConcCol = EvalInsert(":\!"^concCol^\!"n");
+	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
+	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
+	nameInstCol = EvalInsert(":\!"^instTypeCol^\!"n");
+	
+	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
+	parseConcCol = Parse(EvalInsert(":\!"^concCol^\!"n"));
+	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
+	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
+	parseInstCol = Parse(EvalInsert(":\!"^instTypeCol^\!"n"));
+
+	platform = table << Fit Curve(
+		Y( Parse(nameRespCol) ),
+		X( Parse(nameConcCol) ),
+		//Group(:Lot),
+		Fit Exponential 3P,
+		By( parse(nameInstCol), parse(nameAssayCol), Parse(nameLotCol) ),
+		Invisible
+	);
+	wait(0);
+	dt_3p_uncorrected = Try(
+		Report( platform[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(private(1));
+		,
+		Report( platform )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(private(1));
+	);
+	platform << close window;
+	//dt_3p_uncorrected:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
+	
+	dt_final_curves = dt_3p_uncorrected << Split(
+		Split By( :"Parameter"n ),
+		Split( :"Estimate"n ),
+		Group( parseAssayCol, parseLotCol, parseInstCol ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		output table name( "cal curves by lot" ),
+		private
+	);
+	close(dt_3p_uncorrected, no save);
+	
+	Summarize(table, a = by(parseAssayCol));
+	// first, set up table with dose levels
+	dt_dose_levels = New Table( "dose quantiles table",private );
+	dt_dose_levels << Add Rows( nitems(a) * 101 ); //101 per assay present. we expect 3 always, but in case there isn't
+	dt_dose_levels << Delete Columns( {"Column 1"} );
+	dt_dose_levels << New Column(assayCol,character,nominal,values(sort list(Repeat(a, 101 ))));
+	dt_dose_levels << New Column("Quantile",numeric,continuous,formula(Sequence( 0, 1, 0.01 )));
+	dt_dose_levels << New Column( "mid point for Chem Type", formula(assayMidPoint[parseAssayCol]));
+	dt_dose_levels << New Column("Concentration (3p uncorrected)",numeric,continuous,
+		formula(			
+			assayRange[parseAssayCol][1] + (assayRange[parseAssayCol][2] - assayRange[parseAssayCol][1]) * :"Quantile"n
+		)
+	);
+	
+	// join with curves, duplicating for each:
+	dt_full_dose_levels = dt_final_curves << Join(
+		With( dt_dose_levels ),
+		Merge Same Name Columns,
+		By Matching Columns( Eval(Parse(nameAssayCol)) = Eval(Parse(nameAssayCol)) ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 1 ),
+		Preserve main table order( 1 ),
+		output table name( "full dose levels" ),
+		private
+	);
+	close(dt_dose_levels, no save);
+	
+	// add AR and new concentration columns:
+	dt_full_dose_levels << New Column( "AR",
+		Numeric,"Continuous",
+		Formula(:"Asymptote"n + :"Scale"n * Exp(:"Growth Rate"n * :"Concentration (3p uncorrected)"n))
+	);
+	
+	//the eval for int account for how it's displayed in the associative array (number plus offset)
+	dt_full_dose_levels << New Column( "Concentration (3p corrected)",Numeric,"Continuous",
+		Formula(
+			Eval(assayCorrectedCubic[parseAssayCol]["int"]) + assayCorrectedCubic[parseAssayCol]["lin"] * :"Concentration (3p uncorrected)"n + assayCorrectedCubic[parseAssayCol]["quad"] * :"Concentration (3p uncorrected)"n ^ 2 + assayCorrectedCubic[parseAssayCol]["cub"] * :"Concentration (3p uncorrected)"n ^ 3
+		)
+	);
+	
+	platform =  dt_full_dose_levels << Fit Curve(
+		Y( parse(nameRespCol) ),
+		X( :"Concentration (3p corrected)"n ),
+		//Group( parse(nameLotCol) ),
+		Fit Cubic,
+		By( parse(nameInstCol), parse(nameAssayCol), parse(nameLotCol) ),
+		invisible
+	);
+	wait(0);
+	dt_new_curves = Try(
+		Report( platform[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(private(1));
+		,
+		Report( platform )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(private(1));
+	);
+	platform << close window;
+	//dt_new_curves:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
+
+	dt_new_curves_split = dt_new_curves << Split(
+		Split By( :"Parameter"n ),
+		Split( :"Estimate"n ),
+		Group( parseAssayCol, parseLotCol, parseInstCol),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		output table name( "new curves split" )
+	);
+	
+	Column(dt_new_curves_split,assayCol) << data type(numeric);
+	close(dt_new_curves, no save);
+	close(dt_final_curves, nosave);
+	
+	Return(dt_new_curves_split)
+	
+);
+
+//Nates mods of Jesse's mods of Tim's outlier function
+//untested
+// example: outlierDetectWithinGroup(dt,"AR","Assay","Lot","Instrument Type");
+outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn},{default local},
+
+	// DTinitial = current data table();
+	// responseColumn = "AR";
+	// assayCodeColumn = "Assay";
+	// slideLotColumn = "Lot";
+	// instrumentTypeColumn = "Instrument Type";
+	
+	//variable shortening
+	respCol = responseColumn;
+	assayCol = assayCodeColumn;
+	lotCol = slideLotColumn;
+	instType = instrumentTypeColumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
+	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
+	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
+	nameInstCol = EvalInsert(":\!"^instType^\!"n");
+	
+	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
+	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
+	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
+	parseInstCol = Parse(EvalInsert(":\!"^instType^\!"n"));
+	
+	//**********Sort Table**********
+	DTinitial << Clear Column Selection();
+	temp = DTinitial << New Column("Calibration Group",character,formula(char(parseAssayCol) || char(parseLotCol) || parseInstCol));
+	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || :"Sample id"n));
+	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n), Order(Ascending, Ascending));
+
+	//**********Run Order Column**********
+	temp2 = DTinitial << New Column( "GroupRunOrder",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula(
+			If( Row() == 1 | :"Calibration Within Group"n != Lag( :"Calibration Within Group"n, 1 ),
+				1,
+				Lag( :"GroupRunOrder"n, 1 ) + 1
+			)
+		)
+	);
+	
+		
+	//**********Result List Column**********
+	temp3 = DTinitial << New Column( "BuildGroupList",
+		Expression,
+		"None",
+		Formula( If( :"GroupRunOrder"n == 1, Eval List( {parseRespCol} ), Sort List( Insert( Eval List( Lag( :"BuildGroupList"n, 1 ) ), Eval List( {parseRespCol} ) ) ) ) )
+	);
+
+	//**********Mean for Threshold Calc Column**********
+	temp4 = DTinitial << New Column( "Threshold Median AR",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula( Median( :"BuildGroupList"n ) )
+	);
+			
+	//**********AR Threshold Column**********
+	//prediction model version
+	//RepCount = 6;
+	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(4));
+	temp6 = DTinitial << New Column( "ARthreshold",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula(
+			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + (:"RepCount"n - 7) * (( :"Threshold Median AR"n + arThresholdCoeffs[parseAssayCol]["d"]) * arThresholdCoeffs[parseAssayCol]["e"])
+		)
+	);
+
+	//**********Results Without Outliers Column**********
+	temp7 = DTinitial << New Column( "RecurseResultList",
+		Expression,
+		"None",
+		Formula(
+			If( :"GroupRunOrder"n > Lag( :"GroupRunOrder"n, -1 ) | Is Missing( Lag( :"GroupRunOrder"n, -1 ) ),
+				Recursething( :"BuildGroupList"n, :"ARthreshold"n )
+			)
+		)
+	);
+
+	//**********Result list Applied to All Rows**********
+	temp8 = DTinitial << New Column( "FinalResultList",
+		Expression,
+		"None",
+		Formula(
+			Index = -1;
+			While( :"GroupRunOrder"n < Lag( :"GroupRunOrder"n, Index ), Index-- );
+			Eval List( Lag( :"RecurseResultList"n, Index + 1 ) );
+		)
+	);
+		
+	//**********Include / Exclude**********	
+	temp9 = DTinitial << New Column( "Outlier Status",
+		Character,
+		"Nominal",
+		Formula( If( Contains( :"FinalResultList"n, "Fail" ), "Failed Level", Contains( :"FinalResultList"n, :AR ), "Include", "Exclude" ) )
+	);
+	temp10 = DTinitial << New Column( "Outlier 1/0", numeric,nominal,formula(Match(:"Outlier Status"n,"Include",0,"Exclude",1,"Failed Level",1)));
+
+	temp11 = DTinitial << New Column("N Outliers (within group)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Within Group"n )
+		)
+	);
+	temp12 = DTinitial << New Column( "N Outliers (lot)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Group"n ) 
+		)
+	);
+	
+	Try(temp << delete formula);
+	Try(temp1 << delete formula);
+	Try(temp2 << delete formula);
+	Try(temp3 << delete formula);
+	Try(temp4 << delete formula);
+	Try(temp5 << delete formula);
+	Try(temp6 << delete formula);
+	Try(temp7 << delete formula);
+	Try(temp8 << delete formula);
+	Try(temp9 << delete formula);
+	Try(temp10 << delete formula);
+	Try(temp11 << delete formula);
+	Try(temp12 << delete formula);
+	
+	DTinitial << delete columns(
+		temp,
+		temp1,
+		temp2,
+		temp3,
+		temp4,
+		temp5,
+		temp6,
+		temp7,
+		temp8,
+		temp9
+	);
+	
+	DTinitial << selectwhere( :"Outlier 1/0"n == 1) << exclude(1);
+	DTinitial << select all rows;
+	DTinitial << invert row selection;
+	
+	return(DTinitial);
+	
+);
+
+//brought in by nate for the starting dialog
+//may change the name to something reasonable :)
+// nate responsible for unit testing
+ionChemCalDialog = Function({},{default local},
+	nw = New Window("Operator inputs",
+		//show Menu(0),
+		//show toolbars(0),
+		<< modal,
+		
+		<< on validate(			
+			lyteCal = lytesCalDataPath << get text;
+			lyteLoop = lytesLoopDataPath << get text;
+			lyteExp = lytesExpirationDataPath << get text;
+			lyteJSON = lytesJSONSaveFolder << get text;
+			
+			qCal = qsdmaCalDataPath << get text;
+			qLoop = qsdmaLoopDataPath << get text;
+			qPFT = qsdmaPlatformFTDataPath << get text;
+			qSFT = qsdmaSpeciesFTDataPath << get text;
+			qLoopMatch = qsdmaLoopMatchDataPath << get text;
+			qExpList = If(Left(qsdmaExpirationDataPath<< get text,1) == "{",
+				parse(qsdmaExpirationDataPath<< get text);
+				,
+				qsdmaExpirationDataPath<< get text
+			);
+			qJSON = qsdmaJSONSaveFolder << get text;
+			If(IsMissing(qExpList) == 1,
+				qExpSuccess = 0
+				,
+				IsString(qExpList) == 1,
+				qLoopSuccess = 0
+				,
+				For(i=1,i<=nitems(qExpList),i++,
+					if(
+						Right(qExpList[i],5) == ".xlsx" & IsFile(qExpList[i]), qExpSuccess = 1
+						,
+						qExpSuccess = 0; break()
+					)
+				);
+			);
+			//show(tb << get selected,lyteCal,lyteLoop,lyteExp,lyteJSON,qCal,qLoop,qPFT,qSFT,qLoopList,qExpList,qJSON,qExpSuccess);
+			
+			If(
+				tb << get selected == 1, 0
+				,
+				tb << get selected == 2,
+				Right(lyteCal, 4) == ".jmp" & 
+				IsFile(lyteCal) &
+				
+				Right(lyteLoop, 4) == ".jmp" & 
+				IsFile(lyteLoop) &
+				
+				Right(lyteExp, 5) == ".xlsx" & 
+				IsFile(lyteExp) &
+				
+				Is Directory Writable(lyteJSON) &
+				(Right(lyteJSON,1) == "/" | Right(lyteJSON,1) == "\")
+				,
+				tb << get selected == 3,
+				Right(qCal, 4) == ".jmp" & 
+				IsFile(qCal) &
+				
+				Right(qLoop, 4) == ".jmp" & 
+				IsFile(qLoop) &
+				
+				Right(qPFT, 4) == ".jmp" & 
+				IsFile(qPFT) &
+				
+				Right(qSFT, 4) == ".jmp" & 
+				IsFile(qSFT) &
+				
+				Right(qLoopMatch, 5) == ".xlsm" & 
+				IsFile(qLoopMatch) &
+				
+				qExpSuccess == 1 &
+				
+				Is Directory Writable(qJSON) &
+				(Right(qJSON,1) == "/" | Right(qJSON,1) == "\")
+				
+			)
+		),
+		<< return result,
+		tb = TabBox(
+			Tab Page Box("",Icon("TabBox"),
+				Text Box("Please choose your desired tab and fill in the necessary inputs",<< set font style("Bold"), << set font size(12))
+			)
+			,
+			Tab Page Box("LYTES",
+				V List Box(
+					//TextBox("", << set font size(10)),
+					PanelBox("",
+						TextBox("Enter or navigate to each location and click 'Ok' to continue", << set wrap(800), << set font style("Bold"), << set font size(10)),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Species Cal Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							lytesCalDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									lytesCalDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							lytesLoopDataPath = TextEditBox("",
+								<< set width(300),
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									lytesLoopDataPath << set text(file);
+								);
+							);
+						),
+						//DX release not needed for lytes as species cal will have info from check
+						/*TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("DX Release ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsx file",  << set font size(10))
+						),
+						H List Box(
+							lytesDxReleaseDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|xlsx"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									lytesDxReleaseDataPath << set text(file);
+								);
+							);
+						),*/
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("Slide Lot Expiration ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsx file",  << set font size(10))
+						),
+						H List Box(
+							lytesExpirationDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|xlsx"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									lytesExpirationDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select where to save the ",  << set font size(10)),
+							TextBox(".json ",  << set font style("Bold"), << set font size(10)),
+							TextBox("file",  << set font size(10))
+						),
+						H List Box(
+							lytesJSONSaveFolder = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									dir = Pick Directory();
+									lytesJSONSaveFolder << set text(dir);
+								)
+							); 
+						)
+					)
+				)
+			)
+			,
+			Tab Page Box("SDMA(ChemCode 4)",
+				V List Box(
+					//TextBox("", << set font size(10)),
+					PanelBox("",
+						TextBox("Enter or navigate to each location and click 'Ok' to continue", << set wrap(800), << set font style("Bold"), << set font size(10)),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Calibration Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							qsdmaCalDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									qsdmaCalDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							qsdmaLoopDataPath = TextEditBox("",
+								<< set width(300),
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									qsdmaLoopDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Platform Finetune Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							qsdmaPlatformFTDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									qsdmaPlatformFTDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Species Finetune Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
+						),
+						H List Box(
+							qsdmaSpeciesFTDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|jmp"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									qsdmaSpeciesFTDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("QSDMA Tracking Board ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsm file",  << set font size(10))
+						),
+						H List Box(
+							qsdmaLoopMatchDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|xlsm"},
+										1,
+										0,
+										,
+										//Multiple
+									);
+									qsdmaLoopMatchDataPath << set text(file);
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("Slide Lot Expiration ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsx file(s)",  << set font size(10))
+						),
+						H List Box(
+							qsdmaExpirationDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|xlsx"},
+										1,
+										0,
+										,
+										Multiple
+									);
+									qsdmaExpirationDataPath << set text(char(file));
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select where to save the ",  << set font size(10)),
+							TextBox(".json ",  << set font style("Bold"), << set font size(10)),
+							TextBox("file",  << set font size(10))
+						),
+						H List Box(
+							qsdmaJSONSaveFolder = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									dir = Pick Directory();
+									qsdmaJSONSaveFolder << set text(dir);
+								)
+							); 
+						)
+					)
+				)
+			)
+		)
+		,
+		TextBox("", << set font size(5)),
+		H List Box(
+			ButtonBox("Ok"),
+			ButtonBox("Cancel")
+		)
+	);
+	
+	If(nw["Button"] == -1, Return(0), Return(nw));
+);
+
+
+//may change the inputs. still working on this.
+lytesAssStitching = Function({dtCal, dtLoop, dtDXrel, dtSLExp, jsonloc}, {default local},
+	//testing variables
+	//dtCal = Data Table( "Subset of NA Master Cal Table Concept_010422.jmp" );
+	//dtSub = Data Table( "Subset of NA Master Sub Lot Table Concept_010422.jmp" );
+	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
+
+	//setting variables
+	dtSub = dtLoop;
+	cwPostotal = 40;
+	foilPostotal = 30;
+	defaultBin = 8;
+
+	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
+	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
+	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
+	
+	//outlier detection step for cal. not sure these are the inputs.
+	outlierDetectWithinGroup(dtCal, "AR", "Assay", "Slide Lot", "Instrument Type");
+	//outlier detection step for loop qual. not sure these are the inputs.
+	outlierDetectWithinGroup(dtSub, "AR", "Assay", "Slide Lot", "Instrument ID");
+	
+	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
+	dtCalout = calFitfunc( dtCal, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
+	
+	dtCalout2 = dtCalout << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
+	dtSubop = subLottabprep( dtSub, dtCalout, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "3P" );
+	
+	//this will be a place holder assigned target for the correction logic
+	dtSubop << New Column( "Loop Average Dose",
+		Numeric,
+		Continuous,
+		Set Formula( Col Mean( :Predicted Dose from Master, :Dose, :Slide Lot, :Chem Type ) )
+	);
+
+	//relative correction to evaluate the cross web pattern by dose level
+	subLot2DblockerFunc(
+		dtSubop, "Predicted Dose from Master", "Cross Web", "Foil", "Dose", "Slide Lot", "Cross Web Correction", "Chem Type", "Relative"
+	);
+
+	dtSubop << New Column( "CW Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :Cross Web Correction ) );
+	
+	//relative correction to evaluate the foil corrections by dose level
+	subLot2DblockerFunc( dtSubop, "CW Corrected Dose", "Foil", "Loop Average Dose", "Dose", "Slide Lot", "Foil Correction", "Chem Type", "Absolute" );
+	
+	dtSubop << New Column( "Foil Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :Foil Correction ) );
+	
+	//this is for informational purposes only and is used to later check the actual corrections vs. entitlement to know if we found any distressing discontinuities along the way
+dtSubop << New Column( "Entitlement Sublot Dose", Numeric, Continuous, Set Formula( :CW Corrected Dose - :Foil Correction ) );
+
+	//now we're going to calculate the raw correction factors for cross web
+	//first step is to subset out the raw CW corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
+	dtSubop_cw = dtSubop << Summary(
+		Group( :Chem Type, :Slide Lot, :Cross Web, :Dose, :"Loop Average Dose"n, :"Cross Web Correction"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 )
+	);
+	
+	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
+	//check that you applied the cross web correction right for this
+	dtSubop_cw << New Column( "Cross Web Dose", Numeric, Continuous, Set Formula( :Loop Average Dose - :Cross Web Correction ) );
+	
+	//this is generating the slope and offset corrections by cross web position, slide lot, and chem type
+	linearFitadder( dtSubop_cw, "Cross Web Dose", "Cross Web", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
+
+
+	show(dtSubop_cw);	
+
+	//this is interpolating the slope and offset terms for cross web with the spline
+	cwCorrsoffsetpred = subLotcharFunc( dtSubop_cw, "Cross Web", "Offset Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( cwCorrsoffsetpred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Offset Predicted" );
+	
+	show(dtSubop_cw);
+	
+	//this is producing no slope from time to time. Come back and troubleshoot. Missing Chem Type.
+	cwCorrsslopepred = subLotcharFunc( dtSubop_cw, "Cross Web", "Gain Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( cwCorrsslopepred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Slope Predicted" );
+	
+
+	
+	//this is joining the offset and slope corrections for crossweb into one table
+	crossWebmaster = cwCorrsoffsetpred << Join(
+		With( cwCorrsslopepred ),
+		Merge Same Name Columns,
+		Match Flag( 0 ),
+		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Cross Web = :Cross Web),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 0 ),
+		Preserve main table order( 1 )
+	);
+	
+	show(crossWebmaster);
+	
+	//closing windows we don't need anymore
+	cwCorrsoffsetpred << Close Window;
+	cwCorrsslopepred << Close Window;
+	
+	//getting the spline formula for the CW terms to use elsewhere
+	offsetCWspline = Column( crossWebmaster, "Cross Web Offset Predicted" ) << Get Formula;
+	gainCWspline = Column( crossWebmaster, "Cross Web Slope Predicted" ) << Get Formula;
+
+	Column( crossWebmaster, "Cross Web Offset Predicted" ) << Set Name( "CW Offset Spline" );
+	Column( crossWebmaster, "Cross Web Slope Predicted" ) << Set Name( "CW Gain Spline" );
+
+	cwMasterall = crossWebmaster;
+	//show(cwMasterall, crossWebmaster);
+
+	dtSubop_cw << Close Window;
+	
+	//////////////////foil stuff/////////////////////////////////////
+	//now we're going to calculate the correction factors for foils
+	//first step is to subset out the raw foil corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
+	dtSubop_foil = dtSubop << Summary(
+		Group( :Chem Type, :Slide Lot, :Foil, :Dose, :"Loop Average Dose"n, :"Foil Correction"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 )
+	);
+
+	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
+	dtSubop_foil << New Column( "Foil Dose", Numeric, Continuous, Set Formula( :Loop Average Dose - :Foil Correction ) );
+
+
+	//this is generating the slope and offset corrections by foil position, slide lot, and chem type
+	linearFitadder( dtSubop_foil, "Foil Dose", "Foil", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
+	
+	//this is interpolating the slope and offset terms for foil with the spline
+	foilCorrsoffsetpred = subLotcharFunc( dtSubop_foil, "Foil", "Offset Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( foilCorrsoffsetpred, "Foil_Predicted Correction" ) << Set Name( "Foil Offset Predicted" );
+	
+	//show(foilCorrsoffsetpred);
+	
+	foilCorrsslopepred = subLotcharFunc( dtSubop_foil, "Foil", "Gain Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( foilCorrsslopepred, "Foil_Predicted Correction" ) << Set Name( "Foil Slope Predicted" );
+
+	//show(foilCorrsslopepred);
+	
+	//this is joining the offset and slope corrections for foil into one table
+	foilMaster = foilCorrsoffsetpred << Join(
+		With( foilCorrsslopepred ),
+		Merge Same Name Columns,
+		Match Flag( 0 ),
+		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Foil = :Foil ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 0 ),
+		Preserve main table order( 1 )
+	);
+	
+	//closing windows we don't need anymore
+	foilCorrsoffsetpred << Close Window;
+	foilCorrsslopepred << Close Window;
+	
+	//getting the spline formula for the foil terms to use elsewhere
+	offsetFoilspline = Column( foilMaster, "Foil Offset Predicted" ) << Get Formula;
+	gainFoilspline = Column( foilMaster, "Foil Slope Predicted" ) << Get Formula;
+	
+	foilMasterall = foilMaster;
+	
+	Column( foilMasterall, "Foil Offset Predicted" ) << Set Name( "Foil Offset Spline" );
+	Column( foilMasterall, "Foil Slope Predicted" ) << Set Name( "Foil Gain Spline" );
+
+	dtSubop_foil << Close Window;
+	
+	//end of sub lot spline calculations - start of transforming sub lot coefficients into DB format//////////
+	//we'll do foil first because it's easier!
+	foilMasterall << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset Spline * 10000, 0 ) / 10000 ) );
+	foilMasterall << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain Spline * 10000, 0 ) / 10000 ) );
+	
+	Column( foilMasterall, "a" ) << Delete Formula;
+	Column( foilMasterall, "b" ) << Delete Formula;
+	
+	foilMasterall << Set Name( "Foil" );
+
+	//now crossweb tranform to DB structure
+	cwMasterall << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	cwMasterall << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	
+	Column( cwMasterall, "Cross Web Start" ) << Delete Formula;
+	Column( cwMasterall, "Cross Web End" ) << Delete Formula;
+
+	dtFit = cwMasterall << Bivariate(
+		Y( :CW Offset Spline, :CW Gain Spline ),
+		X( :Cross Web ),
+		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
+		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
+	);
+	show(dtFit);
+	show(dtFit[1]);
+	Wait( 0 );
+	
+	//////////////////////////////////////////////////////////////////////////////////////////////
+	////////The code for the variable cwInterptemp will be different for JMP 16 vs JMP 15. 15 requires  "Polynomial Fit Degree=3" whereas 16 supports the original code of  "Polynomial Fit Degree=3 Uncentered". Maybe a try/accept here to fix it?////////
+	//////////////////////////////////////////////////////////////////////////////////////////////
+	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+	dtFit << Close Window;
+	
+	cwMasterall << Close Window;
+
+	cwSplit1 = cwInterptemp << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start, :Y ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		Invisible
+	);
+
+	cwInterptemp << Close Window;
+	
+	
+	cwSplit2 = cwSplit1 << Split(
+		Split By( :Y ),
+		Split( :Cross Web, :"Cross Web^2"n, :"Cross Web^3"n, :Intercept ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start ),
+		Sort by Column Property
+	);
+		
+	cwSplit1 << Close Window;
+
+	Column( cwSplit2, "Cross Web End" ) << Set Data Type( "Numeric" );
+	Column( cwSplit2, "Cross Web Start" ) << Set Data Type( "Numeric" );
+	Column( cwSplit2, "Slide Lot" ) << Set Data Type( "Numeric" );
+
+	Column( cwSplit2, "Intercept CW Offset Spline" ) << Set Name( "e" );
+	Column( cwSplit2, "Cross Web CW Offset Spline" ) << Set Name( "f" );
+	Column( cwSplit2, "Cross Web^2 CW Offset Spline" ) << Set Name( "g" );
+	Column( cwSplit2, "Cross Web^3 CW Offset Spline" ) << Set Name( "h" );
+	Column( cwSplit2, "Intercept CW Gain Spline" ) << Set Name( "a" );
+	Column( cwSplit2, "Cross Web CW Gain Spline" ) << Set Name( "b" );
+	Column( cwSplit2, "Cross Web^2 CW Gain Spline" ) << Set Name( "c" );
+	Column( cwSplit2, "Cross Web^3 CW Gain Spline" ) << Set Name( "d" );
+	
+	cwSplit2 << Set Name( "Cross Web" );
+	
+	////apply the initial base curve and sub lot corrections to calibration data
+	//adding initial base 3P coefficients to calibration data table
+	dtCal2 << Update(
+		With( dtCalout2 ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+		Add Columns from Update Table( :Asymptote, :Growth Rate, :Scale )
+	);
+	dtCal2 << New Column( "Base Concentration", Numeric, Continuous, Set Formula( Log( (:AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+	dtCal2 << Set Name( "Base Cal Table" );
+	
+	
+	//adding foil corrections to calibration data table
+	dtCal3 = dtCal2 << Join(
+		With( foilMasterall ),
+		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Merge Same Name Columns,
+		Invisible
+	);
+	
+	Column( dtCal3, "b" ) << Set Name( "Foil b" );
+	Column( dtCal3, "a" ) << Set Name( "Foil a" );
+	
+	//adding cross web corrections to calibration data table
+	dtCal3 << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	dtCal3 << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	
+	dtCalfinal = dtCal3 << Join(
+	With( cwSplit2 ),
+	By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
+	Merge Same Name Columns,
+	Invisible
+);
+
+	//desktop clean up
+	dtCal3 << Close Window;
+	dtCal2 << Close Window;
+
+	//calculate the cross web corrections from parameter system
+	dtCalfinal << New Column( "Cross Web Gain", Numeric, Continuous, Set Formula( :a + :b * :Cross Web + :c * :Cross Web ^ 2 + :d * :Cross Web ^ 3 ) );
+	dtCalfinal << New Column( "Cross Web Offset", Numeric, Continuous, Set Formula( :e + :f * :Cross Web + :g * :Cross Web ^ 2 + :h * :Cross Web ^ 3 ) );
+
+	//calculate the full sub lot corrections from the foil and cross web corrections
+	dtCalfinal << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
+	dtCalfinal << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
+
+	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
+
+	////adjust master curve coefficients to make calibration data perfectly accurate
+	dtCalfinal << New Column( "Sub Lot Adjusted Dose", Numeric, Continuous, Set Formula( (:Dose - :Sub Lot Offset) / :Sub Lot Gain ) );
+
+	////produce master curve JMP file - modify this to be dynamic for the assay////////////////////////////////
+	dtCaloutlast = calFitfunc( dtCalfinal, "Cross Web", "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	dtCaloutlast << Set Name( "Final Curve Coefficients" );
+	Column( dtCaloutlast, "Slide Lot" ) << Set Data Type( "Numeric" );
+
+	dtCalfinal << Update(
+		With( dtCaloutlast ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+		Replace Columns in Main Table( :Asymptote, :Growth Rate, :Scale )
+	);
+
+	Column( dtCalfinal, "Base Concentration" ) << Suppress Eval( 0 );
+	
+	////////////////////////////////////////////////////////////////////////////
+
+	//column name cleanup in the calibration data table
+	dtCalfinal << Delete Column( "Sub Lot Adjusted Dose" );
+	Column( dtCalfinal, "Sub Lot Corrected Dose" ) << Set Name( "Calc Dose" );	
+	
+	//crossWebmaster << Close Window; Table closed long before this step.
+	//foilMaster << Close Window; This closes the Data Table("Foil"). Which is called in a later step.
+	dtCalout2 << Close Window;
+	dtCal << Close Window;
+	dtSub << Close Window;
+	////clean up all the tables that go into the JSON maker
+
+	//cwSplit2 = cross web table
+	//foilMasterall = foil table
+	//dtCaloutlast = master curve coefficients
+
+	foilMasterall << Delete Columns( "N Rows", "Foil Gain Spline", "Foil Offset Spline" );
+
+	Column( dtCaloutlast, "Asymptote" ) << Set Name( "a" );
+	Column( dtCaloutlast, "Scale" ) << Set Name( "b" );
+	Column( dtCaloutlast, "Growth Rate" ) << Set Name( "c" );
+	
+	////add all the calibration and sublot corrections to the sub lot table to check that it's all good
+
+	foilMastertemp = foilMasterall << Subset( All rows, Selected columns only( 0 ), Invisible );
+	cwMastertemp = cwSplit2 << Subset( All rows, Selected columns only( 0 ), Invisible );
+	dtCaloutlasttemp = dtCaloutlast << Subset( All rows, Selected columns only( 0 ), Invisible );
+	
+	///changing paramater column names so that when everyone is joined in we don't overwrite existing columns
+	Column( foilMastertemp, "a" ) << Set Name( "Foil a" );
+	Column( foilMastertemp, "b" ) << Set Name( "Foil b" );
+
+	Column( cwMastertemp, "a" ) << Set Name( "CW a" );
+	Column( cwMastertemp, "b" ) << Set Name( "CW b" );
+	Column( cwMastertemp, "c" ) << Set Name( "CW c" );
+	Column( cwMastertemp, "d" ) << Set Name( "CW d" );
+	Column( cwMastertemp, "e" ) << Set Name( "CW e" );
+	Column( cwMastertemp, "f" ) << Set Name( "CW f" );
+	Column( cwMastertemp, "g" ) << Set Name( "CW g" );
+	Column( cwMastertemp, "h" ) << Set Name( "CW h" );
+
+	Column( dtCaloutlasttemp, "a" ) << Set Name( "Base a" );
+	Column( dtCaloutlasttemp, "b" ) << Set Name( "Base b" );
+	Column( dtCaloutlasttemp, "c" ) << Set Name( "Base c" );
+	Try( Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" ), Throw() );
+	
+	///updating the loop qual table to check the precision post sub lot corrections
+	//adding base curve data to loop qual
+	Try(
+		dtSubop << Update(
+			With( dtCaloutlasttemp ),
+			Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+			Add Columns from Update Table( :Base a, :Base b, :Base c, :Base d )
+		),
+		dtSubop << Update(
+			With( dtCaloutlasttemp ),
+			Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+			Add Columns from Update Table( :Base a, :Base b, :Base c )
+		)
+	);
+	
+	dtCaloutlasttemp << Close Window;
+
+	//adding cross web corrections to loop qual table
+	dtSubop << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	dtSubop << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	Column( dtSubop, "Cross Web Start" ) << Delete Formula;
+	Column( dtSubop, "Cross Web End" ) << Delete Formula;
+	
+	dtSubop << Update(
+	With( cwMastertemp ),
+	Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
+	Add Columns from Update Table( :CW b, :CW f, :CW c, :CW g, :CW d, :CW h, :CW a, :CW e )
+);
+	cwMastertemp << Close Window;
+	
+	
+	//adding foil corrections to the loop qual table
+	dtSubop << Update(
+		With( foilMastertemp ),
+		Match Columns( :Foil = :Foil, :Chem Type = :Chem Type, :Slide Lot = :Slide Lot ),
+		Add Columns from Update Table( :Foil b, :Foil a )
+	);
+	foilMastertemp << Close Window;
+
+	dtCalfinal << Set Name( "Calibration Data" );
+	dtSubop << Set Name( "Loop Qual Data" );
+
+	////adding in the dose calculation columns to the loop qual table
+	If(
+		:Chem Type == "SDMA",
+			dtSubop << New Column( "Base Concentration", Numeric, Continuous, Set Formula( Log( (:AR - :Base a) / :Base b ) / :Base c ) ),
+		:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", :Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3,
+		Stop()
+	);
+
+	dtSubop << New Column( "Cross Web Gain",
+		Numeric,
+		Continuous,
+		Set Formula( :CW a + :CW b * :Cross Web + :CW c * :Cross Web ^ 2 + :CW d * :Cross Web ^ 3 )
+	);
+	dtSubop << New Column( "Cross Web Offset",
+		Numeric,
+		Continuous,
+		Set Formula( :CW e + :CW f * :Cross Web + :CW g * :Cross Web ^ 2 + :CW h * :Cross Web ^ 3 )
+	);
+
+	dtSubop << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
+	dtSubop << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
+	///it doesn't appear that dtSubop has Base Concentration Column.
+	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
+	
+);
+
+
+inputCleanup = Function({dialogOutput},{default local},
+	
+	Match(dialogOutput["tb"],
+		2,
+			here:calibrationPathway = "LYTES";
+			calibrationDataPath = dialogOutput["lytesCalDataPath"];
+			loopQualDataPath = dialogOutput["lytesLoopDataPath"];
+			expirationDataPath = dialogOutput["lytesExpirationDataPath"];
+			jsonFolderPath = dialogOutput["lytesJSONSaveFolder"];
+
+			Return(calibrationDataPath,loopQualDataPath,expirationDataPath,jsonFolderPath)
+		,
+		3,
+			here:calibrationPathway = "QSDMA";
+			calibrationDataPath = dialogOutput["qsdmaCalDataPath"];
+			loopQualDataPath = dialogOutput["qsdmaLoopDataPath"];
+			expirationDataPath = dialogOutput["qsdmaExpirationDataPath"]; //will be list for QSDMA
+			jsonFolderPath = dialogOutput["qsdmaJSONSaveFolder"];
+			platformFineTuneDataPath = dialogOutput["qsdmaPlatformFTDataPath"];
+			speciesFineTuneDataPath = dialogOutput["qsdmaSpeciesFTDataPath"];
+			slideLoopMatchDataPath = dialogOutput["qsdmaLoopMatchDataPath"];
+			
+			Return(calibrationDataPath,loopQualDataPath,expirationDataPath,jsonFolderPath,platformFineTuneDataPath,speciesFineTuneDataPath,slideLoopMatchDataPath)
+	)	
+);
+
+
+prepCalData = Function({calPathway, dataPath}, {default local},
+
+	dt = Open(dataPath);
+	Return(dt);
+
+);
+
+prepLoopData = Function({calPathway, dataPath}, {default local},
+
+	dt = Open(dataPath);
+	Return(dt);
+
+);
+
+prepExpiration = Function({calPathway, dataPath}, {default local},
+
+	//def will need to be updated for QSDMA - that path will be a list of one to many files
+	dt = Open(dataPath);
+	Return(dt);
+
+);
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If( Length( Include File List() ) == 1,
+	//batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+    If( checkVersion( minJMPver ) == 1,
+			
+		opInputs = ionChemCalDialog();
+		If(opInputs == 0,
+			Stop()
+			,
+			datatables = inputCleanup(opInputs);
+			Match(calibrationPathway,
+				"LYTES",
+				//create path vars from datatables Var to pass into stitch so it's more clear??
+				calDataPath = datatables[1];
+				loopDataPath = datatables[2];
+				expirationPath = datatables[3];
+				
+				/*Preps the tables individually so functions can be updated with error checks, if need be*/
+				calData = prepCalData("LYTES",calDataPath);
+				loopData = prepLoopData("LYTES",loopDataPath);
+				expiration = prepExpiration("LYTES",expirationPath);
+
+				If(calData == 0 | loopData == 0 | expiration == 0,
+					Close All(data tables, nosave);
+					Stop()
+					,
+					lytesAssStitching(calData,loopData);
+				)
+				,
+				"QSDMA",
+				Empty();//qsdmaAssStitching(datatables);
+			)
+		)
+		,
+		wrongVer( minJMPver );
+	)
+    ,
+	Print( "Calibration script was included from another source" );
+
+);

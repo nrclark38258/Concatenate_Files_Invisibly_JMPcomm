@@ -1,0 +1,27 @@
+﻿<jm:menu_and_toolbar_customizations xmlns:jm="http://www.jmp.com/ns/menu" version="3">
+  <jm:insert_in_main_menu>
+    <jm:insert_after>
+      <jm:name></jm:name>
+      <jm:menu>
+        <jm:name>AssayDev</jm:name>
+        <jm:caption>Assay Dev</jm:caption>
+		
+		
+		<jm:menu>
+			<jm:name>com.idexx.RnD_P4</jm:name>
+			<jm:caption>PROG</jm:caption>				
+			
+			<jm:command namesDefaultToHere="1">
+				<jm:name>com.idexx.nclark.RnD_P4</jm:name>
+				<jm:caption>RnD PROG AR Calculation v7.1</jm:caption>
+				<jm:action type="path">$ADDIN_HOME(com.idexx.RnD_P4)\RDP4_ARCalculation.jsl</jm:action>
+				<jm:icon type="builtin">IDB_GRAPH_VARIABILITY_CHART</jm:icon>
+			</jm:command>
+
+		</jm:menu>
+		
+		
+      </jm:menu>
+    </jm:insert_after>
+  </jm:insert_in_main_menu>
+</jm:menu_and_toolbar_customizations>

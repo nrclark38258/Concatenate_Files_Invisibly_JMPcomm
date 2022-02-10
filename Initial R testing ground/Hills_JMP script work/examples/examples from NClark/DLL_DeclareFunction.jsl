@@ -1,0 +1,68 @@
+﻿// This script illustrates declaring a function exported by a DLL.
+// (The (C++) source code for the DLL used is in '$SAMPLE_IMPORT_DATA/Call_DLL_Function.cpp').
+
+Names Default To Here( 1 );
+Clear Log();
+
+// Load the correct DLL for the current host.
+If( Host is( Windows ), 
+	// Bitness of JMP executable and DLL have to match.
+	If(
+		Host is( Bits64 ), 
+		// . . . Load the 64-bit version
+			DLLobj = Load DLL( "$SAMPLE_IMPORT_DATA\Call_DLL_Functions_64bit.dll", AutoDeclare( False ) ), 
+		// . . . Load the 32-bit version
+		DLLobj = Load DLL( "$SAMPLE_IMPORT_DATA\Call_DLL_Functions_32bit.dll", AutoDeclare( False ) ),
+	)
+,
+	Beep();
+	New Window( "Warning", <<Modal, Text Box( "The DLLs are not compiled to run Macintosh OS X." ) );
+	Throw();
+);
+
+// One of the functions exported by the DLL takes a moving average: Make it accessible via JSL
+// by using the '<< DeclareFunction()' message.
+DLLobj << DeclareFunction(
+	"C_MovingAverage",
+	Convention( CDECL ),
+	alias( "MovingAverage" ),
+	Arg( Double, Array, "Input vector" ),
+	Arg( Int32, "Size of Input Matrix" ),
+	Arg( Int32, "Number of periods to average" ),
+	Arg( Double, Array, Update, "Output vector with averages" ),
+	Arg( Int32, Update, "Number of valid values in the output vector" )
+);
+
+// Set things up.
+n = 10;											// Number of values
+data = J( n, 1, Random Integer( 5 ) );				// Vector of random integers from 1 to 5 
+span = 3;										// Must be an odd integer, greater than 1
+If( span < 3 | !Mod( span, 2 ),
+	Print( Char( span ) || " must be an odd integer, greater than 1." );
+	Throw();
+); 
+
+// Create an output vector more than large enough to hold the output values from the DLL
+// (note the use of 'update') in '<< Declare Function' above).
+dataMA = J( n, 1, . );
+
+// Create a JSL variable to receive the number of non-empty values in the output vector.
+// (note the use of 'update') in '<< Declare Function' above).
+outCount = 0;
+
+// Call the function in the DLL requesting the moving average.
+DLLobj << MovingAverage( data, n, span, dataMA, outCount );
+
+// Manipulate the returned vector of values so the moving average is at the center of the span.
+offset = (span - 1) / 2;
+dataMA[outCount + 1 :: n] = [];
+dataMA = V Concat( J( offset, 1, . ), dataMA, J( offset, 1, . ) );
+
+// Make a table to inspect the results.
+dt = As Table( data || dataMA );
+dt << SetName( "Moving Averages of Span " || Char( span ) || " Calculated by DLL." );
+Column( dt, "Col1" ) << SetName( "Value" );
+Column( dt, "Col2" ) << SetName( "Moving Average Value" ) << Format( "Fixed Dec", 10, 3 );
+
+// Unload the DLL to free memory.
+DLLobj << UnloadDLL;

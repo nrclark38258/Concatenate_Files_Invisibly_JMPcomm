@@ -1,0 +1,24 @@
+﻿<jm:menu_and_toolbar_customizations xmlns:jm="http://www.jmp.com/ns/menu" version="3">
+  <jm:insert_in_main_menu>
+    <jm:insert_after>
+      <jm:name></jm:name>
+      <jm:menu>
+
+        <jm:caption>Assay Dev</jm:caption>
+		
+		
+			
+			
+			<jm:command namesDefaultToHere="1">
+				<jm:name>com.idexx.nateTest</jm:name>
+				<jm:caption>Libraries Revision r6</jm:caption>
+
+			</jm:command>
+						
+
+		
+		
+      </jm:menu>
+    </jm:insert_after>
+  </jm:insert_in_main_menu>
+</jm:menu_and_toolbar_customizations>

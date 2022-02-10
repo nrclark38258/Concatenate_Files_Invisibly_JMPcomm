@@ -1,0 +1,741 @@
+// Launch Window for SD analysis with CI lines
+
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	2.9 NClark 052620
+//		-> Updated for back update checking
+//	2.8 NClark 051920
+//		-> Fixed bug which titled graphs with 'Exact Binomial ...' when graphs weren't that distribution at all
+//		-> added include adn variables to allow for usage tracking
+//	2.7 NClark 010417
+//		-> Updated "Label" and "Data" column names so default user stacked columns can be used
+//	2.6 NClark 081216
+//		-> Found bug with ::textObj not being named ::textObjBEtA
+//		-> renamed all BEtA with SDCI to remove beta naming from variables
+//	2.5 NClark 101615
+//		-> No script change. Menu structure change
+//	2.4 NClark 092915
+//		-> Updated com.idexx.FIVEXTools with com.idexx.nclark.SDCI
+//	2.3 NClark 102414
+//		-> Updated 'NewdtSD' to be made as Private instead of Invisible in JMP11
+//			-> Fixes 'phantom' table that remains invisible even after graph made and closed - supposed to be unseen by user.
+//				JMP10 does not operate correctly and this fixes issue with JMP11 operating 
+//		-> Created If statement that opens Invisible if JMP10 being use and Private if anything but JMP10 is being used
+//	2.2 NClark 101714
+//		-> Updated dialog so help button works
+//	2.1-beta NClark - Changed "Stock" to "Interval" to get horizontal lines on CI lines 
+//	2.0-beta NClark - Several things to be added:
+//		092513-checkbox for showing SD/CI table -- done
+//		092513-variable setup for above checkbox -- done
+//		092513-IF statment to setup invisible/not invisible for SD/CI table -- done
+//		100913-Create 4th column list for "Group X" option in Graph Builder -- done
+//		Change graphical output to Graph Builder (like ExactBinom jsl) -- in progress
+//		100913-Maintain Value Ordering from Original Table to SD/CI table (X, By) -- done
+//		100913-Maintain Value Ordering from Original Table to SD/CI table (Group X) -- done
+//		101013-added 'BEtA' to all global variables... to be removed when taken off BETA
+//		101113-Adjust math for a correct CI on %CV?	-- done
+//	1.6 NClark 082712 - Updated Help file to include note that alterations to default platform preferences may alter how graphics appear.
+//	1.5 NClark 080912 - Added "About" Button and variable for easy location of currennt version and author information. And removed version information from Help File
+// 1.4 NClark 062212
+//			-> Updated dialog window for choosing graphs... rescripted for better H and V list arrangement
+//			-> Added globals for graph checkboxes (Mean, Std Dev, and CV)
+//			-> Recall correctly working for checkboxes
+//			-> Created cases for each iteration that will delete rows of undesired parameters
+//			-> Fixed issue when only one graph selected
+//			-> Updated Help file for ability to choose graphs
+// 1.3 NClark 062112
+//			-> Updated Help file to warn about commas in Column name of X or BY
+// 1.2 NClark 062112
+//			-> Changed Dispatch to add major and minor grid lines on x-axis
+// 1.1 NClark 061412
+//			-> Added lines to close intermediate tables
+//			-> Added line to "Clear Symbols" for last table so it would automatically close when the chart was closed
+// 1.0 NClark 0611312
+//			-> First offical release
+// B8 NClark 061212
+//			-> Updated to work with "Here" namespace yet keep globals for recall
+//			-> Added Variable List
+// B7 NClark 060712
+//			-> removed variable from Remove feature that is no longer in the script
+//			-> changed marker/color for Upper and Lower CI to black dashes
+//			-> Added reference for Help button
+// B6 NClark 053012
+//			-> Adjusted Y-Axis to read Mean, Std Dev, or CV, depending on the graph
+// B5 NClark 053012
+//			-> Added CV to parameter list (several table manipulations)
+//				->(SD, UCI & LCI each divided by the Mean) * 100
+//			-> Labeled Legend with Alpha value
+//			-> Cleaned up so only original data table and final chart show
+// B4 NClark 053012
+//			-> Made additional changes for Recall button to recall previous 1-alpha
+// B3 NClark 052912
+//			-> Reorganized code for cleaner interface (switched to using some Exp() functions)
+// 			-> Implemented working Recall button for Columns only! (not for 1-alpha vlaues... yet)
+// B2 NClark 052512
+//			-> Updated to require a Y and X as well as limit X to two slections
+// B1 NClark 052512 - First Beta released(B1)
+//------------------------------------------------------------------
+
+//------------------Variable List-----------------------------------
+//
+// Global
+//		globalList
+//			ba1List, ba2List, ba3List (colListY, colListL, colListB)
+//		globalVar
+//			ba1Var, ba2Var (lbVar in Here Namespace)
+//		globalVar1
+//			ba2Var1, ba2Var1, ba3Var1, ba4Var1 (means, deviation, coeffVar, showTable)
+//		lbList
+//			colListY, colListL, colListB (Y Columns, X Columns, By)
+//		recallItems
+//		comboObj
+//		textObj
+// Here Namespace
+//		dt, nc, lbWidth
+//		notImplemented
+//		Help
+//		About
+//		jmpVer
+//		lbVar
+//			comboSet
+//			NewCI
+//		colList, nextList, lb
+//		runOK
+//		glVar, glVar1
+//		CI
+//		Dist, rDist, dtSD, splitSD, cvSD, NewdtSD
+//		exprCancel
+//		chrt
+//		Name
+//		varianceDlg
+//		colListData
+//------------------------------------------------------------------
+
+
+//ClearGlobals();
+dt = currentDataTable();
+If(IsEmpty(dt),dt=open());
+nc = ncol(dt);
+lbWidth = 130;
+notImplemented = expr(New Window("Feature Not Available",<<Modal,TextBox("This feature has not been implemented yet."),ButtonBox("OK")));
+Help = expr(Open( "$ADDIN_HOME(com.idexx.nclark.SDCI)\StdDevCIOverlay_Help.pdf" ));
+About = Expr(Dialog(
+	VList("Std Dev CI Overlay v2.8",
+		"",
+		"Nathan Clark",
+		"IDEXX Laboratories, Inc.",
+		"Westbrook, ME 04092",
+		"nathan-clark@idexx.com"
+	)
+));
+jmpVer = JMPVersion();
+
+::globalListSDCI = {::ba1ListSDCI,::ba2ListSDCI,::ba4ListSDCI,::ba3ListSDCI};
+::globalVarSDCI = {::ba1VarSDCI,::ba2VarSDCI};
+::globalVar1SDCI = {::ba1Var1SDCI,::ba2Var1SDCI,::ba3Var1SDCI,::ba4Var1SDCI};
+
+::lbListSDCI = Expr({::colListYSDCI,::colListLSDCI,::colListGSDCI,::colListBSDCI });
+lbVar = Expr({comboSet,NewCI});
+::lbVar1SDCI = Expr({::meansSDCI,::deviationSDCI,::coeffVarSDCI,::showTableSDCI});
+
+::recallItemsSDCI = Expr(
+//Is List will produce error if ba1List is not declared
+//If error, declare vars, otherwise get vars
+	colList = dt << Get Column Names(String);
+	Try(
+		For(i=1,i<=N Items(::globalListSDCI),i++,
+			nextList = ::globalListSDCI[i];
+			For(j=1,j<=N Items(nextList),j++,
+				If(N Row(Loc(colList,nextList[j])) > 0,
+					Eval(
+						Substitute(
+							Expr(lb << Append(item)),
+							Expr(lb),::lbListSDCI[i],
+							Expr(item),nextList[j]
+						)
+					)
+				)
+			)
+		),
+		Print("No columns to recall.")
+	);
+	Try(
+		::comboObjSDCI<<set(Num(::ba1VarSDCI))
+	);
+	Try(
+		::textObjSDCI<<settext(::ba2VarSDCI);
+		NewCI=::ba2VarSDCI
+	);
+	Try(
+		If(::ba1Var1SDCI == 1,,
+			::meansSDCI<<set(1)
+		)
+	);
+	Try(
+		If(::ba2Var1SDCI == 1,,
+			::deviationSDCI<<set(1)
+		)
+	);
+	Try(
+		If(::ba3Var1SDCI == 1,,
+			::coeffVarSDCI<<set(1)
+		)
+	);
+	Try(
+		If(::ba4Var1SDCI == 0,,
+			::showTableSDCI<<set(1)
+		)
+	);
+);
+
+runOK = Expr(
+//Setting up to specify graphs to make and ensuring at least one graph is checked
+	graphics=Char(::meansSDCI<<get) || Char(::deviationSDCI<<get) || Char(::coeffVarSDCI<<Get);
+	graphicsCond = Match(Graphics,
+		"111",1,
+		"110",2,
+		"100",3,
+		"101",4,
+		"001",5,
+		"011",6,
+		"010",7,
+		"000",8
+	);
+	If(graphicsCond == 8,
+		Dialog("Must Choose one of the Desired Graphs");throw()
+	);
+//Populate global variables for Recall
+	For(i=1,i<=N Items(::globalListSDCI),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar);
+					glVar = lb << Get Items;
+					Lock Globals(glVar);
+				),
+				Expr(lb),::lbListSDCI[i],
+				Expr(glVar),Name Expr(::globalListSDCI[i])
+			)
+		);
+	);
+	NewCI=::textObjSDCI<<get text;
+	If( Is Missing( Num(NewCI) ) == 0,
+		CI = Num( NewCI );
+		comboSet = Char(::comboObjSDCI<<get),
+		NewCI="";
+		comboSet = Char(::comboObjSDCI<<get);
+		Match( comboSet,
+			"1", CI = 0.90,
+			"2", CI = 0.95,
+			"3", CI = 0.99//,
+			//4, CI=Num(NewCI)
+		)
+	);
+	For(i=1,i<=N Items(::globalVarSDCI),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar1);
+					glVar1 = lb;
+					Lock Globals(glVar1);
+				),
+				Expr(lb),lbVar[i],
+				Expr(glVar1),Name Expr(::globalVarSDCI[i])
+			)
+		);
+	);
+	For(i=1,i<=N Items(::globalVar1SDCI),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar2);
+					glVar2 = lb << Get;
+					Lock Globals(glVar2);
+				),
+				Expr(lb),::lbVar1SDCI[i],
+				Expr(glVar2),Name Expr(::globalVar1SDCI[i])
+			)
+		);
+	);
+	//show(::ba1List, ::ba2List, ::ba3List, ::ba1Var, ::ba2Var, ::ba1Var1, ::ba2Var1,::ba3Var1,::ba4Var1);
+	Eval(exprCancel);
+
+//Grabs value ordering from X, Columns and BY columns
+	valOrder = {};
+	For(i=1, i<=nitems(::ba3ListSDCI),i++,
+		valOrder[i] = Column(dt,::ba3ListSDCI[i])<<Get Property(Value Ordering);
+	);
+	valOrder1 = {};
+	For(i=1, i<=nitems(::ba2ListSDCI),i++,
+		valOrder1[i] = Column(dt,::ba2ListSDCI[i])<<Get Property(Value Ordering);
+	);
+	valOrder2 = {};
+	For(i=1, i<=nitems(::ba4ListSDCI),i++,
+		valOrder2[i] = Column(dt,::ba4ListSDCI[i])<<Get Property(Value Ordering);
+	);
+	
+//Distribution to obtain correct CI values
+	Dist = Distribution( 
+		Y( ::colListYSDCI << Get Items ), 
+		Confidence Interval( CI ), 
+		by( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems, ::colListGSDCI << GetItems ), 
+		invisible );
+	rDist = Dist << report;
+	dtSD = rDist[1][Table Box( 3 )] << make combined data table;
+	dtSD1 = rDist[1][Table Box( 2 )] << make combined data table;
+	dtSD << minimize window( 1 );
+	dtSD1 << minimize window( 1 );
+	
+	dtSD1 << Select Where(:Column 1 != "N")<<Delete Rows();
+	dtSD1 << Delete Columns({"Column 1", "Y"});
+	Column(dtSD1, "Column 2") << Set Name("N");
+	Dist << closewindow;
+	//varianceDlg << closeWindow;
+	Show( CI );
+	splitSD = dtSD << Split(
+		Split By( :Parameter ),
+		Split( :Estimate, :Lower CI, :Upper CI ),
+		Group( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems, ::colListGSDCI << GetItems, :Y ),
+		Invisible
+	);
+	Close(dtSD,nosave);
+	//JOIN NEW COMBINED TABLE WITH "N"... join by row???? Only if == # rows...
+	splitSD << Sort(
+		By(::colListBSDCI << Get Items, ::colListLSDCI << Get Items, ::colListGSDCI << Get Items),
+		Replace Table
+	);
+	dtSD1 << Sort(
+		By(::colListBSDCI << Get Items, ::colListLSDCI << Get Items, ::colListGSDCI << Get Items),
+		Replace Table
+	);
+	splitSD1 = splitSD << Join(
+		With( dtSD1 ),
+		Merge Same Name Columns,
+		By Row Number
+	);
+	Close(dtSD1,nosave);
+	Close(splitSD,nosave);
+	
+	splitSD1 << New Column("Estimate CV",Numeric,Continuous,
+		Formula((:Estimate Std Dev / :Estimate Mean) * 100)
+	);
+	splitSD1 << New Column("Lower CI CV",Numeric,Continuous,
+		Formula((Root( :N - 1, Empty() ) * :Estimate CV) / Root(
+			ChiSquare Quantile( 1-((1-CI)/2), :N - 1 ),Empty())
+		)
+	);
+	splitSD1 << New Column("Upper CI CV",Numeric,Continuous,
+		Formula((Root( :N - 1, Empty() ) * :Estimate CV) / Root(
+			ChiSquare Quantile( (1-CI)/2, :N - 1 ),Empty())
+		)
+	);
+	cvSD = splitSD1 << Stack(
+		columns(
+			:Estimate Mean,
+			:Estimate Std Dev,
+			:Lower CI Mean,
+			:Lower CI Std Dev,
+			:Upper CI Mean,
+			:Upper CI Std Dev,
+			:Estimate CV,
+			:Lower CI CV,
+			:Upper CI CV
+		),
+		Source Label Column( "ParamBuckets" ),
+		Stacked Data Column( "ParamValues" ),
+		Invisible
+	);
+	cvSD << New Column("Parameter",Character,
+		Formula(If(
+			Contains( :ParamBuckets, "Mean" ) > 0, "Mean",
+			Contains( :ParamBuckets, "Std Dev" ) > 0, "Std Dev",
+			Contains( :ParamBuckets, "CV" ) > 0, "CV"
+			)
+		)
+	);
+	cvSD << New Column("Value",Charcter,
+		Formula(If(
+			Contains( :ParamBuckets, "Estimate" ) > 0, "Estimate",
+			Contains( :ParamBuckets, "Lower CI" ) > 0, "Lower CI",
+			Contains( :ParamBuckets, "Upper CI" ) > 0, "Upper CI"
+			)
+		)
+	);
+	Match(graphicsCond,
+		1,,
+		2,cvSD<<selectwhere(:Parameter == "CV")<<deleterows,
+		3,cvSD<<selectwhere(:Parameter == "Std Dev" | :Parameter == "CV")<<deleterows,
+		4,cvSD<<selectwhere(:Parameter == "Std Dev")<<deleterows,
+		5,cvSD<<selectwhere(:Parameter == "Mean" | :Parameter == "Std Dev")<<deleterows,
+		6,cvSD<<selectwhere(:Parameter == "Mean")<<deleterows,
+		7,cvSD<<selectwhere(:Parameter == "Mean" | :Parameter == "CV")<<deleterows
+	);
+	If(Contains(jmpVer,"10")!=0,
+		If(::ba4Var1SDCI == 0,
+			NewdtSD = cvSD << Split(
+				Split By( :Value ),
+				Split( :ParamValues ),
+				Group( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems,::colListGSDCI << GetItems, :Y, :Parameter ),
+				Invisible
+			),
+			NewdtSD = cvSD << Split(
+				Split By( :Value ),
+				Split( :ParamValues ),
+				Group( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems,::colListGSDCI << GetItems, :Y, :Parameter ),
+				//Invisible
+			)
+		),
+		If(::ba4Var1SDCI == 0,
+			NewdtSD = cvSD << Split(
+				Split By( :Value ),
+				Split( :ParamValues ),
+				Group( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems,::colListGSDCI << GetItems, :Y, :Parameter ),
+				Private
+			),
+			NewdtSD = cvSD << Split(
+				Split By( :Value ),
+				Split( :ParamValues ),
+				Group( ::colListBSDCI << Get Items, ::colListLSDCI << GetItems,::colListGSDCI << GetItems, :Y, :Parameter ),
+				//Invisible
+			)
+		);
+	);
+	Column(NewdtSD,"Parameter") << Delete Formula;
+	Column(NewdtSD,"Parameter") << Set Property("Value Ordering",{"Mean", "Std Dev", "CV"});
+	NewdtSD << Delete Columns("ParamBuckets");
+	
+	//Adjusts Value Ordering for X, Columns, Group X columns and BY columns
+	For(i=1,i<=nitems(::ba3ListSDCI),i++,
+		order = valOrder[i];
+		If(order == Empty(),,
+			Column(NewdtSD,::ba3ListSDCI[i])<<Set Property("Value Ordering",order)
+		)
+	);	
+	For(i=1,i<=nitems(::ba2ListSDCI),i++,
+		order = valOrder1[i];
+		If(order == Empty(),,
+			Column(NewdtSD,::ba2ListSDCI[i])<<Set Property("Value Ordering",order)
+		)
+	);
+	For(i=1,i<=nitems(::ba4ListSDCI),i++,
+		order = valOrder2[i];
+		If(order == Empty(),,
+			Column(NewdtSD,::ba4ListSDCI[i])<<Set Property("Value Ordering",order)
+		)
+	);
+	
+	Eval(ChartMaker);
+	//Graphs result with Chart Platform
+	/*chrt = NewdtSD << Chart(
+		X( ::colListL << getitems ),
+		Y( :Estimate, :Lower CI, :Upper CI ),
+		Range Chart( 1 ),
+		Y[1] << {Show Points( 1 ), Overlay Color( 0 ), Overlay Marker( 0 )},
+		Y[2] << {Show Points( 0 ), Overlay Color( 0 ), Overlay Marker( 29 )},
+		Y[3] << {Show Points( 0 ), Overlay Color( 0 ), Overlay Marker( 29 )},
+		BY( ::colListB << Get Items, :Y, :Parameter ),
+		SendToReport( 
+			Dispatch( {}, "", LegendBox, {Set Title( "Alpha = "||Char(1-CI) )} ),
+			Dispatch({}, "108", ScaleBox, {Show Major Grid( 1 ), Show Minor Grid( 1 ), Rotated Labels( "Horizontal" )}
+			)
+		)
+	);
+	Close(splitSD,nosave);
+	Close(cvSD,nosave);
+	Clear Symbols( NewdtSD ); 
+	Name=Expr(report(chrt[i])[outline box(1)] << get title);
+	Name1=Expr(report(chrt)[outline box(1)] << get title);
+	IF(IsEmpty(chrt[2]), 
+		For( i = 1, i < 2, i++,
+			If( 
+				Contains( Eval( name1 ), "Parameter=Mean" ) != 0,
+					chrt << SendToReport(
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Mean" )} )
+					),
+				Contains( Eval( name1 ), "Parameter=Std Dev" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Std Dev" )} ) 
+					),
+				Contains( Eval( name1 ), "Parameter=CV" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "CV" )} ) 
+					)
+			)
+		),
+		For( i = 1, i <= Nitems(chrt), i++,
+			If( 
+				Contains( Eval( name ), "Parameter=Mean" ) != 0,
+					chrt[i] << SendToReport(
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Mean" )} )
+					),
+				Contains( Eval( name ), "Parameter=Std Dev" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Std Dev" )} ) 
+					),
+				Contains( Eval( name ), "Parameter=CV" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "CV" )} ) 
+					)
+			)
+		)
+	)*/
+);
+
+//---------------Sub graphMaker-------------------------------------------------
+ChartMaker = Expr(
+	//Graphs result with Chart Platform
+	/*chrt = NewdtSD << Chart(
+		X( ::colListL << getitems ),
+		Y( :Estimate, :Lower CI, :Upper CI ),
+		Range Chart( 1 ),
+		Y[1] << {Show Points( 1 ), Overlay Color( 0 ), Overlay Marker( 0 )},
+		Y[2] << {Show Points( 0 ), Overlay Color( 0 ), Overlay Marker( 29 )},
+		Y[3] << {Show Points( 0 ), Overlay Color( 0 ), Overlay Marker( 29 )},
+		BY( ::colListB << Get Items, :Y, :Parameter ),
+		SendToReport( 
+			Dispatch( {}, "", LegendBox, {Set Title( "Alpha = "||Char(1-CI) )} ),
+			Dispatch({}, "108", ScaleBox, {Show Major Grid( 1 ), Show Minor Grid( 1 ), Rotated Labels( "Horizontal" )}
+			)
+		)
+	);
+	Close(splitSD,nosave);
+	Close(cvSD,nosave);
+	Clear Symbols( NewdtSD ); 
+	Name=Expr(report(chrt[i])[outline box(1)] << get title);
+	Name1=Expr(report(chrt)[outline box(1)] << get title);
+	IF(IsEmpty(chrt[2]), 
+		For( i = 1, i < 2, i++,
+			If( 
+				Contains( Eval( name1 ), "Parameter=Mean" ) != 0,
+					chrt << SendToReport(
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Mean" )} )
+					),
+				Contains( Eval( name1 ), "Parameter=Std Dev" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Std Dev" )} ) 
+					),
+				Contains( Eval( name1 ), "Parameter=CV" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "CV" )} ) 
+					)
+			)
+		),
+		For( i = 1, i <= Nitems(chrt), i++,
+			If( 
+				Contains( Eval( name ), "Parameter=Mean" ) != 0,
+					chrt[i] << SendToReport(
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Mean" )} )
+					),
+				Contains( Eval( name ), "Parameter=Std Dev" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "Std Dev" )} ) 
+					),
+				Contains( Eval( name ), "Parameter=CV" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y", TextEditBox, {Set Text( "CV" )} ) 
+					)
+			)
+		)
+	)*/
+	
+	//Makes chart with Graph Builder
+	varList = ::colListLSDCI<<getitems;
+	varList1 = ::colListGSDCI<<getitems;
+	
+	xExpr = Expr( 
+		Variables( Y( :Lower CI ), 
+		Y( :Estimate, Position( 1 ) ), 
+		Y( :Upper CI, Position( 1 ) ) ) 
+	);
+
+	For( i = N Items( varList ), i >= 1, i--,
+		varExpr = Expr( X() );
+		Insert Into( varExpr, Column( varList[i] ) );
+		Insert Into( varExpr, Name Expr( Position( 1 ) ) );
+		Insert Into( xExpr, Name Expr( varExpr ), 1 );
+	);
+	For( i = N Items( varList1 ), i >= 1, i--,
+		varExpr1 = Expr( Group X() );
+		Insert Into( varExpr1, Column( varList1[i] ) );
+		//Insert Into( varExpr1, Name Expr( Position( 1 ) ) );
+		Insert Into( xExpr, Name Expr( varExpr1 ), 1 );
+		//Show(xExpr)
+	);
+
+	Eval(
+		  Substitute(
+					  Expr(
+							chrt = NewdtSD << Graph Builder(
+								  Show Control Panel( 0 ),
+								  Xvars,
+								  Elements(
+										Points( X( 1 ), Y( 2 ), Legend( 1 ), Jitter( 0 ) ),
+										Bar(
+											  X( 1 ),
+											  Y( 1 ),
+											  Y( 3 ),
+											  Legend( 2 ),
+											  Bar Style( "Interval" ),
+											  Summary Statistic( "Mean" )
+										)
+								  ),
+								  BY( ::colListBSDCI << Get Items, :Y, :Parameter ),
+								  
+							)
+					  ),
+				Expr( xVars ), Name Expr( xExpr )
+		  )
+	);
+	
+	Close(splitSD1,nosave);
+	Close(cvSD,nosave);
+	Clear Symbols( NewdtSD );
+	
+	Name=Expr(report(chrt[i])[outline box(1)] << get title);
+	Name1=Expr(report(chrt)[outline box(1)] << get title);
+	IF(IsEmpty(chrt[2]), 
+		For( i = 1, i < 2, i++,
+			If( 
+				Contains( Eval( name1 ), "Parameter=Mean" ) != 0,
+					chrt << SendToReport(
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "Mean" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Mean +/- "||Char(CI*100)||" %CI" )})
+					),
+				Contains( Eval( name1 ), "Parameter=Std Dev" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "Std Dev" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Standard Deviation +/- "||Char(CI*100)||" %CI" )}) 
+					),
+				Contains( Eval( name1 ), "Parameter=CV" ) != 0,
+					chrt << SendToReport( 
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "CV" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Coefficient of Variation +/- "||Char(CI*100)||" %CI" )}) 
+					)
+			);
+			//chrt << SendToReport(
+			//	Dispatch({},"graph title",TextEditBox,{Set Text( "Exact Binomial Graph, Alpha = "||Char(1-CI) )}),
+			//	Dispatch( {}, "400", LegendBox, {Set Title( "Alpha = "||Char(1-CI) )} )
+			//)
+		),
+		For( i = 1, i <= Nitems(chrt), i++,
+			If( 
+				Contains( Eval( name ), "Parameter=Mean" ) != 0,
+					chrt[i] << SendToReport(
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "Mean" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Mean +/- "||Char(CI*100)||" %CI" )})
+					),
+				Contains( Eval( name ), "Parameter=Std Dev" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "Std Dev" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Standard Deviation +/- "||Char(CI*100)||" %CI" )}) 
+					),
+				Contains( Eval( name ), "Parameter=CV" ) != 0,
+					chrt[i] << SendToReport( 
+					Dispatch( {}, "Y title", TextEditBox, {Set Text( "CV" )} ),
+					Dispatch({},"graph title",TextEditBox,{Set Text( "Coefficient of Variation +/- "||Char(CI*100)||" %CI" )}) 
+					)
+			);
+			//chrt << SendToReport(
+			//	//Dispatch({},"graph title",TextEditBox,{Set Text( "Exact Binomial Graph, Alpha = "||Char(1-CI) )}),
+			//	Dispatch( {}, "400", LegendBox, {Set Title( "Alpha = "||Char(1-CI) )} )
+			//)
+		)
+	);	
+);
+//------------------End Sub graphMaker---------------------------------------
+
+include("$ADDIN_HOME(com.idexx.nclark.updateFX)\FIVEXutils\utilities.jsl");
+If(HostIs("Mac"),
+	u = Get Environment Variable("USER");
+	,
+	u = Get Environment Variable("username");
+);
+addinID = "com.idexx.nclark.SDCI";
+trackUsage(u,addinID);
+batchUpdateChk(EvalList(List(addinID)));
+
+varianceDlg = New Window( "Confidence Intervals",
+	Border Box( Left( 3 ), top( 2 ),
+		V List Box(
+			Text Box( "Listing Variation with Correct Confidence Intervals" ),
+			H List Box(
+				V List Box(
+					Panel Box( "Select Columns",
+						colListData = Col List Box(
+							All,
+							width( lbWidth ),
+							nLines( Min( nc, 10 ) )
+						)
+					),
+				),
+				Panel Box( "Cast Selected Columns into Roles",
+					Lineup Box( N Col( 2 ), Spacing( 3 ),
+						Button Box( "Y, Columns",
+							::colListYSDCI << Append( colListData << GetSelected )
+						),
+						::colListYSDCI = Col List Box( width( lbWidth ), minitems(1), nLines( 5 ), numeric ),
+						Button Box( "X, Columns", ::colListLSDCI << Append( colListData << GetSelected ) ),
+						::colListLSDCI = Col List Box( width( lbWidth ), minitems(1), nLines( 2 ) ),
+						Button Box( "Group X", ::colListGSDCI << Append( colListData << GetSelected ) ),
+						::colListGSDCI = Col List Box( width( lbWidth ), nLines( 2 ) ),
+						Button Box( "By", ::colListBSDCI << Append( colListData << GetSelected ) ),
+						::colListBSDCI = Col List Box( width( lbWidth ), nLines( 1 ) )
+					)
+				),
+				Panel Box( "Action",
+					Lineup Box( N Col( 1 ),
+						Button Box( "OK", Eval(runOK)),
+						Button Box( "Cancel", Eval(exprCancel) ),
+						Text Box( " " ),
+						Button Box( "Remove",
+							::colListYSDCI << RemoveSelected;
+							::colListLSDCI << RemoveSelected;
+							::colListBSDCI << RemoveSelected;
+							::colListGSDCI << RemoveSelected;
+						),
+						Button Box( "Recall", Eval(::recallItemsSDCI) ),
+						Button Box( "Help", Eval(Help) ),
+						Button Box( "About", Eval(About) )
+					)
+				)
+			),
+			H List Box(
+				Panel Box( "Confidence",
+					H List Box(
+						V List Box(
+							TextBox("Select Confidence Interval"),
+							H List Box(
+								::comboObjSDCI = Combo Box( {"0.90", "0.95", "0.99"}, <<Set( 2 ) ),
+								TextBox("   or")
+							),
+							H List Box(
+								TextBox("Enter Desired 1-Alpha "),
+								::textObjSDCI = Text Edit Box("",<<Script(NewCI=::textObjSDCI<<GetText))
+							)
+						)
+					)
+				),
+				Panel Box( "Desired Graphs",
+					V List Box(
+						::meansSDCI = checkbox("Mean",<<Set(1)),
+						::deviationSDCI = checkbox("Std Dev",<<Set(1)),
+						::coeffVarSDCI = checkbox("CV",<<Set(1))
+					)
+				),
+				Panel Box( "Show SD/CI Table",
+					V List Box(
+						::showTableSDCI = checkbox("Show Table",<<Set(0)),
+					)
+				)
+			)
+		)
+	)
+);
+
+exprCancel = Expr(varianceDlg << Close Window);

@@ -1,0 +1,609 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates ARs for Operations Bile Acids data
+
+//------------------Revision History for both script and Help File--
+// NOTE script uses uniqueAssayID, may need to update to uniqueCurveID in future
+//
+//	1.4 NClark 061721
+//		-> Updated AR Calc to change name of RD2 column so WL stack will not take place during table prep
+//		-> Updated AR Calc to change name of RD2 column to that which Table Prep would before doing the stack
+//		-> Commented out addin version checking as it's unecessary
+//		-> deleted commented out code for cleanliness
+//	1.3 NClark 051121
+//		-> Update to tablename function call to reset output to itself
+//		-> updated libs to decouple file locations not within OPS
+//	1.2 NClark 111119
+//		-> Read Point_glitch now uses own formula rather than relying on Read Point column
+//		-> Glitch Point(s) calculated for all curves and not just when only one glitch is present
+//		-> Added residual variance as output from DynamicARFun
+//		-> Updated flagging to correct numbers AND thresholds
+//		-> Renamed Dry Normalized Response to DryNorm_correctedRD
+//		-> Point 2 check no longer trips a glitch (1st point will always be included)
+//			-> Point 2 Check replaced with "NotImplemented"
+//		-> Removed formulas for Flag and Flag_nums
+//		-> Updated SOPstartTime to 25 from 30
+//	1.1 NClark 102219
+//		-> updated includes to reference path where main script located
+//	1.0 NClark 101419
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+//-----------Variable Declarations (above Main for easy access)--
+
+//variableDeclaration = Function({},{},
+	u = Get Environment Variable("username");
+	addinID = "com.idexx.IDEXXQCTools_Bile";
+	//addinLib = "com.idexx.assayDevLibraries2";
+
+	updateIDs = {"com.idexx.assayDevLibraries2","com.idexx.IDEXXQCTools_Bile"};
+
+	minJMPver = "14";
+	
+	Try(
+		arCalcVer = Char( Get Addin( "com.idexx.IDEXXQCTools_Bile" ) << version )
+		,
+		Print( "Addin not installed yet" );
+		arCalcVer = "v999";
+	);
+	//varList = {u,addinID,Char(updateIDs),minJMPver,arCalcVer};
+	//Return(concatItems(EvalList(varList),","));
+	//);
+	
+	//Define the time values for use in formulas
+	SOPstartTime = 25;
+	SOPendTime = 105;
+	SOPtimes = [35 45 55 65];
+	
+	posThreshold = 0;
+	negThreshold = -0.0008;
+	
+	assayFlags = {
+		{glitchCorrect, 1, "GlitchCorrect[75 76]"},
+		{glitchSuppress, 2, "Glitch[*75]"},
+		{quadSlopeFlag, -0.007, 0.5, "Quad[*82]"},
+		{dryReadFlag, 0.103, "Dry[*77]"},
+		{quadVslopeFlag, -0.004352, 0.00003, -0.004852, -0.00003, "QuadVSlope[*82]"},
+		{arRange, -0.0005, 0.036, "ARrange[91]"},
+		{residVar, 0.0005,"ExceedVarLim[*4]"}
+	};
+	
+	
+//-----------/Variable Declarations-----------------------
+path = ConvertFilePath("");
+//show(ConvertFilePath(path||"Utilities\AssayDev_TablePreparation2.jsl"));
+
+include(ConvertFilePath(path||"Utilities\AssayDev_TablePreparation2.jsl"));
+include(ConvertFilePath(path||"Utilities\AssayDev_FlagDecoding2.jsl"));
+include(ConvertFilePath(path||"Utilities\AssayDev_FunctionLibrary2.jsl"));
+include(ConvertFilePath(path||"Utilities\AssayDev_Utilities.jsl"));
+
+//include("$ADDIN_HOME(com.idexx.IDEXXQCTools_Bile)\Utilities\AssayDev_TablePreparation2.jsl");
+//include("$ADDIN_HOME(com.idexx.IDEXXQCTools_Bile)\Utilities\AssayDev_FlagDecoding2.jsl");
+//include("$ADDIN_HOME(com.idexx.IDEXXQCTools_Bile)\Utilities\AssayDev_FunctionLibrary2.jsl");
+//include("$ADDIN_HOME(com.idexx.IDEXXQCTools_Bile)\Utilities\AssayDev_Utilities.jsl");
+
+dynamicARfun = Function( {table, timeCol, respCol, uniqueCol, startT, endT, timePtsv},
+	{default local},
+	
+	//table = tableName;
+	//timeCol = "TimeFromSampleDispense:sec";
+	//respCol = "DryNorm_corrected RD";
+	//uniqueCol = "uniqueAssayID";
+	//startT = SOPstartTime;
+	//endT = SOPendTime;
+	//timePtsv = SOPtimes;
+	
+	parseRespCol = Parse(EvalInsert(":name(\!"^respCol^\!")"));
+	parseTimeCol = Parse(EvalInsert(":name(\!"^timeCol^\!")"));
+	parseUniqueCol = Parse(EvalInsert(":name(\!"^uniqueCol^\!")"));
+	
+	dt1 = table << Select Where( startT <= parseTimeCol <= endT ) << Subset( Selected Rows( 1 ), Selected Columns( 0 ), private );
+	
+	respMap = dt1 << Bivariate(
+		Y( EvalExpr(parseRespCol) ),
+		X( EvalExpr(parseTimeCol) ),
+		Fit Special( Degree( 2 ), Centered Polynomial( 0 ), {Line Color( {212, 73, 88} )},, {Save Predicteds()}  ),
+		By( EvalExpr(parseUniqueCol) )
+	);
+	fitData = Try(
+		Report( respMap[1] )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible(1)),
+		Report( respMap )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible(1))
+	);
+	fitDataB = Try(
+		Report( respMap[1] )["Summary of Fit"][Table Box( 1 )] << Make Combined Data Table(invisible(1)),
+		Report( respMap )["Summary of Fit"][Table Box( 1 )] << Make Combined Data Table(invisible(1))
+	);
+
+	predName = Column(dt1,ncol(dt1)) << get name;
+	parsePredName = Parse(EvalInsert(":name(\!"^predName^\!")"));
+
+	dt1 << New Column("ResidualVariance",
+		Formula(
+			Col Sum(
+				(parseRespCol - parsePredName)^ 2,parseUniqueCol) / Col Mean( parsePredName, parseUniqueCol )
+		)
+	);
+	dt1:ResidualVariance << delete formula;
+
+	keepList = EvalList({uniqueCol,"ResidualVariance"});
+	//show(keepList);
+	For(i=ncol(dt1), i>=1, i--,
+		If(Contains(keepList,Column(dt1,i) << Get Name) > 0,
+			Empty()
+			,
+			deleteCol = Column(dt1,i) << Get Name;
+			dt1 << delete columns(deleteCol);
+		)
+	);
+	
+	fitData2 = fitData << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( EvalExpr(parseUniqueCol) ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		private
+	);
+
+	fitData2B = fitDataB << Split(
+		Split By( :Column 1 ),
+		Split( :Column 2 ),
+		Group( EvalExpr(parseUniqueCol) ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		private
+	);
+	
+	fitData2B << Delete Columns( "Mean of Response", "Observations (or Sum Wgts)", "RSquare", "RSquare Adj" );
+	
+	respMap << Close Window;
+	fitData << Close Window;
+	fitDataB << Close Window;
+	
+	timeCol2 = timeCol||"^2";
+	parseTimeCol2 = Parse(EvalInsert(":name(\!"^timeCol2^\!")"));
+	For( i = 1, i <= N Cols( timePtsv ), i++, 
+	
+		fitData2 << New Column( "Grab Time " || Char( timePtsv[i] ),
+			Numeric,
+			Continuous,
+			Set Formula( parseTimeCol * timePtsv[i] + parseTimeCol2 * timePtsv[i] ^ 2 )
+		);
+		
+		Column( fitData2, "Grab Time " || Char( timePtsv[i] ) ) << Delete Formula;
+	);
+	
+	colListhave = fitData2 << Get Column Names( String );
+	colListneed = {};
+	
+	For( i = 1, i <= Length( colListhave ), i++,
+		If( Contains( colListhave[i], "Grab Time" ) > 0,
+			Insert Into( colListneed, colListhave[i] )
+		)
+	);
+	
+	fitData3 = fitData2 << Stack( Columns( colListneed ), Source Label Column( "Grab Time" ), Stacked Data Column( "Signal" ), private );
+	
+	Column( fitData2, timeCol ) << Set Name( "B Term" );
+	Column( fitData2, timeCol2 ) << Set Name( "A Term" );
+	Column( fitData2, "Intercept" ) << Set Name( "C Term" );
+	
+	table << Update(
+		With( fitData2 ),
+		Match Columns( EvalExpr(parseUniqueCol) = EvalExpr(parseUniqueCol) ),
+		Add Columns from Update table( :A Term, :B Term, :C Term )
+	);
+	
+	table << Update(
+		With( fitData2B ),
+		Match Columns( EvalExpr(parseUniqueCol) = EvalExpr(parseUniqueCol) ),
+		Add Columns for Update Table( :Root Mean Square Error )
+	);
+
+	table << Update(
+		With( dt1 ),
+		Match Columns( EvalExpr(parseUniqueCol) = EvalExpr(parseUniqueCol) ),
+		Add Columns for Update Table( :Name("ResidualVariance"))
+	);
+		
+	fitData2 << Close Window;
+	fitData2B << Close Window;
+	
+	fitData3 << New Column( "Time", Numeric, Continuous, Set Formula( Num( Word( 3, :Grab Time, " " ) ) ) );
+	Column( fitData3, "Time" ) << Delete Formula;
+	fitData3 << Delete Columns( "Grab Time" );
+
+	fitDatabeta = fitData3 << Bivariate( Y( :Signal ), X( :Time ), Fit Line( {Line Color( {212, 73, 88} )} ), By( EvalExpr(parseUniqueCol) ) );
+
+	arFinal = Try(
+		Report( fitDatabeta[1] )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible(1)),
+		Report( fitDatabeta )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible(1))
+	);
+
+	fitDatabeta << Close Window;
+	
+	arFinal << Select Where( :Term == "Intercept" ) << Delete Rows;
+	arFinal << Delete Columns( "X", "Y", "~Bias", "Std Error", "t Ratio", "Prob>|t|", "Term" );
+
+	Column( arFinal, "Estimate" ) << Set Name( "Dynamic Region AR" );
+
+	table << Update( With( arFinal ), Match Columns( EvalExpr(parseUniqueCol) = EvalExpr(parseUniqueCol) ) );
+	
+	dt1 << Close Window;
+	arFinal << Close Window;
+	fitData3 << Close Window;
+	
+);
+
+glitchCalcFix = Function( {table,glitchReadPointCol,respCol,uniqueCol},{default local},
+	timeInt = [1 2, 2 3, 3 4, 4 5, 5 6] - 1;
+	parseRespCol = Parse(EvalInsert(":name(\!"^respCol^\!")"));
+	parseUniqueCol = Parse(EvalInsert(":name(\!"^uniqueCol^\!")"));
+	
+	For( i = 1, i <= N Rows( timeInt ), i++,
+		colNametemp1 = "Slope of Response(" || Char( timeInt[i, 1] ) || "-" || Char( timeInt[i, 2] ) || ")";
+		genericInterpMetric( table, respCol, glitchReadPointCol, uniqueCol, colNametemp1, timeInt[i, 1], timeInt[i, 2], "Slope" );
+	);
+
+	//Point 2 check is for the 1st point in the array. Currently we will force allowance into the calculations and not glitch correct it
+	table << New Column( "Point 2 Check",
+		Numeric,
+		//Continuous,
+		//Set Formula( If( :Name( "Slope of Response(0-1)" ) >= posThreshold & :Name( "Slope of Response(1-2)" ) < negThreshold, 1, 0 ) )
+		Character(10),
+		<< Set Each Value("NotImplemented")
+	);
+
+	table << New Column( "Point 3 Check",
+		Numeric,
+		Continuous,
+		Set Formula( If( :Name( "Slope of Response(1-2)" ) >= posThreshold & :Name( "Slope of Response(2-3)" ) < negThreshold, 1, 0 ) )
+	);
+
+	table << New Column( "Point 4 Check",
+		Numeric,
+		Continuous,
+		Set Formula( If( :Name( "Slope of Response(2-3)" ) >= posThreshold & :Name( "Slope of Response(3-4)" ) < negThreshold, 1, 0 ) )
+	);
+	
+	table << New Column( "Point 5 Check",
+		Numeric,
+		Continuous,
+		Set Formula( If( :Name( "Slope of Response(3-4)" ) >= posThreshold & :Name( "Slope of Response(4-5)" ) < negThreshold, 1, 0 ) )
+	);
+	
+	table << New Column( "Total Glitch Count",
+		Numeric,
+		Continuous,
+		Set Formula( Sum( /*:Point 2 Check,*/ :Point 3 Check, :Point 4 Check, :Point 5 Check ) )
+	);
+	
+	//table:Name("Point 2 Check") << delete formula;
+	table:Name("Point 3 Check") << delete formula;
+	table:Name("Point 4 Check") << delete formula;
+	table:Name("Point 5 Check") << delete formula;
+	table:Name("Total Glitch Count") << delete formula;
+	
+	glitchCheck = Max( Column( table, "Total Glitch Count" ) << Get Values );
+	If( glitchCheck > 0,
+		Try(
+			dt_Data_glitch = table << Select Where( :Total Glitch Count >= 1 ) << Subset( Selected Rows( 1 ), Selected Columns( 0 ), Invisible );
+			//will error here if no table is created
+			dt_Data_glitch << New Column( "P2P Slope",
+				Numeric,
+				Continuous,
+				//changed bottom from 1 to 2 so the first point is not considered for glitching
+				Set Formula( If( 2 <= :Read Point_glitch <= 5, parseRespCol - Lag( parseRespCol ) ) )
+			);
+			Column( dt_Data_glitch, "P2P Slope" ) << Delete Formula;
+			dt_Data_glitch << New Column( "Glitch Point", Numeric, Continuous, Set Formula( If( :P2P Slope >= posThreshold & Lag( :P2P Slope, -1 ) < negThreshold, 1, 0 ) ) );
+			Column( dt_Data_glitch, "Glitch Point" ) << Delete Formula;
+			//dt_Data_glitch << Select Where( :Glitch Point == 1 ) << Delete Rows();
+		
+			dt_Data_glitch << Delete Columns( "P2P Slope" );
+			//dynamicARfun( dt_Data_glitch, "TimeFromSampleDispense:sec","DryNorm_corrected RD","uniqueAssayID",SOPstartTime,SOPendTime,SOPtimes );
+			dtGtemp = dt_Data_glitch << Subset( Columns( Column(uniqueCol), "Read Point_glitch", "Glitch Point" ), Selected Rows( 0 ) );
+			//Column( dtGtemp, "Dynamic Region AR" ) << Set Name( "Glitch Corrected AR" );
+			table << Update(
+				With( dtGtemp ),
+				Match Columns(
+					Eval(NameExpr(parseUniqueCol)) = Eval(NameExpr(parseUniqueCol)),
+					:Read Point_glitch = :Read Point_glitch
+				)
+			);
+			For Each Row(table,
+				If(IsMissing(:Name("Glitch Point")),:Name("Glitch Point") = 0)
+			);
+		
+			dtGtemp << Close Window;
+			dt_Data_glitch << Close Window;
+			,
+			//Only total of 1 gets fixed
+			table << New Column( "Glitch Point", Numeric, Continuous, << set each value(0) );
+			//Column( table, "Glitch Corrected AR" ) << Delete Formula;
+		)
+	,
+		table << New Column( "Glitch Point", Numeric, Continuous, << set each value(0) );
+		//Column( table, "Glitch Corrected AR" ) << Delete Formula;
+	);
+	
+);
+
+arCalc = Function({tableName},{},
+	//tablename = currentdatatable();
+
+	//setting this name different to offset the pairing of WL / RD columns so no WL stack takes place
+	Try(tableName:"Timeseries RD2"n << set name("__Timeseries RD2"));
+
+	//prep the table so correct column needs are present
+	tableName = tablePrep(tableName);
+	/*with existing functions, renaming of columns isn't necessary as the functions
+	take whatever columns you want to use. However, renaming/duplicating columns
+	allows the operations output to have similar column names that others (namely R&D)
+	currently use to help keep all teams within same alignment*/
+	
+	respCol = "ReflDens_avg";
+	timeCol = "TimeFromSampleDispense:sec";
+	uniqueCol = "uniqueAssayID";
+	//calculating the dry-normalized readings
+	//preDevelopmentMetric{tableName,yColumn,xColumn,byColumn,columnName,metric="sp",direction="Dry",eventOneTime="NULL",eventTwoTime="NULL",singlePoint=1};
+	preDevelopmentMetric(tableName,respCol,timeCol,uniqueCol,"AvgDry","avg","Dry","NULL","NULL",1);
+	parseRespCol = Parse(EvalInsert(":name(\!"^respCol^\!")"));
+	parseTimeCol = Parse(EvalInsert(":name(\!"^timeCol^\!")"));
+	parseUniqueCol = Parse(EvalInsert(":name(\!"^uniqueCol^\!")"));
+	//show(parseRespCol);
+	
+	tableName << New Column( "Read Point_glitch",
+		Numeric,
+		Nominal,
+		Set Formula(
+			If( :Name( "Inst Type" ) == "CatOne",
+				If( Row() == 1 | Lag( :Name( "uniqueAssayID" ), 1 ) != :Name( "uniqueAssayID" ),
+					If( :Name( "TimeFromSampleDispense:sec" ) < 0,
+						Index1 = -1;
+						While( Lag( :Name( "TimeFromSampleDispense:sec" ), Index1 ) < 0, Index1-- );
+						rp = 0 + index1;
+						//show(rp, index1);
+						rp = rp -1;
+					,
+						rp = 0
+					)
+				,
+					Lag( :Read Point_glitch, 1 ) + 1
+				)
+			,
+				If( Row() == 1 | Lag( :Name( "uniqueAssayID" ), 1 ) != :Name( "uniqueAssayID" ),
+					If( :Name( "TimeFromSampleDispense:sec" ) < 0,
+						Index1 = -1;
+						While( Lag( :Name( "TimeFromSampleDispense:sec" ), Index1 ) < 0, Index1-- );
+						rp = 0 + index1;
+					,
+						rp = 0
+					)
+				,
+					Lag( :Read Point_glitch, 1 ) + 1
+				)
+			)
+		)
+	);
+	Column( tableName, "Read Point_glitch" ) << Delete Formula;
+	
+	glitchCalcFix(tableName,"Read Point_glitch","ReflDens_avg","uniqueAssayID" );
+	
+	tableName << New Column("Glitch Corrected RD",Numeric, Continuous,
+		Formula(
+			If(:Name("Glitch Point") == 1, Empty(),
+				parseRespCol
+			)
+		)
+	);
+	tableName:Name("Glitch Corrected RD") << delete formula;
+	
+	tableName << New Column("DryNorm_corrected RD",
+		Formula(
+			:Name("Glitch Corrected RD") / :Name("AvgDry")
+		)
+	);
+	tableName:Name("DryNorm_corrected RD") << delete formula;
+
+	dynamicARfun(tableName,"TimeFromSampleDispense:sec","DryNorm_corrected RD","uniqueAssayID",SOPstartTime,SOPendTime,SOPtimes);
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	table = tableName<<GetName;
+	titleName = Word(1,table,"-");
+	dateName = Substr(table,Munger( table, 1, "-" )+1,6);
+	
+	tableName << SetName(
+		titleName||"-"||dateName||"_"||"Bile AR_"||nextTodayDate|| "_progCurves" 
+	);
+	
+	//renaming to match what TablePrep would name before stacking
+	Try(tableName:"__Timeseries RD2"n << set name("ReflDens_avg_2"));
+
+	Return(tableName);
+);
+
+flagging = Function({tableName,flagParams}, {default local},
+	
+	//tableName = currentdatatable();
+	//flagParams = assayFlags = {
+	//	{glitchCorrect, 1, "GlitchCorrect[95]"},
+	//	{glitchSuppress, 2, "Glitch[*96]"},
+	//	{quadSlopeFlag, -0.002, "Quad[*97]"},
+	//	{dryReadFlag, 0.103, "Dry[*80]"}
+	//};
+	tableName << New Column("Flag",Character,
+		Formula(
+			If(Row() == 1 | :Name( "uniqueAssayID" ) != Lag(:Name( "uniqueAssayID" ),1),
+				flagList = {};
+				For(i=1,i<=nitems(flagParams),i++,
+					Match(i,
+						1,
+							If(
+								:Name("Total Glitch Count") != flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						2,
+							If(
+								:Name("Total Glitch Count") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						4,
+							If(
+								:Name("AvgDry") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						3,
+							If(
+								flagParams[i][2] <= :Name("B Term") <= flagParams[i][3],
+								flagList[i] = "NF("||flagParams[i][4]||")"
+								,
+								flagList[i] = flagParams[i][4]
+							);
+						,
+						6,
+							If(
+								flagParams[i][2] <= :Name("Dynamic Region AR") <= flagParams[i][3],
+								flagList[i] = "NF("||flagParams[i][4]||")"
+								,
+								flagList[i] = flagParams[i][4]
+							);
+						,
+						5,
+							If(
+								Round(flagParams[i][4] * :Name("B Term") + flagParams[i][5], 10) <= :Name("A Term") <= Round(flagParams[i][2] * :Name("B Term") + flagParams[i][3], 10),
+								flagList[i] = "NF("||flagParams[i][6]||")",
+								flagList[i] = flagParams[i][6];
+							)
+							,
+						7,
+							If(
+								:Name("ResidualVariance") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+					);
+				);
+				flagList1="";
+				For(j=1,j<=nitems(flagList),j++,
+					flagList1 = flagList1 || " " || flagList[j]
+				);
+				Trim(flagList1);
+				,
+				Lag(:Flag,1)
+			)
+		)
+	);
+	
+	tableName<<New Column("Flag_nums",Character(20),
+		Formula(
+			//If(:Chem Type == assay_Name,
+				flagNumList = Words(:Flag,"[");
+				flagNumList1 = "";
+				For(k=1,k<=nitems(flagNumList)-1,k++,
+					If(Contains(flagNumList[k],"NF") == 0,
+						flagNumList1 = flagNumList1 || " " || Word(1,flagNumList[k+1],"]")
+					)
+				);
+				If(flagNumList1 == "",
+					"None"
+					,
+					Trim(flagNumList1);
+				)
+			//);
+		)
+	);
+	Column(tableName,"Flag_Nums") << Eval Formula;
+	
+	tableName:Flag << delete formula;
+	tableName:Flag_nums << delete formula;
+
+	tableName << New Column( "AR_OPS",
+		Formula(
+			If(
+				:Dynamic Region AR == -999, -2
+			,
+				:Flag_nums != "95" & :Flag_nums != "None", -1
+			,
+				:Dynamic Region AR
+			)
+		)
+	);
+	Column(tableName, "AR_OPS")<<deleteformula;
+	
+	Return(tableName);
+);
+
+finishingOff = Function({tableName},{default local},
+	
+	//Duplicates table in manner to remove formulas
+	//dont think i need this anymore
+	/*tableNameFinal = tableName << Subset(
+		Copy formula( 0 ),
+		All rows,
+		Selected columns only( 0 )
+	);*/
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	table = tableName<<GetName;
+	titleName = Word(1,table,"-");
+	dateName = Substr(table,Munger( table, 1, "-" )+1,6);
+	
+	tableName << Select Where( (:Name("TimeFromSampleDispense:sec") > 0 & Lag(:Name("TimeFromSampleDispense:sec"),-1)<0) | Row() == NRow());
+	
+	dt_justResult = tableName << Subset(
+		output table name( titleName||"-"||dateName||"_"||"Bile AR_"||nextTodayDate|| "_justResults" )
+	);
+	
+	tableName << SelectAllRows;
+	tableName << InvertRowSelection;
+	
+	Return(dt_justResult);
+);
+//arCalc(currentdatatable());
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+
+If( Length( Include File List() ) == 1,
+	
+	trackUsage(u,addinID);
+
+	dt_start = Open();
+
+	flagTable = arCalc( dt_start );
+	flagging( flagTable, assayFlags);
+	finishingOff( flagTable );
+		
+	,
+	Print( "BA AR script was included from another source" );
+
+);

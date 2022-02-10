@@ -1,0 +1,153 @@
+﻿//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	1.9 NClark 082619
+//		-> Updated to work with MAC and officially unregister/delete addin load
+//		-> Updated to call the updateGeneric and updateLibraries rather than load each individual addin
+//		-> Updated to properly unregister and install generic tools with run sheet
+//	1.8 NClark 040618
+//		-> Updated names of addin files along with new folder
+//		-> Did not update names or folder for addins created by Sean Hardy
+//	1.7 NClark 080916
+//		-> Added installing automatic updates
+//	1.6 NClark 062916
+//		-> Updated pathes to jmpaddin files so users primarily see the raw JSLs if they visit the folder
+//	1.5 NClark 120815
+//		-> Updated caption to work with JMP10 and JMP11+
+//	1.4 NClark 111815
+//		-> Unregister original FIVEX Tools
+//	1.3 NClark 102215
+//		-> Added Contact Us addin
+//	1.2 NClark 101615
+//		-> Added SDCIgraph addin
+//	1.1 NClark 100615
+//		-> Added caption while files install
+// 1.0 NClark 092915
+//		-> First Released Version
+//------------------------------------------------------------------
+Names Default to here(1);
+
+macTag = "\Volumes\Groups\";
+winTag = "\\FOGHORN\Groups\";
+addinLoc = "JMP User Group\JMP Addins\Production_Deployment\";
+legacyAddinLoc = "JMP User Group\JMP Addins\FIVEX Tools_Developers Only\";
+updateLoc = "JMP User Group\JMP Addins\";
+
+//list of files to be installed for addin
+//list in the order you want them installed
+//fileNameList = {""}; not implemented yet
+
+If(Num(Word(1,jmpversion(),"."))>=11,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		Font( "Arial" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		//Font( "Arial" ),
+		//Font Size( 16 ),
+		//Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+);
+
+//Unregisters the addins as they won't be necessary with only one addin now
+Unregister Addin("com.idexx.FIVEXtools");
+Unregister Addin("com.idexx.nclark.SDCI");
+Unregister Addin("com.idexx.nclark.youdenMSA");
+Unregister Addin("com.idexx.nclark.exactBinom");
+Unregister Addin("com.idexx.nclark.updateFX");
+Unregister Addin("com.idexx.shardy1.interactions");
+Unregister Addin("com.idexx.shardy1.aqlrql");
+Unregister Addin("com.idexx.shardy1.methodcomparison");
+Unregister Addin("com.idexx.nclark.SDCIgraph");
+Unregister Addin("com.idexx.nclark.FIVEXContactUs");
+Unregister Addin("com.idexx.fivexaddin");
+Unregister Addin("com.idexx.fixexsamplingplan");
+Unregister Addin("com.idexx.shardy1.randr");
+Unregister Addin("com.idexx.shardy1.imageviewer");
+
+//new updates now, so unregistering old and will delete folders
+Unregister Addin("com.idexx.nclark.automaticUpdates-load");
+Unregister Addin("com.idexx.nclark.automaticUpdates-unLoad");
+
+//assigns username for installs and file deletion
+//directory and file deletion only needs to happen once (no file to delete on MACs)
+If(HostIs("MAC"),
+	If(IsDirectory("\Volumes/groups/"),
+		Empty()
+		,
+		web("smb://foghorn.namerica.idexxi.com/groups");
+		nw = New Window("Mounting drive",
+			<< modal,
+			Text Box("Please enter credentials for drive to mount and click ok when complete"),
+			ButtonBox("OK"),
+			Button Box("Cancel", Return(0))
+		);
+	);
+	u = Get Environment Variable("USER");
+	Try(
+		Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.FIVEXtools",unix));
+	);
+	Try(
+		Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-load",unix));
+	);
+	Try(
+		Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",unix));
+	);
+	/*For(i=1,i<=nitems(fileNameList),i++,
+		Open(Convert File Path(macTag||addinLoc||fileNameList[i], unix));
+	);*/
+
+	Open(Convert File Path(macTag||legacyAddinLoc||"com.idexx.interactions.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"SD_CI_overlay.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"SD_CI_overlay_SampleGraph.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"Youden_MSA_Tool.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"Exact_Binomial_Tools.jmpaddin", unix));
+	Open(Convert File Path(macTag||legacyAddinLoc||"com.idexx.aqlrql.jmpaddin", unix));
+	Open(Convert File Path(macTag||legacyAddinLoc||"com.idexx.randr.jmpaddin", unix));
+	Open(Convert File Path(macTag||legacyAddinLoc||"com.idexx.imageviewer.jmpaddin", unix));
+	Open(Convert File Path(macTag||legacyAddinLoc||"com.idexx.methodcomparison.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"Update_FIVEX_Tools.jmpaddin", unix));
+	Open(Convert File Path(macTag||addinLoc||"FIVEX_Contact_Us.jmpaddin", unix));
+	,
+	u = Get Environment Variable("USERNAME");
+	Try(
+		Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.FIVEXtools",windows));
+	);
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-load",windows)));
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",windows)));
+	/*For(i=1,i<=nitems(fileNameList),i++,
+		Open(Convert File Path(winTag||addinLoc||fileNameList[i],windows));
+	);*/
+
+	Open(Convert File Path(winTag||legacyAddinLoc||"com.idexx.interactions.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"SD_CI_overlay.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"SD_CI_overlay_SampleGraph.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"Youden_MSA_Tool.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"Exact_Binomial_Tools.jmpaddin",windows));
+	Open(Convert File Path(winTag||legacyAddinLoc||"com.idexx.aqlrql.jmpaddin",windows));
+	Open(Convert File Path(winTag||legacyAddinLoc||"com.idexx.randr.jmpaddin",windows));
+	Open(Convert File Path(winTag||legacyAddinLoc||"com.idexx.imageviewer.jmpaddin",windows));
+	Open(Convert File Path(winTag||legacyAddinLoc||"com.idexx.methodcomparison.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"Update_FIVEX_Tools.jmpaddin",windows));
+	Open(Convert File Path(winTag||addinLoc||"FIVEX_Contact_Us.jmpaddin",windows));
+);
+
+Caption(remove);

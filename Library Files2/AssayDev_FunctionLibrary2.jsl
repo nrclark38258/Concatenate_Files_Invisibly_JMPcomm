@@ -1,0 +1,1517 @@
+﻿//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+Names Default To Here( 1 );
+
+//------------------Revision History for script---------------------
+//
+//	2.5.0.0 NClark 061821
+//		-> Updated the genericInterpMetric to be able to correctly handle 0 as a real start time (from > 0 to >= 0)
+//	2.4.0.0 NClark 030921
+//		-> Updated chemCalcualtedConcentration to use Slide Lot, not Lot
+//	2.3.0.1 NClark 021121
+//		-> Updated the testing for ArrayConcCalc to pull from local testing D drive
+//	2.3 NClark 021021
+//		-> Updated flagging function to use uniqueCurveID instead of uniqueAssayID to comply with updates to tableprep
+//	2.2 NClark 051220
+//		-> Updated default low bound in singleConcCalc to -100 from 0
+//	2.1 NClark 051220
+//		-> Updated for concentration columns to be Calc_Dose_All and Calc_Dose_All Notes
+//	2.0 NClark 051120
+//		-> Added 3 functions
+//			-> singleConcCalc - calculates concentration from coeffs and equation
+//			-> arrayConcCalc - takes array of ids/run info and returns coeffs and concentrations (run through singleConcCalc)
+//			-> tableConcCalc - pulls info from table to create array to feed into arrayConcCalc and make table columns with information
+//	1.9 NClark 033020
+//		-> Updated genericinterp to allow for better matching of exact times in the first wet position as well as within the curve
+//	1.8 NClark 080719
+//		-> Further udpated indexing and default start and end times based on NULL (may be able to get rid of some code infuture)
+//	1.7 NClark 080119
+//		-> Updated indexing on preDevelopmentMetric to correctly handle getting all dry reads
+//	1.6 NClark 031919
+//		-> updated flagging function for VESF flags
+//	1.5 NClark 101518
+//		-> Updated genericInterpMetric While() loops to trip failure if end of table reached w/o proper row locateds
+//	1.4 NClark 082018
+//		-> cleaned up the Try command for cal curve use defaulting to canine if possible and removing break() in place of new 'fail' variable
+//	1.3 NClark 061718
+//		-> added assay flagging
+//			-> build in try() to handle column presence
+//		-> added concentration calculation
+//			-> added try to capture failures
+//			-> adjusted to work with 'global' chem code list
+//			-> updated curves to work on associative arrays
+//	1.2 NClark 051718
+//		-> Added predevelopmentmetric
+//	1.1 NClark 050718
+//		-> Added genericInterpMetric
+//	1.0 NClark 041618
+//		-> First version released
+//		-> Only genericAngleCalc
+//------------------------------------------------------------------
+
+//-------------------------------------genericAngleCalc------------------------------------------
+//Function calculates angle AR based on TT4 methodologies
+//Assumptions are as follows:
+//	Time and RD columes are "TimeFromSampleDispense:sec" and "ReflDens_avg" respectively
+//		this will be true if the table prep script is run as with most AssayDev Tools
+//
+//Inputs are as follows:
+//	paramSetStart - if param sets are there, this is the number to start at to not overlap/overwrite
+//	tableName - variable for table or Datatable("actual table name")
+//	yColumn - response column to use
+//	xColumn - "time" column to use
+//	byColumn - a completely unique run identifier
+//	normalizationTime - time to normalized progress curve to
+//	thresholdTime - sets up X value for ellipse to overlay on area curve
+//	thresholdArea - sets up Y value for ellipse to overlay on area curve
+//	numberRegressionPoints - number of points to use in regression across intersection area
+//	severalParamSets - "True" if more than one parameter set is being evaluated
+//
+//Outputs are as follows:
+//	several Column names and their parsed version:
+//	rdNormRead - RD Normalization Reading"||appendedColName;
+//	parseRDNormRead
+//	normRD - Normalized RD"||appendedColName;
+//	parseNormRD
+//	readTime - Reading Time"||appendedColName;
+//	parsereadTime
+//	curveArea - Curve Area"||appendedColName;
+//	parseCurveArea
+//	xInt - X Intersect"||appendedColName;
+//	parseXint
+//	yInt - Y Intersect"||appendedColName;
+//	parseYint
+//	angleA - Angle"||appendedColName;
+//	parseAngleAR
+//
+//	column in table but deleted formula
+
+genericAngleCalc=function(
+	{
+		paramSetStart,
+		tableName,
+		yColumn,
+		xColumn,
+		byColumn,
+		normalizationTime,
+		thresholdTime,
+		thresholdArea,
+		numberRegressionPoints,
+		severalParamSets
+	},
+	{default local},
+	
+	Try(
+		IsScriptable(Column(tableName,yColumn));
+		IsScriptable(Column(tableName,xColumn));
+		IsScriptable(Column(tableName,byColumn));
+		
+		//show(paramSetStart);
+		If(severalParamSets == "True",
+			appendedColName = "-paramSet"||Char(paramSetStart)
+			,
+			If(paramSetStart == 1,
+				appendedColName = ""
+				,
+				appendedColName = "-paramSet"||Char(paramSetStart)
+			);
+		);
+		
+		parseXcolumn = Parse(Eval Insert( ":name(\!"^xColumn^\!" )"));
+		parseYcolumn = Parse(Eval Insert( ":name(\!"^yColumn^\!" )"));
+		parseBYcolumn = Parse(Eval Insert( ":name(\!"^byColumn^\!" )"));
+		
+		//Sets up all Column Names for parameter sets
+		//parse step allows variable name to be called in the :Name() format for used in formulas
+		rdNormRead = "RD Normalization Reading"||appendedColName;
+		parseRDNormRead = Parse(Eval Insert( ":name(\!"^rdNormRead^\!" )"));
+		normRD = "Normalized RD"||appendedColName;
+		parseNormRD = Parse(Eval Insert( ":name(\!"^normRD^\!" )"));
+		readTime = "Reading Time"||appendedColName;
+		parsereadTime =  Parse(Eval Insert( ":name(\!"^readTime^\!" )"));
+		curveArea = "Curve Area"||appendedColName;
+		parseCurveArea = Parse(Eval Insert( ":name(\!"^curveArea^\!" )"));
+		xInt = "X Intersect"||appendedColName;
+		parseXint =  Parse(Eval Insert( ":name(\!"^xInt^\!" )"));
+		yInt = "Y Intersect"||appendedColName;
+		parseYint =  Parse(Eval Insert( ":name(\!"^yInt^\!" )"));
+		angleAR = "Angle"||appendedColName;
+		parseAngleAR = Parse(Eval Insert( ":name(\!"^angleAR^\!" )"));
+		
+		tableName << New Column( rdNormRead,
+			Numeric,
+			Continuous,
+			Formula(
+				If(Row() == 1 | parseBYcolumn != Lag( parseBYcolumn, 1 ),
+					index = 1;
+					While(
+						Lag(parseXcolumn,-index) < Num(normalizationTime), index++
+					);
+					rightRow = Row() + index;
+					parseYcolumn[rightRow]
+					,
+					Lag( parseRDNormRead, 1 )
+				)
+			)
+		);
+		
+		tableName << New Column( normRD,
+			Numeric,
+			Continuous,
+			Formula(
+				If( parseXcolumn < Num(normalizationTime), 0
+					,
+					parseYcolumn - parseRDNormRead
+				)
+			)
+		);
+		
+		tableName << New Column( readTime,
+			Numeric,
+			Continuous,
+			Formula(
+				If(
+					parseXcolumn < Num(normalizationTime), 0
+					,
+					parseXcolumn >= Num(normalizationTime) & Lag( parseXcolumn, 1 ) < Num(normalizationTime), 0
+					,
+					Lag( parseReadTime, 1 ) + (parseXcolumn - Lag( parseXcolumn, 1 ))
+				)
+			)
+		);
+		
+		tableName << New Column( curveArea,
+			Numeric,
+			Continuous,
+			Formula(
+				If( parseXcolumn < Num(normalizationTime), 0
+					,
+					Lag( parseCurveArea, 1 ) + parseNormRD * (parseReadTime - Lag( parseReadTime, 1 ))
+				)
+			)
+		);
+		
+		tableName << New Column(xInt,
+			Formula(
+				If( Row() == 1 | parseBYcolumn != Lag( parseBYcolumn, 1 ),
+					//Show( Row() );
+					N = Num( numberRegressionPoints );
+					ra = Num( thresholdTime );
+					rb = Num( thresholdArea );
+					index = 2;
+					While(
+						Lag( parseReadTime, (-index) + 1 ) ^ 2 / ra ^ 2 + Lag( parseCurveArea, (-index) + 1 ) ^ 2 / rb ^ 2 < 1
+						&
+						Lag( parseReadTime, (-index) + 2 ) ^ 2 / ra ^ 2	+ Lag( parseCurveArea, (-index) + 2 ) ^ 2 / rb ^ 2 <= 1
+						,
+						index++
+					);
+					//Show( index );
+					rightRow = (Row() + index) - 1;
+					//Show( rightrow );
+					StartPoint = rightRow - N / 2;
+					EndPoint = rightRow + (N / 2 - 1);
+					SumX = Summation( i = StartPoint, EndPoint, parseReadTime[i] );
+					SumY = Summation( i = StartPoint, EndPoint, parseCurveArea[i] );
+					SumXY = Summation( i = StartPoint, EndPoint, parseReadTime[i] * parseCurveArea[i] );
+					SumXSumY = Summation( i = StartPoint, EndPoint, parseReadTime[i] ) *
+					Summation( i = StartPoint, EndPoint, parseCurveArea[i] );
+					SumXSqrd = Summation( i = StartPoint, EndPoint, parseReadTime[i] ^ 2 );
+					SumSqrdX = Summation( i = StartPoint, EndPoint, parseReadTime[i] ) ^ 2;
+					m = (N * SumXY - SumXSumY) / (N * SumXSqrd - SumSqrdX);
+					b = (SumY - m * SumX) / N;
+					Qa = 1 / ra ^ 2 + m ^ 2 / rb ^ 2;
+					Qb = (2 * m * b) / rb ^ 2;
+					Qc = b ^ 2 / rb ^ 2 - 1;
+					x = ((0 - Qb) + Root( Qb ^ 2 - 4 * Qa * Qc, 2 )) / (2 * Qa);
+					,
+					Lag( parseXint, 1 )
+				)
+			)
+		);
+		
+		tableName << New Column(yInt,
+			Formula(
+				If( Row() == 1 | parseBYcolumn != Lag( parseBYcolumn, 1 ),
+					//Show( Row() );
+					N = Num( numberRegressionPoints );
+					ra = Num( thresholdTime );
+					rb = Num( thresholdArea );
+					index = 2;
+					While(
+						Lag( parseReadTime, (-index) + 1 ) ^ 2 / ra ^ 2 + Lag( parseCurveArea, (-index) + 1 ) ^ 2 / rb ^ 2 < 1
+						&
+						Lag( parseReadTime, (-index) + 2 ) ^ 2 / ra ^ 2	+ Lag( parseCurveArea, (-index) + 2 ) ^ 2 / rb ^ 2 <= 1
+						,
+						index++
+					);
+					//Show( index );
+					rightRow = (Row() + index) - 1;
+					//Show( rightrow );
+					StartPoint = rightRow - N / 2;
+					EndPoint = rightRow + (N / 2 - 1);
+					SumX = Summation( i = StartPoint, EndPoint, parseReadTime[i] );
+					SumY = Summation( i = StartPoint, EndPoint, parseCurveArea[i] );
+					SumXY = Summation( i = StartPoint, EndPoint, parseReadTime[i] * parseCurveArea[i] );
+					SumXSumY = Summation( i = StartPoint, EndPoint, parseReadTime[i] ) *
+					Summation( i = StartPoint, EndPoint, parseCurveArea[i] );
+					SumXSqrd = Summation( i = StartPoint, EndPoint, parseReadTime[i] ^ 2 );
+					SumSqrdX = Summation( i = StartPoint, EndPoint, parseReadTime[i] ) ^ 2;
+					m = (N * SumXY - SumXSumY) / (N * SumXSqrd - SumSqrdX);
+					b = (SumY - m * SumX) / N;
+					x = parseXint;
+					y = m * x + b;
+					,
+					Lag( parseYint, 1 )
+				)
+			)
+		);
+		
+		tableName << New Column( angleAR,
+			Numeric,
+			Continuous,
+			Formula( 
+				ArcTangent( parseYint / parseXint ) 
+			)
+		);
+		
+		Column(tableName,rdNormRead)<<deleteformula;
+		Column(tableName,normRD)<<deleteformula;
+		Column(tableName,readTime)<<deleteformula;
+		Column(tableName,curveArea)<<deleteformula;
+		Column(tableName,xInt)<<deleteformula;
+		Column(tableName,yInt)<<deleteformula;
+		Column(tableName,angleAR)<<deleteformula;
+		
+		Return(1);
+		,
+		Print("One of the columns missing");
+		Return(0)
+	);		
+);
+//-------------------------------------End/genericAngleCalc------------------------------------------
+
+//-------------------------------------genericInterpMetric------------------------------
+//Function produces a column metric for a progress curve between two time points in that curve
+//Assumptions are as follows:
+//	Time and RD columes are "TimeFromSampleDispense:sec" and "ReflDens_avg" respectively
+//		this will be true if the table prep script is run as with most AssayDev Tools
+//
+//Inputs are as follows:
+//	tableName - variable for table or Datatable("actual table name")
+//	yColumn - response column to use
+//	xColumn - "time" column to use
+//	byColumn - a completely unique run identifier
+//	columName - desired final column name, quoted string
+//	startingTime - start time of metric calculation, number
+//		typing 'all' will use all response reads in metric
+//	endingTime - end time of metric calculation, number
+//		typing 'all' will use all response reads in metric
+//	metric - String call for metric:
+//		"Slope"
+//		"Range"
+//		"AvgEP" - Average End Point (average of several points)
+//		"EP" - End Point
+// All metrics use interpolation to estimate ReflDens_avg values for the specific start and end time
+// End Point times do not use 'startingTime' but a number - smaller than endingTime - is needed for function to work. The function only uses the endingTime for end point calculation
+//
+//Outputs are as follows:
+//	parseColName - a column form of the quoted string ("Test Column" becomes :Test Column)
+//	column in table but deleted formula
+
+genericInterpMetric = Function({tableName,yColumn,xColumn,byColumn,columnName,startingTime,endingTime,metric},{default local},
+	Try(
+		IsScriptable(Column(tableName,yColumn));
+		IsScriptable(Column(tableName,xColumn));
+		IsScriptable(Column(tableName,byColumn));
+		
+		parseXcolumn = Parse(Eval Insert( ":name(\!"^xColumn^\!" )"));
+		parseYcolumn = Parse(Eval Insert( ":name(\!"^yColumn^\!" )"));
+		parseBYcolumn = Parse(Eval Insert( ":name(\!"^byColumn^\!" )"));
+		
+		parseColName = Parse( Eval Insert( ":name(\!"^columnName^\!" )" ) );
+
+		tableName << New Column( columnName,
+			Numeric,
+			Continuous,
+			Formula(
+				If( (parseBYcolumn != Lag( parseBYcolumn, 1 )) & parseXcolumn == 0,
+						-999,
+					Row() == 1 | parseBYcolumn != Lag( parseBYcolumn, 1 ), 
+						xList = {};
+						yList = {};
+						Index = 1;
+						Index1 = 1;
+						failTest1 = 1;
+						failTest2 = 1;
+						//Translates starting and endingTime to ALL CAPS to ensure 'All' matches correctly, if present
+						//Try covers if a failure occurs when value is a number not character
+						Try(st = Uppercase(startingTime),
+							st = startingTime
+						);
+						Try(et = Uppercase(endingTime),
+							et = endingTime
+						);
+						//show(startingTime, endingTime, st, et);
+						
+						If(st == "ALL" | et == "ALL",
+							//Print("All found");
+							//Grabs row for 1st row after time 0
+							While( Lag( parseXcolumn, -Index ) < 0,
+								If( Lag( parseXcolumn, -Index - 1 ) < Lag( parseXcolumn, -Index ) | IsMissing(Lag( parseXcolumn, -Index - 1)), failTest1 = 2;Break()
+									,
+									Index++
+								)
+							);
+							//Grabs row right before move to next run (or error run)
+							While( Lag( parseXcolumn, -Index1 ) < Lag( parseXcolumn, -Index1 - 1 ),
+								If( Lag( parseXcolumn, -Index1 - 1 ) < Lag( parseXcolumn, -Index1 ) | IsMissing(Lag( parseXcolumn, -Index1 - 1 )), failTest2 = 2;Break()
+									,
+									Index1++
+								)
+							);			
+							,		
+							//Print("I went Normal");
+							//Grabs row right after startingTime
+							While( Lag( parseXcolumn, -Index ) <= startingTime,
+								If( Lag( parseXcolumn, -Index - 1 ) < Lag( parseXcolumn, -Index ) | IsMissing(Lag( parseXcolumn, -Index - 1)), failTest1 = 2;Break()
+									,
+									Index++
+								)
+							);
+							//Grabs row right after endingTime
+							While( Lag( parseXcolumn, -Index1 ) < endingTime,
+								If( Lag( parseXcolumn, -Index1 - 1 ) < Lag( parseXcolumn, -Index1 ) | IsMissing(Lag( parseXcolumn, -Index1 - 1 )), failTest2 = 2;Break()
+									,
+									Index1++
+								)
+							);
+						);	
+						//show(index,index1);
+						StartPoint = Row() + Index;
+						//Index2 = Row();
+						EndPoint = Row() + Index1 - 1;
+						numRows = EndPoint - StartPoint + 1;
+						//Show(startPoint,endPoint);
+						
+						//creates x and y lists. if time is present, lists need additional values to bookend times
+						If(st == "ALL" | et == "ALL",
+							For( i = StartPoint, i <= EndPoint + 1, i++,
+								Insert Into( xList, parseXcolumn[i] );
+								Insert Into( yList, parseYcolumn[i] );
+							);
+							,
+							For( i = StartPoint - 1, i <= EndPoint + 1, i++,
+								Insert Into( xList, parseXcolumn[i] );
+								Insert Into( yList, parseYcolumn[i] );
+							);
+						);
+						//show(xlist,ylist);
+						
+						//For the rare event when the ending time isn't bookeneded by two usable numbers (first is negative, second is larger)
+						//Adds an additional number to each of the lists to perform the exrapolation
+						//Typically would happen when looking for EndPoint and endingTime is the desired EndPoint which occurs prior to the first positive read
+						If(xList[1]<0 & xList[2]>=endingTime & nitems(xList) ==2,
+							Insert Into( xList, parseXcolumn[i] );
+							Insert Into( yList, parseYcolumn[i] );
+						);
+						//Show( failTest1,failTest2,Row(),Index,Index1,startpoint,endpoint,xList, yList );
+						//checkValue = xList[5] - xList[4];
+						//expectNum = (endingTime - startingTime) / checkValue;
+						//show(checkValue, expectNum);
+						If( failTest1 == 2 | failTest2 == 2,
+							-999,
+							endInterp = N Items( yList );
+							endInterp1 = endInterp - 1;
+							
+							If(st == "ALL" | et == "ALL",
+								Empty()
+								,
+								If( xList[1] >= 0, 
+									//Moved away from clean 'interpolate' function as it does not handle negative slopes - a true possibility for assay development
+									//interp1 = Interpolate( startingTime, xList[1], yList[1], xList[2], yList[2] );
+									mSlope = ((yList[2] - yList[1]) / (xList[2] - xList[1]));
+									bInt = yList[2] - mSlope * xList[2];
+									interp1 = mSlope * startingTime + bInt;
+									//interp2 = Interpolate( endingTime, xList[endInterp1], yList[endInterp1], xList[endInterp], yList[endInterp] );
+									mSlope1 = ((yList[endInterp] - yList[endInterp1]) / (xList[endInterp] - xList[endInterp1]));
+									bInt1 = yList[endInterp] - mSlope1 * xList[endInterp];
+									interp2 = mSlope1 * endingTime + bInt1;
+									//Show( interp1, interp2 );
+									Remove From( xList, endInterp );
+									Remove From( yList, endInterp );
+									Remove From( xList, 1 );
+									Remove From( yList, 1 );
+									Insert Into( xList, startingTime, 1 );
+									Insert Into( yList, interp1, 1 );
+									Insert Into( xList, endingTime );
+									Insert Into( yList, interp2 );
+									, 
+									
+									mSlope = ((yList[3] - yList[2]) / (xList[3] - xList[2]));
+									bInt = yList[3] - mSlope * xList[3];
+									interp1 = mSlope * startingTime + bInt;
+									//interp2 = Interpolate( endingTime, xList[endInterp1], yList[endInterp1], xList[endInterp], yList[endInterp] );
+									mSlope1 = ((yList[endInterp] - yList[endInterp1]) / (xList[endInterp] - xList[endInterp1]));
+									bInt1 = yList[endInterp] - mSlope1 * xList[endInterp];
+									interp2 = mSlope1 * endingTime + bInt1;
+									//Show( mSlope, bInt, interp1, interp2 );
+									Remove From( xList, endInterp );
+									Remove From( yList, endInterp );
+									Remove From( xList, 1 );
+									Remove From( yList, 1 );
+									Insert Into( xList, startingTime, 1 );
+									Insert Into( yList, interp1, 1 );
+									Insert Into( xList, endingTime );
+									Insert Into( yList, interp2 );
+								);
+							);
+							
+							//Show( xList, yList );
+							xMtrx = Matrix( xList );
+							yMtrx = Matrix( yList );
+							//Show( xMtrx, yMtrx );
+							
+							Match(metric,
+								//Slope
+								"Slope", xMtrx = J( N Row( xMtrx ), 1 ) || xMtrx;
+									intSlope = Inv( xMtrx` * xMtrx ) * xMtrx` * yMtrx;
+									arSlope = intSlope[2];
+									arSlope;
+								,
+								//Range
+								"Range", range = Max(yMtrx) - Min(yMtrx);
+								,
+								//Average
+								"AvgEP", avgEndPoint = Mean(yMtrx);
+								,
+								//EndPoint
+								"EP", npts = nitems(yList);
+									endPoint = yMtrx[npts];
+							);						
+						);
+					,
+					parseXcolumn > Lag( parseXcolumn, 1 ),
+						Lag( parseColName, 1 )
+				)
+			)
+		);
+		Column(tableName,columnName)<<deleteformula;
+		Return(1);
+		,
+		Print("One of the columns missing");
+		Return(0)
+	);
+);
+
+//-------------------------------------End/genericInterpMetric------------------------------
+
+
+//-------------------------------------preDevelopmentMetric----------------------------------------
+//Function creates metrics from predevelopment reads (although some use could be done with post development)
+//	Time and RD columes are "TimeFromSampleDispense:sec" and "ReflDens_avg" respectively
+//		this will be true if the table prep script is run as with most AssayDev Tools
+//	Unlike other preDevelopment read functions, this one works with several dry reads, sampleMix reads, etc
+//	However, it is limited to only two "Events" pre development (ie sampleMix and Wash)
+//
+//Inputs are as follows:
+//	tableName - variable for table or Datatable("actual table name")
+//	yColumn - response column to use
+//	xColumn - "time" column to use
+//	byColumn - a completely unique run identifier
+//	columnName - Named for read being gathered ("Sample/Conjugate", for example)
+//	metric - string version of following metrics (script will adjust case)
+//		- SP, single point (uninterpolated EndPoint)
+//		- range, range of uninterpolated values
+//		- avg, average of uninterpolated values
+//		- slope, slope of uninterpolated values
+//		//// The above is defaulted to SP for single point choice
+//	direction - string Dry or Wet (script will adjust case) fills list directionally based on eventOneTime (dry looks left, wet looks right)
+//		//// The above is defaulted to Dry
+//	eventOneTime - Time of 1st event (ie, SampleMix). Script gathers list starting with 1st read post this time
+//	eventTwoTime - Time of 2nd event (ie, wash). Script gathers list ending with read just prior to this number unless NULL
+//		//// The two above are defaulted as NULL and aren't necessary. The script gathers all reads pre 0 for 'dry' and all reads post '0' for wet
+//		//// The script converts any string to "NULL"
+//	singlePoint - choice of point in list
+//		//// The above is defaulted to 1
+//		//// Any string value is converted to "LAST" and selects the last point in the list, no matter how long
+//
+// -999 is the default return for many cases indicating a problem with the curve or user inputs in the function
+//		-- event times greater than total read times
+//		-- single point choice greater than number of items in the list
+//		-- curve errors where curve isn't fully complete (may result the above two)
+//		-- metric listed isn't an allowable metric (typos included)
+//
+//Outputs are as follows:
+//	preDevParseColName - a column form of the quoted string ("Test Column" becomes :Test Column)
+//	column in table but deleted formula
+//NOTE: This function has opportunities to be used for other sets of reads, but it hasn't been tested as such
+
+preDevelopmentMetric = Function(
+	{
+		tableName,
+		yColumn,
+		xColumn,
+		byColumn,
+		columnName,
+		metric="sp",
+		direction="Dry",
+		eventOneTime="NULL",
+		eventTwoTime="NULL",
+		singlePoint=1
+	},
+	{default local},
+	
+	Try(
+		IsScriptable(Column(tableName,yColumn));
+		IsScriptable(Column(tableName,xColumn));
+		IsScriptable(Column(tableName,byColumn));
+		
+		eventTimePresent = 1; //assumes a time or the column is present. Try() below may set var to 0
+		
+		parseXcolumn = Parse(Eval Insert( ":name(\!"^xColumn^\!" )"));
+		parseYcolumn = Parse(Eval Insert( ":name(\!"^yColumn^\!" )"));
+		parseBYcolumn = Parse(Eval Insert( ":name(\!"^byColumn^\!" )"));
+		
+		preDevParseColName = Parse( Eval Insert( ":name(\!"^columnName^\!" )" ) );
+		metric = Uppercase(metric);
+		direction = Uppercase(direction);
+		origEventOneTime = If(!IsNumber(eventOneTime),"NULL",eventOneTime); //to reset for error conditions
+		origEventTwoTime = If(!IsNumber(eventTwoTime),"NULL",eventTwoTime); //to reset for error conditions
+		eventTwoTime = If(!IsNumber(eventTwoTime),"NULL",eventTwoTime);
+		If(IsNumber(eventOneTime),eventOneTime = eventOneTime
+			,
+			Uppercase(eventOneTime) == "NULL", eventOneTime = "NULL"
+			,
+			Try(
+				IsScriptable(Column(eventOneTime));
+				eventTimePresent = 1;
+				,
+				eventTimePresent = 0;
+			);
+			IsScriptable(Column(tableName,eventOneTime));
+			eventOneTime = Parse( Eval Insert( ":name(\!"^eventOneTime^\!" )" ) );
+		);
+		origSinglePoint = If(!IsNumber(singlePoint),"LAST",singlePoint); //to reset at the end
+		singlePoint = If(!IsNumber(singlePoint),"LAST",singlePoint);
+		//show(metric,direction,eventOneTime,eventTwoTime);
+		//show(eventTimePresent);
+		Match(eventTimePresent,
+			1,
+			tableName << New Column( columnName,
+				Numeric,
+				Continuous,
+				Formula(
+					If( parseXcolumn == 0 & parseBYcolumn != Lag(parseBYcolumn,1),
+							-999,
+						Row() == 1 | parseBYcolumn != Lag(parseBYcolumn,1),
+						xList = {};
+						yList = {};
+						Index = 1;
+						Index1 = 1;
+						Index2 = 1;
+						failTest1 = 1;
+						failTest2 = 1;
+						failTest3 = 1;
+						
+						//gets the time of the last read in the run
+						While( Lag( parseXcolumn, -Index2 ) > Lag( parseXcolumn, -Index2 + 1 ),
+							Index2++
+						);
+						runEndRow = Row() + Index2 - 1;
+						runEndTime = parseXcolumn[runEndRow];
+						
+						//Used to trigger failure if run doesn't have times great enough for time capture
+						If(eventOneTime > runEndTime, eventOneTime = runEndTime; failTest3 = 2);
+						If(eventTwoTime > runEndTime, eventTwoTime = runEndTime; failTest3 = 2);
+						
+						//if both event times are missing, assumption will be all negative reads used in metric
+						If(eventOneTime == "NULL",
+							If(direction == "DRY", eventOneTime = 0 //should guarantee the 1st read will be grabbed
+								, 
+								direction == "WET", eventOneTime = 0
+							)
+						);
+						If(eventTwoTime == "NULL",
+							If(direction == "DRY", eventTwoTime = runEndTime
+								,
+								direction == "WET", eventTwoTime = runEndTime //should guarantee the last read will be grabbed
+							)
+						);
+						//show(runEndRow,runEndTime,eventOneTime,eventTwoTime);
+						
+						//Grabs row right after startingTime
+						While( Lag( parseXcolumn, -Index ) < eventOneTime,
+							If( Lag( parseXcolumn, -Index - 1 ) < Lag( parseXcolumn, -Index ), failTest1 = 2;Break()
+								,
+								Index++
+							)
+						);
+						//Grabs row right after endingTime
+						While( Lag( parseXcolumn, -Index1 ) < eventTwoTime,
+							If( Lag( parseXcolumn, -Index1 - 1 ) < Lag( parseXcolumn, -Index1 ), failTest2 = 2;Break()
+								,
+								Index1++
+							)
+						);
+						
+						Match(direction,
+							"DRY", startPoint = Row(); endPoint = Row() + Index - 1
+							,
+							"WET",
+							startPoint = Row() + Index; 
+							If(eventTwoTime == runEndTime, Index1 = Index1,
+								Index1 = Index1 - 1
+							);
+							endPoint = Row() + Index1;
+						);
+						//show(Row(),Index,Index1,Index2,startPoint,endPoint,failTest1,failTest2,failTest3);
+						
+						If(eventOneTime == runEndTime, eventOneTime = origEventOneTime); //resets eventOneTime for next run
+						If(eventTwoTime == runEndTime, eventTwoTime = origEventTwoTime); //resets eventTwoTime for next run
+						
+						//creates x and y lists. if time is present, lists need additional values to bookend times
+						For( i = StartPoint, i <= EndPoint, i++,
+							Insert Into( xList, parseXcolumn[i] );
+							Insert Into( yList, parseYcolumn[i] );
+						);
+						//show(xlist,ylist);
+
+						If( failTest1 == 2 | failTest2 == 2 | failTest3 == 2,
+							-999
+							,
+							//Show( xList, yList );
+							xMtrx = Matrix( xList );
+							yMtrx = Matrix( yList );
+							//Show( xMtrx, yMtrx, metric );
+							
+							Match(metric,
+								//singlePoint
+								"SP",
+								If(singlePoint == "LAST",
+									singlePoint = nitems(ylist); metricValue = yMtrx[singlePoint]
+								,
+									IsNumber(singlePoint) & singlePoint <= nitems(yList), metricValue = yMtrx[singlePoint]
+								,
+									-999
+								);
+								singlePoint = origSinglePoint;
+								,
+								//Slope
+								"SLOPE",
+								xMtrx = J( N Row( xMtrx ), 1 ) || xMtrx;
+								intSlope = Inv( xMtrx` * xMtrx ) * xMtrx` * yMtrx;
+								metricValue = intSlope[2];
+								,
+								//Range
+								"RANGE", metricValue = Max(yMtrx) - Min(yMtrx);
+								,
+								//Average
+								"AVG", metricValue = Mean(yMtrx);
+								,
+								-999
+							);						
+						);
+						metricValue;
+						,
+						parseXcolumn > Lag( parseXcolumn, 1 ),
+						Lag( preDevParseColName, 1 )
+					)
+				)
+			);
+			Column(tableName,columnName)<<deleteformula
+			,
+			0,
+			tableName << New Column( columnName,
+				<< Set Each Value(-999)
+			)
+		);
+		Return(1);
+		,
+		Print("One of the columns missing");
+		Return(0)
+	);
+);
+
+//-------------------------------------End/preDevelopmentMetric------------------------------------
+
+//-------------------------------------chemCalculatedConcentration------------------------------------------
+//Function calculates assay concentration
+//Assumptions are as follows:
+//	curveData is a matrix from the most recent curve file (opened and matrixed in parent script)
+//	equations are added as necessary as an expression
+//
+//Inputs are as follows:
+//	tableName - variable for table or Datatable("actual table name")
+//	curveRef - text for which database table to use for coefficients
+//	columName - desired final column name, quoted string
+//	equationMethod - desired formula, quoted string
+//		biExp_4P = 4 Parameter bi-exponential equation ... initially developed for TT4
+//		logTransCubic_3P = 3 Parameter log transformed cubic fit ... initially developed for CRP
+//		stdCharCubic = old method using cubic fit in terms of Concentration
+//	ARsource - column name that will contain the AR, quoted string (ex: "Angle")
+//
+//Outputs are as follows:
+//	chemName = assay name based on chemCode
+//	parseARsource - column version of ARsource ("Angle" to :Angle)
+//	parseEquationMethod - Removed quotes from equation method ("eq1" to eq1)
+//
+//	column in table but deleted formula
+
+chemCalculatedConcentration = Function({chemCode,curveRef,tableName,columnName,equationMethod,ARsource}, {default local},
+	/*
+	chemcode = 18;
+	curveRef = "nonCubic";
+	tableName = currentdatatable();
+	columnName = "TEST";
+	equationMethod = "biExp_4P";
+	ARsource = "Angle";
+	*/
+	Try(
+		include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_AssayCodes2.jsl");
+		codes = assayNums();
+		
+		Match(curveRef,
+			"calCurve", curveTable = open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\AssayCurveFiles\calCurves.jmp",private),
+			"nonCubic", curveTable = open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\AssayCurveFiles\nonCubicCurves.jmp",private)
+		);
+		
+		curveData=Associative Array(:Name("UniqueCurve"),:Name("Row"));//curveTable<<getasmatrix;
+		
+		//show(curveData);
+		chemName = codes[chemCode];
+
+		biExp_4P = Expr((curveTable[cR,9]) + curveTable[cR,5] * Exp( curveTable[cR,6] * parseARsource ) + curveTable[cR,7] * Exp( curveTable[cR,8] * parseARsource )); // requires nonCubic file
+		logTransCubcic_3P = Expr(Exp(curveTable[cR,5] + curveTable[cR,6]*(parseARsource) + curveTable[cR,7]*(parseARsource)^2 + curveTable[cR,8]*(parseARsource)^3) – 1); // requires calCurve file
+		
+		////PERHAPS LOOK INTO NR FUNCTION INSTEAD??
+		stdCharCubic = Expr(
+			Num(
+				::p = ((3 * curveTable[cR,6]) / curveTable[cR,8] - (curveTable[cR,7] / curveTable[cR,8]) ^ 2) / 3;
+				::q = ((2 * (curveTable[cR,7] / curveTable[cR,8]) ^ 3 - ((9 * curveTable[cR,7] * curveTable[cR,6]) / curveTable[cR,8]) / curveTable[cR,8]) + (27 * (curveTable[cR,5] -
+				parseARsource)) / curveTable[cR,8]) / 27;
+				::D = (::p / 3) ^ 3 + (::q / 2) ^ 2;
+				::phi = ArcCosine( (- ::q / 2) / (Abs( ::p ) ^ 3 / 27) ^ 0.5 );
+				If( ::D >= 0,
+					::u = Root( - ::q / 2 + ::D ^ 0.5, 3 );
+					::v = Root( - ::q / 2 - ::D ^ 0.5, 3 );
+					::y1 = ::u + ::v;
+					::x1 = ::y1 - (curveTable[cR,7] / curveTable[cR,8]) / 3;
+					Char( ::x1 );
+				,
+					::y1 = 2 * (Abs( ::p ) / 3) ^ 0.5 * Cosine( ::phi / 3 );
+					::y2 = -2 * (Abs( ::p ) / 3) ^ 0.5 * Cosine( (::phi + Pi()) / 3 );
+					::y3 = -2 * (Abs( ::p ) / 3) ^ 0.5 * Cosine( (::phi - Pi()) / 3 );
+					::x1 = ::y1 - (curveTable[cR,7] / curveTable[cR,8]) / 3;
+					::x2 = ::y2 - (curveTable[cR,7] / curveTable[cR,8]) / 3;
+					::x3 = ::y3 - (curveTable[cR,7] / curveTable[cR,8]) / 3;
+					Char( ::x1 ) || " " || Char( ::x2 ) || " " || Char( ::x3 );
+				)
+			)
+		); // requires calCurve file
+
+		parseARsource = Parse(Eval Insert( ":name(\!"^ARsource^\!" )"));
+		parseEquationMethod = parse(equationMethod);
+		calParseColName = Parse( Eval Insert( ":name(\!"^columnName^\!" )" ) );
+
+		tableName<<new column(columnName,
+			Formula(
+				If(isMissing(parseARsource),
+					//Print("No AR Present");
+				,
+					//Print("entering IF");
+					//show(row());//,Eval(parseARsource),Lag(parseARsource,1));
+					If(Row() == 1 | IsMissing(Lag(parseARsource,1)) | parseARsource != Lag(parseARsource,1),
+						//Print("found start");
+						//Show(chemName);
+						If(chemName == :Chem Type,
+							//Print("matched type");
+							If(:Chem Type == "CRP",
+								curveSpp = "99"
+								,
+								curveSpp = Match(Lowercase(:Species Name[Row()]),
+									"feline", "2", "99"
+								);
+								//Print("this is correct too");
+							);
+							//show(curveSpp);
+							dataCombo = Char(chemCode)||"_"||Char(:Slide Lot)||"_"||curveSpp;
+							//show(dataCombo);
+							Try(
+								cR = curveData[dataCombo];
+								//print("Curve Match");
+								fail = "No";
+								,
+								Try(
+									dataCombo = Munger(dataCombo,length(dataCombo)-2,Word(3,dataCombo,"_"),"99");
+									//show(dataCombo);
+									cR = curveData[dataCombo];
+									//print("Curve Match, 2nd try");
+									fail = "No";
+									,
+									//Print("No Curve Match");
+									fail = "Yes";
+									//Break()
+								)
+							);
+							//show(dataCombo,cR);
+							If(parseARsource == -999 | fail == "Yes",
+								-999 //parseARsource
+								,
+								Eval(parseEquationMethod)
+							)
+							,
+							Print("something bad happened");
+						)
+						,
+						Lag(calParseColName,1)
+					)
+				)
+			)
+		);
+		Column(tableName, columnName)<<DeleteFormula;
+		close(curveTable,nosave);
+		,
+		Print("Could not calculate concentrations");
+		Try(Close(curveTable,nosave));
+		Try(tableName << Delete Columns(columnName));
+		Return(0);
+	);
+);
+
+//-------------------------------------End/chemCalculatedConcentration------------------------------------------
+
+//-------------------------------------assayDevFlagging------------------------------------------
+//Function calculates progress curve flags in both a text and number format (2 columns)
+//Assumptions are as follows:
+//	assayFlagParams is a list of flags and their thresholds within the main script
+//
+//Inputs are as follows:
+//	tableName - variable for table or Datatable("actual table name")
+//	assayFlagParams - list of lists of each flag, thresholds, and base description
+//		EX: tt4Flags = {
+//				{dryReadFlag, 0.06, 0.13, "Dry[*77]"},
+//				{sampConjMinusDry, 0.25, 0.54, "S/C - DR[*78]"},
+//				{washMinusSampConj, -0.25, -0.03, "Wash - S/C[*79]"},
+//				{subMinusWash, -0.01, 0.35, "Sub - Wash[*80]"},
+//				... add as many flags as necessary ...
+//			};
+//			NOTE: function must have matching flag names along with mathematical expression for flag
+//	assayName - Assay abbreviation, quoted string
+//
+//Outputs are as follows:
+//	mutltiple columns for flag expressions
+//
+//	Flag and Flag_nums columns in table but deleted formula
+
+assayDevFlagging = Function({tableName,assayFlagParams,assay_Name},
+	//tableName = Data Table( "CDxProgCurves_20190319-CDxPro_PROG AR_03192019_progCurves" );
+	/*assayFlagParams = {
+		{dryReadFlag, 0.05, 0.13, "Dry[*77]"},
+		{sampConjMinusDry, 0.25, 0.54, "S/C - DR[*78]"},
+		{washMinusSampConj, -0.25, -0.03, "Wash - S/C[*79]"},
+		{subMinusWash, -0.02, 0.35, "Sub - Wash[*80]"},
+		{anomProgCurve10_60, 0.00001, 0.011, "m10-60[*82]"},
+		{avgAllFlag, 0.29, 0.41, "avgAll[85]"},
+		{anomInitSlopeVSub, 0.06, -0.0157, 0.036, -0.0158, "linBound[*86]"},
+		{lateSlope50_60, 0.0, 0.1, "m50-60[*87]"},
+		{vesf, 4.5, 0.0011, 0, -0.0061, "VESF[998]"},
+		{vesfSlopeVsub,"86_VESF[999]"}
+	};*/
+	//assay_Name = "PROG";
+	//Try looks to see if necessary columns are present, otherwise created two columns with notes
+	Try(
+		If(
+			assay_Name == "TT4" | assay_Name == "PROG" | assay_Name == "SDMA",
+			IsScriptable(Column(tableName,"Dry Read"));
+			IsScriptable(Column(tableName,"Sample Mix"));
+			IsScriptable(Column(tableName,"Wash"));
+			IsScriptable(Column(tableName,"Substrate"));
+			IsScriptable(Column(tableName,"Slope (10-60s)"));
+			IsScriptable(Column(tableName,"Slope (50-60s)"));
+			,
+			assay_Name == "CRP",
+			IsScriptable(Column(tableName,"SampMix - Dry"));
+			IsScriptable(Column(tableName,"SampMix - AR"));
+			IsScriptable(Column(tableName,"Response Range"));
+		);
+		
+		If(
+			assay_Name == "PROG",
+			IsScriptable(Column(tableName,"VES(5.6s)"))
+		);
+		///////Flags as they correspond to columns in table////////
+		//try to overlap as much as possible as assays added
+		
+		//original for TT4
+		dryReadFlag = Expr(:Dry Read);//**77 8095
+		sampConjMinusDry = Expr(:Name( "Sample Mix" ) - :Dry Read);//**78
+		washMinusSampConj = Expr(:Wash - :Name( "Sample Mix" ));//**79
+		subMinusWash = Expr(:Substrate - :Wash);//**80
+		anomProgCurve10_60 = Expr(:Name("Slope (10-60s)"));//**82
+		avgAllFlag = Expr((:Dry Read + :Name( "Sample Mix" ) + :Wash + :Substrate)/4);//85
+		anomInitSlopeVSub = Expr(:Name("Slope (10-60s)"));//**86
+		lateSlope50_60 = Expr(:Name("Slope (50-60s)"));//**87
+		earlyslopeflag = Expr(:Name("VES(5.6s)"));//999 VESF
+		
+		//new for CRP
+		sampMixMinusDry = Expr(:Name("SampMix - Dry")); //78 8096 (same as TT4)
+		sampMixMinusRespAvg = Expr(:Name("SampMix - AR")); //79 8097 (same as TT4)
+		responseRange = Expr(:Name("Response Range")); //91 8100
+		
+		tableName<<New Column("Flag",Character(200),
+			Formula(
+				If(Row() == 1 | :Name( "uniqueCurveID" ) != Lag(:Name( "uniqueCurveID" ),1),
+					vesf86 = 0;
+					If(:Chem Type == assay_Name,
+						flagList={};
+						For(i=1,i<=nitems(assayFlagParams),i++,
+						//show(row(),i,eval(assayFlagParams[i][1]));
+							
+							If(assayFlagParams[i][1] == Expr(anomInitSlopeVSub),
+								If(
+									Round(assayFlagParams[i][4] * :Substrate + assayFlagParams[i][5], 10) <= eval(assayFlagParams[i][1]) <= Round(assayFlagParams[i][2] * :Substrate + assayFlagParams[i][3], 10),
+									flagList[i] = "NF("||assayFlagParams[i][6]||")",
+									flagList[i] = assayFlagParams[i][6];
+									vesf86 = vesf86 + 1;
+								)
+								,
+								assayFlagParams[i][1] == Expr(earlyslopeflag),
+								If(
+									//eval(assayFlagParams[i][1]) >= Round(assayFlagParams[i][4] * :Name("Slope (50-60s)") + assayFlagParams[i][5], 10) & eval(assayFlagParams[i][1])  <= Round(assayFlagParams[i][2] * :Name("Slope (50-60s)") + assayFlagParams[i][3], 10),
+									Round(assayFlagParams[i][4] * :Name("Slope (50-60s)") + assayFlagParams[i][5], 10) <= eval(assayFlagParams[i][1]) <= Round(assayFlagParams[i][2] * :Name("Slope (50-60s)") + assayFlagParams[i][3], 10),
+									
+									flagList[i] = "NF("||assayFlagParams[i][6]||")",
+									//show(
+									//	Round(assayFlagParams[i][4] * :Name("Slope (50-60s)") + assayFlagParams[i][5], 10),
+									//	eval(assayFlagParams[i][1]),
+									//	Round(assayFlagParams[i][2] * :Name("Slope (50-60s)") + assayFlagParams[i][3], 10),
+									//	Round(assayFlagParams[i][4] * :Name("Slope (50-60s)") + assayFlagParams[i][5], 10) >= eval(assayFlagParams[i][1]) >= Round(assayFlagParams[i][2] * :Name("Slope (50-60s)") + assayFlagParams[i][3], 10)
+									//);
+									flagList[i] = assayFlagParams[i][6];
+									vesf86 = vesf86 + 1;
+								)
+								,
+								assayFlagParams[i][1] == Expr(vesfSlopeVSub),
+								If(
+									vesf86 != 2, flagList[i] = "NF("||assayFlagParams[i][2]||")",
+									flagList[i] = assayFlagParams[i][2];
+									
+								)
+								,
+								If(
+									assayFlagParams[i][2] <= eval(assayFlagParams[i][1]) <= assayFlagParams[i][3],
+									flagList[i] = "NF("||assayFlagParams[i][4]||")"
+									,
+									flagList[i] = assayFlagParams[i][4]
+								);
+							);							
+						);
+						flagList1="";
+						For(j=1,j<=nitems(flagList),j++,
+							flagList1 = flagList1 || " " || flagList[j]
+						);
+						Trim(flagList1);
+					);					
+					,
+					Lag(:Flag,1);
+				)
+			)
+		);
+		//Column(tableName,"Flag") << Eval Formula;
+		
+		tableName<<New Column("Flag_nums",Character(20),
+			Formula(
+				If(:Chem Type == assay_Name,
+					flagNumList = Words(:Flag,"[");
+					flagNumList1 = "";
+					For(k=1,k<=nitems(flagNumList)-1,k++,
+						If(Contains(flagNumList[k],"NF") == 0,
+							flagNumList1 = flagNumList1 || " " || Word(1,flagNumList[k+1],"]")
+						)
+					);
+					If(flagNumList1 == "",
+						"None"
+						,
+						Trim(flagNumList1);
+					)
+				);
+			)
+		);
+		Column(tableName,"Flag_Nums") << Eval Formula;
+		
+		Column(tableName,"Flag")<<deleteformula;
+		Column(tableName,"Flag_nums")<<deleteformula;
+		,
+		tableName<<New Column("Flag",Character(200),
+			<< Set Each Value ("Cannot Calculate")
+		);
+		tableName<<New Column("Flag_nums",Character(200),
+			<< Set Each Value ("Cannot Calculate")
+		);
+	);
+);
+
+//-------------------------------------End/assayDefFlagging------------------------------------------
+
+//-------------------------------------singleConcCalculation-----------------------------------------
+//Function calculates a single concentration against a single set of curve coefficients
+//Inputs are as follows:
+//	coeffs - coefficients for the curve (int/lin/quad/cube or a/b/c/d/e): ROW MATRIX
+//	equationMethod - mathematical form of the curve: STRING
+//		biExp_4P = 4 Parameter bi-exponential equation ... initially developed for TT4
+//		logTransCubic_3P = 3 Parameter log transformed cubic fit ... initially developed for CRP (which now uses cubic)
+//		quadCube = updated method which can use cubic fit or quadratic formula
+//	analyzerResponse - the AR to be input into the calibration curve: NUMBER
+//	lowerBound = lower bound for acceptable results for an assay (at least as low as dynamic range): NUMBER
+//	upperBound = lower bound for acceptable results for an assay (at least as high as dynamic range): NUMBER
+//
+//Possible Outputs:
+//	finalConc - The singular concentration of the AR through the curve
+//	error list / associative array, all errors are {-999, associative array of errors}
+
+singleConcCalc = Function({coeffs, equationMethod, analyzerResponse, lowerBound=-100, upperBound=1e6},
+	{Default Local},
+
+	errorList = Associative Array();
+	mtrxChk = IsMatrix(coeffs);
+	eqnStr = IsString(equationMethod);
+	lowChk = IsNumber(lowerBound);
+	upChk = IsNumber(upperBound);
+	boundDiff = upperBound > lowerBound;
+	arChk = IsNumber(analyzerResponse);
+	
+	If(mtrxChk == 0,
+		errorList[1] = "Coefficients need to be matrix";
+	);
+	If(eqnStr == 0,
+		errorList[2] = "Equation Method must be string";
+		,
+		eqnStr == 1,
+		eM = Uppercase(equationMethod);
+		acceptMethod = {"BIEXP_4P","LOGTRANSCUBIC_3P","QUADCUBE"};
+		If(Contains(acceptMethod, eM) == 0,
+			errorList[7] = "Unsupported Equation Method";
+			,
+			Contains(acceptMethod, eM) > 0 & mtrxChk == 1,
+			calCurveMethods = {"QUADCUBE","LOGTRANSCUBIC_3P"};
+			nonCubicMethods = {"BIEXP_4P"};
+			If(Contains(calCurveMethods, eM) > 0,
+				If(nrow(coeffs) != 4,
+					errorList[8] = "4 Coefficients required for this method - even if 0 value";
+				)
+				,
+				Contains(nonCubicMethods, eM) > 0,
+				If(nrow(coeffs) != 5,
+					errorList[8] = "5 Coefficients required for this method - even if 0 value";
+				)
+			)
+		);
+	);
+	If(lowChk == 0,
+		errorList[3] = "Lower Bound must be number";
+	);
+	If(upChk == 0,
+		errorList[4] = "Upper Bound must be number";
+	);
+	If(boundDiff == 0,
+		errorList[5] = "Upper Bound must be greater than Lower Bound";
+	);
+	If(arChk == 0,
+		errorList[6] = "Analyzer Response must be number";
+	);
+	
+	If(nitems(errorList) > 0,
+		Print("Errors Below:");
+		currentkey = errorList << first;
+		For(i=1,i<=nitems(errorList),i++,
+			Print(errorList[currentkey]);
+			currentkey = errorList << Next(currentkey);
+		);
+		Return(-999,errorList);
+	);
+	
+	If(Contains(calCurveMethods, eM) > 0,
+		intTerm = coeffs[1];
+		linTerm = coeffs[2];
+		quadTerm = coeffs[3];
+		cubeTerm = coeffs[4];
+		,
+		Contains(nonCubicMethods, eM) > 0,
+		aTerm = coeffs[1];
+		bTerm = coeffs[2];
+		cTerm = coeffs[3];
+		dTerm = coeffs[4];
+		eTerm = coeffs[5];
+	);
+
+	quadCube = Expr(
+		If(cubeTerm == 0,
+			QA = (-1 * linTerm + Root( linTerm ^ 2 - 4 * quadTerm * (intTerm - analyzerResponse), Empty() )) / (2 * quadTerm);
+			QB = (-1 * linTerm - Root( linTerm ^ 2 - 4 * quadTerm * (intTerm - analyzerResponse), Empty() )) / (2 * quadTerm);
+			Char( QA ) || "  " || Char( QB );
+			,
+			p = ((3 * linTerm) / cubeTerm - (quadTerm / cubeTerm) ^ 2) / 3;
+			q = ((2 * (quadTerm / cubeTerm) ^ 3 - ((9 * quadTerm * linTerm) / cubeTerm) / cubeTerm) + (27 * (intTerm -
+			analyzerResponse)) / cubeTerm) / 27;
+			D = (p / 3) ^ 3 + (q / 2) ^ 2;
+			phi = ArcCosine( (- q / 2) / (Abs( p ) ^ 3 / 27) ^ 0.5 );
+			If( D >= 0,
+				u = Root( - q / 2 + D ^ 0.5, 3 );
+				v = Root( - q / 2 - D ^ 0.5, 3 );
+				y1 = u + v;
+				x1 = y1 - (quadTerm / cubeTerm) / 3;
+				Char( x1 );
+				,
+				y1 = 2 * (Abs( p ) / 3) ^ 0.5 * Cosine( phi / 3 );
+				y2 = -2 * (Abs( p ) / 3) ^ 0.5 * Cosine( (phi + Pi()) / 3 );
+				y3 = -2 * (Abs( p ) / 3) ^ 0.5 * Cosine( (phi - Pi()) / 3 );
+				x1 = y1 - (quadTerm / cubeTerm) / 3;
+				x2 = y2 - (quadTerm / cubeTerm) / 3;
+				x3 = y3 - (quadTerm / cubeTerm) / 3;
+				Char( x1 ) || " " || Char( x2 ) || " " || Char( x3 );
+			)
+		)
+	);
+	biExp_4P = Expr(
+		(eTerm) + aTerm * Exp( bTerm * analyzerResponse ) + cTerm * Exp( dTerm * analyzerResponse )
+	);
+	logTransCubic_3P = Expr(
+		Exp(intTerm + linTerm*(analyzerResponse) + quadTerm*(analyzerResponse)^2 + cubeTerm*(analyzerResponse)^3) – 1
+	);
+	
+	concResult = Match(eM,
+		"QUADCUBE",
+		Eval(quadCube)
+		,
+		"BIEXP_4P",
+		Eval(biExp_4P)
+		,
+		"LOGTRANSCUBIC_3P",
+		Eval(logTransCubic_3P)
+	);
+	If(IsString(concResult),
+		concResult = Words(concResult," ")
+		,
+		concResult = EvalList(List(concResult))
+	);
+	withinBounds = {};
+	For(i=1, i<=nitems(concResult),i++,
+		If(lowerBound <= Num(concResult[i]) <= upperBound,
+			insertinto(withinBounds,Num(concResult[i]))
+		)
+	);
+	If(nitems(withinBounds) != 1,
+		//show(withinBounds);
+		Print("Either too many or 0 concentrations within bounds");
+		errorList[9] = "Either too many or 0 concentrations within bounds";
+		Return(-999,errorList)
+		,
+		finalConc = withinBounds[1]
+	);
+
+	Return(finalConc);
+);
+
+//-------------------------------------End/singleConcCalculation------------------------------------
+
+//-------------------------------------arrayConcCalculation-----------------------------------------
+//Function calculates an associative array of concentrations against an associative array of inputs
+//Inputs are as follows:
+//	arArray - associative array of an ID tied to list of necessary inputs: ASSOCIATIVE ARRAY
+//		[ID => {chem code, slide lot, species, analyzer response, lower bound (optional), upper bound (optional)}, ID2 ...]
+//			chem code: NUMBER
+//			slide lot: NUMBER
+//			species: NUMBER
+//			analyzer response: NUMBER
+//			lower and upper bound: NUMBER
+//	forTesting(optional) - used for unit tests: NUMBER (0, 1, 2)
+//
+//Outputs:
+//	associative array of the ID along with the inputs and resulting outputs of the function including the concentration and/or errors
+//		[ID => [Inputs => {chem code, slide lot, species, analyzer response, lower bound (optional), upper bound (optional)},
+//			Outputs => {coefficients, equation method, concentration, error info(if necessary)}], ID2 ...]
+//		concentration may come through as -888 for function errors or -999 from actual concentration calculation from singleConcCalc
+//		other outputs may be text if errors took place
+
+arrayConcCalc = Function({arArray,forTesting = 0},
+	{default local},
+
+	outputConc = Associative Array();
+	errorList = Associative Array();
+	arrayChk = IsAssociativeArray(arArray);
+		
+	If(arrayChk == 0,
+		errorList[1] = "Parameter needs to be associative array";
+	);
+	//NO unit test for this table check as is only needed when not connected to network. Test manually
+	Try(
+		If(forTesting == 0,
+			curveTable = open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\AssayCurveFiles\calCurves.jmp",private);
+			nonCubeTable = open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\AssayCurveFiles\nonCubicCurves.jmp",private);
+			emTable = open("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\AssayCurveFiles\equationMethods.jmp",private);
+			,
+			forTesting == 1,
+			curveTable = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\calCurves.jmp",private);
+			nonCubeTable = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\nonCubicCurves.jmp",private);
+			emTable = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\equationMethods.jmp",private);
+			,
+			Throw()
+		)
+		,
+		//will happen fortesting == 2
+		errorList[2] = "Couldn't open one or more curve tables";
+		Try(curveTable << closewindow);
+		Try(nonCubeTable << closewindow);
+		Try(emTable << closewindow);
+	);
+	If(nitems(errorList) > 0,
+		Print("Errors Below:");
+		currentkey = errorList << first;
+		For(i=1,i<=nitems(errorList),i++,
+			Print(errorList[currentkey]);
+			currentkey = errorList << Next(currentkey);
+		);
+		Return(0,errorList);
+	);
+
+	
+	currentKey = arArray << first;
+	For(i=1,i<=nitems(arArray),i++,
+		concCalcList = {};
+
+		curveCode = ConcatItems({Char(arArray[currentKey][1]),char(arArray[currentKey][2]),char(arArray[currentKey][3])},"_");
+
+		matchCodeRows = {};
+		insertinto(matchCodeRows,curveTable << get rows where(:Name("UniqueCurve") == curveCode));
+		insertinto(matchCodeRows,nonCubeTable << get rows where(:Name("UniqueCurve") == curveCode));
+		tbl = 0;
+		If(nrow(matchCodeRows[2]) == 0, removefrom(matchCodeRows,2); tbl = 1);
+		If(nrow(matchCodeRows[1]) == 0, removefrom(matchCodeRows,1); tbl = 2);
+
+		insertinto(matchCodeRows,tbl);
+
+		Try(
+			finalCurveTable = Match(matchCodeRows[2],
+				1, curveTable,
+				,
+				2, nonCubeTable
+			);
+			curveCols = ncol(finalCurveTable);
+			totalCoeffs = curveCols - 7;
+			coeffMtrx = [];
+			For(j=5,j<= 4 + totalCoeffs,j++,
+				coeffMtrx = coeffMtrx || finalCurveTable[matchCodeRows[1][1],j]
+			);
+			coeffMtrx = transpose(coeffMtrx);
+			,
+			coeffMtrx = "No matching curve information";
+		);
+		insertinto(concCalcList,coeffMtrx,1);
+
+		code = arArray[currentKey][1];
+		emRow = emTable << get rows where(:Name("Assay Code") == code);
+		eM = emTable[emRow,2];
+		If(nitems(eM) == 0,
+			eM = "No Method Found"
+		);
+		insertinto(concCalcList,em,2);
+
+		If(!IsString(concCalcList[1]) & eM != "No Method Found",
+			concentration = Match(nitems(arArray[currentKey]),
+				4, singleConcCalc(concCalcList[1],concCalcList[2],arArray[currentKey][4])
+				,
+				6, singleConcCalc(concCalcList[1],concCalcList[2],arArray[currentKey][4],arArray[currentKey][5],arArray[currentKey][6])
+				,
+				{-888, "Incorrect number of input parameters"}
+			);
+			,
+			concentration = -888
+		);
+		insertinto(concCalcList,concentration);
+
+		arrayHold = arArray[currentKey];
+		outputConc[currentKey] = Associative Array();
+		outputConc[currentKey]["input"] = arrayHold;
+		outputConc[currentKey]["output"] = concCalcList;
+
+		currentKey = arArray << Next(currentKey);
+	);
+	
+	curveTable << close window;
+	nonCubeTable << close window;
+	emTable << close window;
+
+	If(forTesting == 0,
+		Return(outputConc)
+		,
+		Return(outputConc); //here in case i need to adjust testing cases
+	)
+);
+
+//-------------------------------------End/arrayConcCalc--------------------------------------------
+
+//-------------------------------------tableConcCalculation-----------------------------------------
+//Function used table information to create array of information to feed into arrayConcCalc to get concentrations
+//	to make columns from
+//Inputs are as follows:
+//	uniqueCol - Column containing unique values for individual assays: STRING
+//	arCol - Column containing the analyzer response values: STRING, values in column must be numeric, even if STRING numeric
+//	speciesCol - Column containing specieis information values: STRING, all values default to 99 if not 2 or feline
+//	lotCol - Column containing slide lot information values: STRING
+//	chemCodeCol - Column containing chem code information values: STRING, all values need to be numeric, NOT chem type
+//	table - Data table reference for table being used to gather information: TABLE
+//	forTesting(optional) - used for unit tests: NUMBER (0, 1, 2, 3, 4)
+//
+//Outputs:
+//	Columns in table for Calc Dose. and Calc Dose. Notes
+//	Potentially useful log outputs or array information beyond what goes into Notes column
+
+tableConcCalc = Function({uniqueCol,arCol,speciesCol,lotCol,chemCodeCol,table,fortesting=0},
+	{default local},
+	
+	/////// ADD UNIT TEST TO CHECK THAT ALL COLUMNS ABOVE ACTUALLY EXIST IN THE ABLE AND FAIL OUT IF THEY DONT
+	errorList = AssociativeArray();
+	outputConc = AssociativeArray();
+	uniquechk = IsString(uniqueCol);
+	arChk = IsString(arCol);
+	speciecChk = IsString(speciesCol);
+	lotChk = IsString(lotCol);
+	chemChk = IsString(chemCodeCol);
+	
+	//show(arNumChk,lotNumChk,chemNumChk);
+
+	If(uniqueChk == 0 | arChk  == 0 | speciecChk == 0 | lotChk == 0 | chemChk == 0,
+		errorList[1] = "All parameters need to be type STRING"
+		
+	);
+	Try(
+		Column(table,1) << get Name;
+		,
+		errorList[2] = "Invalid Data Table Reference"
+	);
+	Try(
+		errorList[1];
+		,
+		Try(errorList[2];
+			,
+			arNumChk = IsMissing(Num(Column(table,arCol)[1]));
+			lotNumChk = IsMissing(Num(Column(table,lotCol)[1]));
+			chemNumChk = IsMissing(Num(Column(table,chemCodeCol)[1]));
+			If(arNumChk == 1 | lotNumChk == 1 | chemNumChk == 1,
+				errorList[3] = "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"
+			);
+		)
+	);
+	
+
+	If(nitems(errorList) > 0,
+		Print("Errors Below:");
+		currentkey = errorList << first;
+		For(i=1,i<=nitems(errorList),i++,
+			Print(errorList[currentkey]);
+			currentkey = errorList << Next(currentkey);
+		);
+		Return(0,errorList);
+	);
+
+	summarize(table,a = by(Column(uniqueCol)), n=count());
+	inputArray = AssociativeArray();
+	If(mean(n) == 1,
+		//show(uniqueCol);
+		For Each Row(table,
+			speciesNum = If(Uppercase(Char(Column(speciesCol)[Row()])) == "2" | Uppercase(Char(Column(speciesCol)[Row()])) == "FELINE",
+				2
+				,
+				99
+			);
+			inputArray[Column(uniqueCol)[Row()]] = EvalList(List(Column(chemCodeCol)[Row()],column(lotCol)[Row()],speciesNum,Column(arCol)[Row()]))
+		)
+		,
+		tableSum = table << Summary(
+			Group( Column(uniqueCol), Column(chemCodeCol), Column(speciesCol), Column(lotCol), Column(arCol) ),
+			Freq( "None" ),
+			Weight( "None" )
+		);
+		For Each Row(tableSum,
+			speciesNum = If(Uppercase(Char(Column(speciesCol)[Row()])) == "2" | Uppercase(Char(Column(speciesCol)[Row()])) == "FELINE",
+				2
+				,
+				99
+			);
+			inputArray[Column(uniqueCol)[Row()]] = EvalList(List(Column(chemCodeCol)[Row()],column(lotCol)[Row()],speciesNum,Column(arCol)[Row()]))
+		);
+		summarize(tableSum,a = by(Column(uniqueCol)), n=count());
+		If(mean(n) != 1,
+			Print("Errors Below:");
+			Print("Duplicate IDs found with differing chem/species/lot/ar information");
+			tableSum << close window;
+			Return(0)
+			,
+			tableSum << close window;
+		)
+	);
+	concColumn = Function({array},
+		parseUnique = Parse(EvalInsert(":Name(\!"^uniqueCol^\!")"));
+		temp = table << New Column("Calc_Dose_All", Numeric,
+			Formula(
+				If(
+					IsList(array),
+					-999
+					,
+					array[parseUnique]["output"][3]
+				)
+			)
+		);
+		temp1 = table << New Column("Calc_Dose_All Notes", Character,
+			Set Formula(
+				If(
+					IsList(array),
+					Char(array[2])
+					,
+					outputArray[parseUnique]["output"][3] == -888,
+					ConcatItems({Char(array[parseUnique]["output"][1]),Char(array[parseUnique]["output"][2])},"_")
+					,
+					outputArray[parseUnique]["output"][3] == -999,
+					Char(array[parseUnique]["output"][4])
+					,
+					"None"
+				)
+			)
+		);
+		temp << delete formula;
+		temp1 << delete formula;
+	);
+	if(fortesting == 1,
+		Return(1,inputArray);
+		,
+		fortesting == 2,
+		outputArray = arrayConcCalc(inputArray);
+		concColumn(outputArray);
+		Return(1,outputArray)
+		,
+		fortesting == 3,
+		outputArray = arrayConcCalc(inputArray,1); //invokes testing condition in arrayConcCalc to trigger error to be pulled through
+		concColumn(outputArray);
+		Return(1,outputArray)
+		,
+		fortesting == 4,
+		outputArray = arrayConcCalc(inputArray,2); //invokes testing condition in arrayConcCalc to trigger error to be pulled through
+		concColumn(outputArray);
+		Return(1,outputArray)
+		,
+		outputArray = arrayConcCalc(inputArray);
+		concColumn(outputArray);
+		Return(1)
+	);
+	
+);
+
+//-------------------------------------End/tableConcCalculation-----------------------------------------
+
+
+
+

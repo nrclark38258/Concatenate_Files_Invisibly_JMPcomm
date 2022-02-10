@@ -1,0 +1,280 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+
+//Tool to graph QC results for various parameters and apply limits based on a separate table
+
+//------------------Revision History for both script and Help File--
+//
+//	NClark 1.3 053119
+//		-> added line to delete missing values so rows are properly counted for graphing purposes
+//		-> cleaned up join file so graph lines only made by real data not missing data due to exclusions
+//	NClark 1.2 122016
+//		-> Changed so dynamic axis across board
+//		-> Axis now chooses between dynamic or hard coded high and low (whichever is wider)
+//	NClark 1.1 121916
+//		-> Updated so uniqueness is param/analyzer
+//		-> Updates so graphs/lines are param/analyzer
+//	NClark 1.0 121716
+//		-> 1st version released
+//------------------------------------------------------------------
+
+dt = currentdatatable();//main table
+dt_limit = open(); //limit table
+
+//creates name for stacked data table
+dtName = dt<<GetName();
+stackName = "Stacked_"||dtName;
+
+//determines the concentration level for use through out the script
+concLevel = If(Word(2,Column(dt,"Analyzer")[1],"-") == "804)", "Level 1",
+	Word(2,Column(dt,"Analyzer")[1],"-") == "805)", "Level 2"
+);
+
+dt_stack = dt << Stack(
+	columns(
+		:Name( "RBC(M/uL)" ),
+		:Name( "HGB(g/dL)" ),
+		:Name( "HCT(%)" ),
+		:Name( "MCV(fL)" ),
+		:Name( "MCH(pg)" ),
+		:Name( "MCHC(g/dL)" ),
+		:Name( "RDW-CV(%)" ),
+		:Name( "RET#(K/uL)" ),
+		:Name( "RET%(%)" ),
+		:Name( "RBC-O(M/uL)" ),
+		:Name( "PLT-O(K/uL)" ),
+		:Name( "RBC-X(ch)" ),
+		:Name( "RBC-Y(ch)" ),
+		:Name( "RBC-Z(ch)" ),
+		:Name( "MPV(fL)" ),
+		:Name( "PLT-I(K/uL)" ),
+		:Name( "WBC(K/uL)" ),
+		:Name( "NEUT#(K/uL)" ),
+		:Name( "LYMPH#(K/uL)" ),
+		:Name( "MONO#(K/uL)" ),
+		:Name( "EO#(K/uL)" ),
+		:Name( "DIFF-X(ch)" ),
+		:Name( "DIFF-Y(ch)" ),
+		:Name( "FSC-X(ch)" )
+	),
+	Source Label Column( "Parameter" ),
+	Stacked Data Column( concLevel ),
+	OutputTableName(stackName)
+);
+
+dt_stack << selectwhere(Is Missing(Column(dt_stack,concLevel)[Row()])) << delete rows;
+
+//creates column version of concentration column and makes summary of stacked data
+parseColName = Parse( Eval Insert( ":name(\!"^concLevel^\!" )" ) );
+mainSum = dt_stack << Summary(
+	Group(
+		:Parameter,
+		//:Analysis Date,
+		:Analyzer,
+		:Name( "Prelook Event Seq  (Year_seq)" ),
+		:Sample ID No
+	),
+	Max( parseColName ),
+	Min( parseColName ),
+	Max( :Analysis Date),
+	Min( :Analysis Date),
+	Freq( "None" ),
+	Weight( "None" ),
+	Link to original data table( 0 ),
+	private
+);
+//updates summary data with limit data
+joinDt = mainSum << Join(
+	With( dt_Limit ),
+	Merge Same Name Columns,
+	By Matching Columns(
+		:Parameter = :Parameter,
+		:Name( "Prelook Event Seq  (Year_seq)" ) =
+		:Name( "Prelook Event Seq  (Year_seq)" )
+	),
+	Drop multiples( 0, 0 ),
+	Include Nonmatches( 1, 1 ),
+	Preserve main table order( 1 )
+);
+joinDt << SelectWhere(:Match Flag == 2)<<deleterows();
+joinDt << Delete Columns("Match Flag");
+
+joinDt << selectwhere(Is Missing(Column(joinDt,"Max("||concLevel||")")[Row()])) << delete rows;
+//Creates column for a unique graph name
+//will be used to compare to each graph in report
+joinDt<< New Column("Unique Graph",Character,
+	Formula(:Parameter || :Analyzer)
+);
+
+//creates a series of columns for calculating X and Y coordinates for reference lines
+joinDt<< New Column("x1",Numeric,
+	Formula(
+		If( Row() == 1 | :Unique Graph != Lag( :Unique Graph, 1 ),
+			0
+		,
+			Lag(:N Rows,1) + Lag( :x1, 1 )
+		)
+	)
+);
+joinDt<< New Column("x2",Numeric,
+	Formula(
+		:x1 + :N Rows
+	)
+);
+joinDt<< New Column("yHi",Numeric,
+	Formula(
+		:TARGET + :LIMIT
+	)
+);
+joinDt<< New Column("yLo",Numeric,
+	Formula(
+		:TARGET - :LIMIT
+	)
+);
+
+//creates variables from concentration level to correctly move columns to front of table
+maxColName = "Max("||concLevel||")";
+minColName = "Min("||concLevel||")";
+adjustConcLevel = Munger(concLevel,1," ","");
+axisMax = adjustConcLevel || " Max Axis Limit";
+axisMin = adjustConcLevel || " Min Axis Limit";
+joinDt << MoveSelectedColumns({"Unique Graph",Eval(maxColName),Eval(minColName),"x1","x2","yHi","yLo","TARGET",Eval(axisMin),Eval(axisMax)},To First);
+
+//selects excluded rows and deletes them (controls for if no rows are selected)
+joinDt<<selectwhere(excluded(rowstate(row()))==1);
+For(i=1,i<=nrow(joinDt),i++,
+	If(selected(rowstate(i))==1,joinDt<<deleterows();break(),empty())
+);
+
+//creates list of lists for each column in data table (each row will be information for one event on one graph)
+tblMtrx = {};
+For(k=1,k<=ncol(joinDt),k++,
+	tblMtrx[k]=Column(joinDt,k)<<getasmatrix
+);
+paramMtrx = {};
+For(k=1,k<=nitems(tblMtrx[1]),k++,
+	smallMtrx = {};
+	For(j=1,j<=ncol(joinDt),j++,
+		InsertInto(smallMtrx,tblMtrx[j][k]);
+	);
+	paramMtrx[k] = smallMtrx;
+);
+//show(paramMtrx);
+
+//closes unneeded tables
+Close(dt_limit,nosave);
+Close(mainSum,nosave);
+Close(joinDt,nosave);
+
+///need to make the graph before FOR loop can do all the work with above matrix
+oneWay = dt_Stack<<Oneway(
+	Y( Parse( Eval Insert( ":name(\!"^concLevel^\!" )" ) ) ),
+	X( :Analysis Date ),
+	Grand Mean( 0 ),
+	By( :Parameter, :Analyzer )
+);
+
+For(i=1,i<=nitems(oneWay),i++,
+	/*graphTitle = report(oneWay[i])[outline box(1)] << get title;
+	partInstName = Word(3,graphTitle," ");
+	partParamName = Word(4,graphTitle," ");
+	finalInstName = Munger(Word(2,partInstName,"="),1,",","");
+	finalParamName = Word(2,partParamName,"=");*/
+	
+	//Grabs the title to extract the specific analyzer and parameter
+	graphTitle = report(oneWay[i])[outline box(1)] << get title;
+	partParaName = Word(9,graphTitle," ");
+	partInstName = Word(10,graphTitle," ");
+	finalParamName = Munger(Word(2,partParaName,"="),1,",","");
+	finalInstName = Word(2,partInstName,"=");
+
+	uniqueGraphName = finalParamName || finalInstName; //combines into one unique value
+	
+	//renames each graph
+	Match(concLevel, "Level 1",
+		newGraphTitle = Munger(graphTitle,1,"Oneway Analysis of Level 1 By Analysis Date ","PreLook  "),
+		"Level 2",
+		newGraphTitle = Munger(graphTitle,1,"Oneway Analysis of Level 2 By Analysis Date ","PreLook  ")
+	);
+	report(oneWay[i])[outline box(1)] << Set Title(newGraphTitle);
+	
+	//Show(graphTitle,partInstName,partParamName,finalInstName,finalParamName);
+	
+	////need create quoted string below from above 'get title'
+	//startTime = today();
+	numEvent = 0;
+	trigger = 0;
+	For(j=1,j<=nitems(paramMtrx),j++,
+		If(contains(paramMtrx[j],uniqueGraphName) != 0,
+			stEvent = j;
+			trigger = trigger + 1;
+			numEvent = numEvent + 1;
+			//Break();
+		);
+		If(trigger == 1,
+			startEvent = stEvent
+		,
+			Empty()
+		)
+	);
+	//endTime = today();
+	//show(stEvent,startEvent,numEvent,startTime-endTime);
+	
+	///based on start event need to create text version of below
+	///with FOR loop to fill in the correct # of lines w/correct values
+	startGraphics = "report(oneWay[i])[FrameBox(1)]<<AddGraphicsScript(1,Description( \!"Script\!" ),";
+	lineGraphics = {};
+	maxListDynam = {};
+	minListDynam = {};
+	maxListHard = {};
+	minListHard = {};
+	//numEvent = 2;///placeholder
+	startList = 1;
+	For(k = startEvent, k<startEvent + numEvent, k++,
+		lineGraphics[startList] = 
+		"PenSize(1);
+		LineStyle(\!"Solid\!");
+		Line(["||Char(paramMtrx[k][4])||" "|| Char(paramMtrx[k][5])||"],["||Char(paramMtrx[k][6])||" "|| Char(paramMtrx[k][6])||"]);
+		Line(["||Char(paramMtrx[k][4])||" "||Char(paramMtrx[k][5])||"],["||Char(paramMtrx[k][7])||" "||Char(paramMtrx[k][7])||"]);
+		PenSize(1);
+		LineStyle(\!"Dashed\!");
+		Line(["||Char(paramMtrx[k][4])||" "||Char(paramMtrx[k][5])||"],["||Char(paramMtrx[k][8])||" "||Char(paramMtrx[k][8])||"])";
+		
+
+		maxListDynam[startList] = max(paramMtrx[k][2],paramMtrx[k][6]);//used if JMP picks axis settings
+		minListDynam[startList] = min(paramMtrx[k][3],paramMtrx[k][7]);
+		maxListHard[startList] = max(paramMtrx[k][10]);
+		minListHard[startList] = max(paramMtrx[k][9]);
+		startList = startList + 1;
+		//show(lineGraphics);
+	);
+	concatGraphics = ConcatItems(lineGraphics,"; ");
+	endGraphics = ")";
+	finalConcat = Concat(startGraphics,concatGraphics,endGraphics);
+	
+	Eval(Parse(finalConcat));
+	
+	axisMaxDynam = Max(maxListDynam) * 1.1;//used if JMP picks axis settings
+	axisMinDynam = Min(minListDynam) *0.9;
+	axisMaxHard = Max(maxListHard);
+	axisMinHard = Min(minListHard);
+	
+	If( axisMaxHard > axisMaxDynam,
+		axisMax = axisMaxHard
+	,
+		axisMax = axisMaxDynam
+	);
+	If( axisMinHard < axisMinDynam,
+		axisMin = axisMinHard
+	,
+		axisMin = axisMinDynam
+	);
+	axisInc = round((axisMax-axisMin)/4,1);
+	
+	report(oneWay[i])[Axisbox(1)]<<Axis Settings(Min(axisMin),Max(axisMax), inc(axisInc), minor ticks(1));	
+	
+);
+

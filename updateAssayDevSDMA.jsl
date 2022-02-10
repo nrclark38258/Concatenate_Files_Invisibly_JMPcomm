@@ -1,0 +1,130 @@
+//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	2.1 NClark 071619
+//		-> Updated to work with MAC and officially unregister/delete addin load
+//		-> Updated to call the updateGeneric and updateLibraries rather than load each individual addin
+//	2.0 NClark 040319
+//		-> Updated to properly unregister and install generic tools with run sheet
+//	1.9 NClark 010919
+//		-> updated unregistering for better ordering
+//	1.8.1 NClark 082118
+//		-> update for new file locations
+//	1.7 NClark 081517
+//		-> Updated to add titer check
+//	1.6 NClark 071317
+//		-> Updated to add titer tool
+//	1.5 NClark 050917
+//		-> Updated to add the temp Egg Overlay addin
+//	1.4 NClark 032317
+//		-> Updated to update SDMAcalCurve as well
+//	1.3 NClark 111316
+//		-> Added install of separate library addin
+//	1.2 NClark 080916
+//		-> Added installing automatic updates
+//		-> Updated assay development structure
+//	1.1 NClark 120815
+//		-> Updated caption to work in JMP10 vs JMP11+
+//	1.0 NClark 111215
+//		-> First Released Version
+//		-> v1.3 of PROG update file
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+macTag = "\Volumes\Groups\";
+winTag = "\\FOGHORN\Groups\";
+addinLoc = "JMP User Group\JMP Addins\Production_Deployment\";
+updateLoc = "JMP User Group\JMP Addins\";
+
+//list of files to be installed for addin
+//list in the order you want them installed
+fileNameList = {"RnD_SDMA.jmpaddin","RnD_SDMA_Calibration_Curve.jmpaddin","RnD_SDMA-t_EggOverlay.jmpaddin","RnD_SDMA_Titering_Tool.jmpaddin","RnD_SDMA_Titer_Check.jmpaddin","RnD_SDMA_Update.jmpaddin"};
+
+If(Num(Word(1,jmpversion(),"."))>=11,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		Font( "Arial" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		//Font( "Arial" ),
+		//Font Size( 16 ),
+		//Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+);
+
+//Unregistering addins reset numerical order so they can be installed in the order desired
+//Unregister Addin("com.idexx.RnD_SDMA");
+Unregister Addin("com.idexx.RnD_SDMAUpdate");
+Unregister Addin("com.idexx.RnD_SDMAcalCurve");
+Unregister Addin("com.idexx.RnD_SDMAtiterCheck");
+Unregister Addin("com.idexx.RnD_SDMAtiter");
+Unregister Addin("com.idexx.RnD_SDMA-t_EggOverlay");
+
+//With each new assay, Generic tools and libraries will be installed/updated
+//no longer unregistering as the call to the update script will do that part
+
+//new updates now, so unregistering old and will delete folders
+Unregister Addin("com.idexx.nclark.automaticUpdates-load");
+Unregister Addin("com.idexx.nclark.automaticUpdates-unLoad");
+
+//assigns username for installs and file deletion
+//directory and file deletion only needs to happen once (no file to delete on MACs)
+If(HostIs("MAC"),
+	If(IsDirectory("\Volumes/groups/"),
+		Empty()
+		,
+		web("smb://foghorn.namerica.idexxi.com/groups");
+		nw = New Window("Mounting drive",
+			<< modal,
+			Text Box("Please enter credentials for drive to mount and click ok when complete"),
+			ButtonBox("OK"),
+			Button Box("Cancel", Return(0))
+		);
+	);
+	u = Get Environment Variable("USER");
+	Try(Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-load",unix)));
+	Try(Delete Directory(Convert File Path("/Users/"||u||"/Library/Application Support/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",unix)));
+
+	For(i=1,i<=nitems(fileNameList),i++,
+		Open(Convert File Path(macTag||addinLoc||fileNameList[i], unix));
+	);
+
+	//With each new assay, Generic tools and libraries will be installed/updated
+	Open(Convert File Path(macTag||updateLoc||"updateGenericTools.jsl", unix));
+
+	Open(Convert File Path(macTag||updateLoc||"updateLibraries.jsl", unix));
+	,
+	u = Get Environment Variable("USERNAME");
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-load",windows)));
+	Try(Delete Directory(ConvertFilePath(Get Environment Variable("APPDATA")||"/SAS/JMP/Addins/com.idexx.nclark.automaticUpdates-unLoad",windows)));
+
+	For(i=1,i<=nitems(fileNameList),i++,
+		Open(Convert File Path(winTag||addinLoc||fileNameList[i],windows));
+	);
+	
+	//With each new assay, Generic tools and libraries will be installed/updated
+	Open(Convert File Path(winTag||updateLoc||"updateGenericTools.jsl",windows));
+
+	Open(Convert File Path(winTag||updateLoc||"updateLibraries.jsl",windows));
+);
+
+Caption(remove);

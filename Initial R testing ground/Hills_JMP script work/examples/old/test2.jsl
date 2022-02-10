@@ -1,0 +1,4 @@
+show(file exists ("E:\2JMP_temp\macroTestForJMP.xlsm")); // 1 = exists, 0 = doesn't.
+
+// http://analytics.ncsu.edu/sesug/2014/BB-03.pdf aww pFW 5 ON JMP-->EXCEL
+

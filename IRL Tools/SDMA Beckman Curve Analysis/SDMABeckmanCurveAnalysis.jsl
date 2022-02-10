@@ -1,0 +1,1193 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+
+//Tool to breakdown Beckman raw data (specific to SDMA, currently)
+
+/////////////////////Revision History////////////////////////////////
+//
+//	3.3 NClark 051018
+//		-> Merge of BETA version into new official version
+//	BETA 3.2.0.5 NClark 032818
+//		-> Added data type to name change for S. No. so it will always be Character
+//	BETA 3.2.0.4 NClark 031418
+//		-> Updated the calculation of AR / color / blank reactions so missing data will be handled with -1
+//			-> missing data results in {} for part of the array, which errors out when accessed
+//	BETA 3.2.0.3 NClark 112717
+//		-> Updated version naming to be a branch of last release.
+//		-> Updated for individual wavelength ARs (only 340 currently with default for others being 340 method)
+//		-> Updated to pull color/blank reactions to assigne to specific cuvette reactions
+//		-> AR_Rxn-Blank now is AR_Rxn (to allow for blanks not to be used, if desired)
+//		-> AR_Rxn is now cuvette_Rxn for the actual AR for the cuvette (color or blank)
+//		-> Color and Blank column are now created from scripts cuvette_Rxn and is colored
+//	BETA 3.4 NClark 111717
+//		-> Fixed bug to account for QC run uniqueness in Run ID
+//	BETA 3.3 NClark 111317
+//		-> Handles multiple wavlengths for progress curve files
+//		-> Just results file has mult wavelenghts but just repeates color/blank for the Reaction OD (by Sample No.)
+//	3.2 NClark 110917
+//		-> Updated and added sorting to handle run organization with several programs repeating with same samples
+//		-> More robust Run ID to UniqueRunID
+//		-> Chagned Sample to Run Type
+//	3.1 NClark 110617
+//		-> Updated pre-created associative arrays to work with JMP 13 (within Associative Array() function)
+//	3.0 NClark 102917
+//		-> Complete overhaul of script to be more generic and handle data more effectively
+//		-> Added associative arrays for column types if cols brought in as character
+//		-> Converted flag descriptions to associative array to make code more simple
+//		-> Added "file info" associative array that populates based on some of the metadata that
+//			may be present in the file (index file, serial number, model info, etc)
+//		-> Added catch for files that may contain import issues and the log displays which files may have the issues
+//		-> recognizes and deals with file type and model information w/o user involvement
+//		-> Currently assumes internal IDEXX as 'Lab' and no file renaming is necessary
+//		-> Cal level will only be added through join of another file (not part of this script)
+//		-> None of the cal curve stuff is included with the script anymore
+//		-> Columns created by script are colored teal for easy identification
+//	2.2 NClark 091717
+//		-> Creates "Reference Value" column that uses 'Ref Value' but also pulls in QC calculated concentrations
+//		-> Makes reagent blank ref value of 0
+//		-> corrects some bugs to correctly label reagent blank/qc/patient
+//		-> now uses cal expression column to pull in formula
+//		-> added 2nd script for non-ref curves
+//		-> separate curves out by new Cal Info column (either cal id or cal used)
+//		-> Incorporated Unit No. into unique ID and created Unit No. in model 680 and 640 data
+//		-> Updated where Serial # comes from with addition of line number in filename
+//	2.1 NClark 083117
+//		-> Deleted current model rules for opening and went with new 3rd 'word'
+//			-> should be number representing the starting row of the headers
+//		-> Robusted script to work if col number changes for "OD Source" since it's blank upon opening
+//		-> Cal expression columns also added to justResults table
+//		-> Updated to work with manually input 'Ref Value' column
+//	2.0 NClark 082217
+//		-> Added Sample Base column for Cal / Patient / QC buckets
+//		-> Automatically creates calibration curve and stores formula in justResults table
+//		-> Creates Cal Curve database with expressions for calibration curves (noting if Ref Value wasn't 'real')
+//		-> Creates "Reference Value" column if none exists based on Target values or Conc. values
+//			-> Using these to calibrate is close but not ideal, so database has a "_noRef" tag on column
+//		-> Added justResults table script to color by Sample Base
+//		-> Updated cal curve table script to make row legend and add actual cal curve line to data
+//		-> Update method comp table script to always have axis from 0 - 110
+//		-> Added Flag Desc column that will display error flags for runs
+//	1.0 NClark 081617
+//		-> Updated Regent typo to become Reagent
+//		-> Added Date column
+//		-> Script works with "48" models of instruments
+//		-> Added table scripts to create cal curves and method comp graphs
+//		-> Cal curve script creates parabolic line and saves predicteds to table as Predicted_Poly2_AR_Rxn-Blank By Lab_Date
+//		-> Updated table opening for 680-like models to start on 8/9, not 5/6
+//	BETA 2 NClark 081417
+//		-> Added 'Sample' column to break out QC/Emergency/Calibration/Reagent Blank/Patient samples
+//		-> Updated to work for any model of 5800
+//	BETA 1 NClark 081417
+/////////////////////////////////////////////////////////////////////
+
+names default to here(1);
+
+//List of the columns in beckman files (both models) along with their data and modeling type
+//only needed if full file imported as character
+beckmanColumnArray = Associative Array(
+	{
+		{"Bottle No.", {"Numeric", "Continuous"}},
+		{"Bottle No. 2", {"Character", "Nominal"}},
+		{"Bottle No. 3", {"Numeric", "Continuous"}},
+		{"Cal/QC No.", {"Character", "Nominal"}},
+		{"Calibration", {"Character", "Nominal"}},
+		{"Column 16", {"Character", "Nominal"}},
+		{"Column 60", {"Character", "Nominal"}},
+		{"Conc.", {"Character", "Nominal"}},
+		{"Counts", {"Character", "Nominal"}},
+		{"Cuvette", {"Character", "Nominal"}},
+		{"Data Flags", {"Character", "Nominal"}},
+		{"Measure Time", {"Numeric", "Continuous"}},
+		{"P0", {"Character", "Nominal"}},
+		{"P1", {"Character", "Nominal"}},
+		{"P10", {"Character", "Nominal"}},
+		{"P11", {"Character", "Nominal"}},
+		{"P12", {"Character", "Nominal"}},
+		{"P13", {"Character", "Nominal"}},
+		{"P14", {"Character", "Nominal"}},
+		{"P15", {"Character", "Nominal"}},
+		{"P16", {"Character", "Nominal"}},
+		{"P17", {"Character", "Nominal"}},
+		{"P18", {"Character", "Nominal"}},
+		{"P19", {"Character", "Nominal"}},
+		{"P2", {"Character", "Nominal"}},
+		{"P20", {"Character", "Nominal"}},
+		{"P21", {"Character", "Nominal"}},
+		{"P22", {"Character", "Nominal"}},
+		{"P23", {"Character", "Nominal"}},
+		{"P24", {"Character", "Nominal"}},
+		{"P25", {"Character", "Nominal"}},
+		{"P26", {"Character", "Nominal"}},
+		{"P27", {"Character", "Nominal"}},
+		{"P3", {"Character", "Nominal"}},
+		{"P4", {"Character", "Nominal"}},
+		{"P5", {"Character", "Nominal"}},
+		{"P6", {"Character", "Nominal"}},
+		{"P7", {"Character", "Nominal"}},
+		{"P8", {"Character","Nominal"}},
+		{"P9", {"Character", "Nominal"}},
+		{"Photocal", {"Numeric", "Continuous"}},
+		{"Photocal 2", {"Numeric", "Continuous"}},
+		{"Pos.", {"Numeric", "Continuous"}},
+		{"Pos. 2", {"Character", "Nominal"}},
+		{"Pos. 3", {"Numeric", "Continuous"}},
+		{"Preprocess MixBarNo.", {"Character","Nominal"}},
+		{"R1 MixBarNo.", {"Numeric", "Continuous"}},
+		{"R1(R1-1) Lot No.", {"Numeric", "Continuous"}},
+		{"R1-2 Lot No.", {"Character", "Nominal"}},
+		{"R2 MixBarNo.", {"Numeric", "Continuous"}},
+		{"R2(R2-1) Lot No.", {"Numeric", "Continuous"}},
+		{"Rack No.", {"Numeric", "Continuous"}},
+		{"RB", {"Character", "Nominal"}},
+		{"Reaction OD", {"Numeric", "Continuous"}},
+		{"S. MixBarNo.", {"Numeric", "Continuous"}},
+		{"S. No.", {"Character","Nominal"}},
+		{"Seq. No.", {"Character", "Nominal"}},
+		{"Test Name", {"Character", "Nominal"}},
+		{"Unit No.", {"Numeric", "Continuous"}},
+		{"CONC", {"Numeric", "Continuous"}},
+		{"Cuvette No.", {"Character", "Nominal"}},
+		{"DataFlag", {"Character", "Nominal"}},
+		{"Measured Date/Time", {"Numeric","Continuous"}},
+		{"Mix Bar No.", {"Character", "Nominal"}},
+		{"Pre.P0", {"Numeric", "Continuous"}},
+		{"Pre.P1", {"Numeric", "Continuous"}},
+		{"Pre.P10", {"Numeric", "Continuous"}},
+		{"Pre.P11", {"Numeric", "Continuous"}},
+		{"Pre.P12", {"Numeric", "Continuous"}},
+		{"Pre.P13", {"Numeric", "Continuous"}},
+		{"Pre.P14", {"Numeric", "Continuous"}},
+		{"Pre.P15", {"Numeric", "Continuous"}},
+		{"Pre.P16", {"Numeric", "Continuous"}},
+		{"Pre.P17", {"Numeric", "Continuous"}},
+		{"Pre.P18", {"Numeric", "Continuous"}},
+		{"Pre.P19", {"Numeric", "Continuous"}},
+		{"Pre.P2", {"Numeric", "Continuous"}},
+		{"Pre.P20", {"Numeric", "Continuous"}},
+		{"Pre.P21", {"Numeric", "Continuous"}},
+		{"Pre.P22", {"Numeric", "Continuous"}},
+		{"Pre.P23", {"Numeric", "Continuous"}},
+		{"Pre.P24", {"Numeric", "Continuous"}},
+		{"Pre.P25", {"Numeric", "Continuous"}},
+		{"Pre.P26", {"Numeric", "Continuous"}},
+		{"Pre.P27", {"Numeric","Continuous"}},
+		{"Pre.P3", {"Numeric", "Continuous"}},
+		{"Pre.P4", {"Numeric", "Continuous"}},
+		{"Pre.P5", {"Numeric", "Continuous"}},
+		{"Pre.P6", {"Numeric", "Continuous"}},
+		{"Pre.P7", {"Numeric", "Continuous"}},
+		{"Pre.P8", {"Numeric", "Continuous"}},
+		{"Pre.P9", {"Numeric", "Continuous"}},
+		{"QC/CalNo.", {"Character", "Nominal"}},
+		{"RB.P0", {"Numeric", "Continuous"}},
+		{"RB.P1", {"Numeric", "Continuous"}},
+		{"RB.P10", {"Numeric","Continuous"}},
+		{"RB.P11", {"Numeric", "Continuous"}},
+		{"RB.P12", {"Numeric", "Continuous"}},
+		{"RB.P13", {"Numeric", "Continuous"}},
+		{"RB.P14", {"Numeric", "Continuous"}},
+		{"RB.P15", {"Numeric", "Continuous"}},
+		{"RB.P16", {"Numeric", "Continuous"}},
+		{"RB.P17", {"Numeric", "Continuous"}},
+		{"RB.P18", {"Numeric", "Continuous"}},
+		{"RB.P19", {"Numeric", "Continuous"}},
+		{"RB.P2", {"Numeric", "Continuous"}},
+		{"RB.P20", {"Numeric","Continuous"}},
+		{"RB.P21", {"Numeric", "Continuous"}},
+		{"RB.P22", {"Numeric", "Continuous"}},
+		{"RB.P23", {"Numeric", "Continuous"}},
+		{"RB.P24", {"Numeric", "Continuous"}},
+		{"RB.P25", {"Numeric", "Continuous"}},
+		{"RB.P26", {"Numeric", "Continuous"}},
+		{"RB.P27", {"Numeric", "Continuous"}},
+		{"RB.P3", {"Numeric", "Continuous"}},
+		{"RB.P4", {"Numeric", "Continuous"}},
+		{"RB.P5", {"Numeric", "Continuous"}},
+		{"RB.P6", {"Numeric", "Continuous"}},
+		{"RB.P7", {"Numeric", "Continuous"}},
+		{"RB.P8", {"Numeric", "Continuous"}},
+		{"RB.P9", {"Numeric", "Continuous"}},
+		{"Rea.P0", {"Numeric","Continuous"}},
+		{"Rea.P1", {"Numeric", "Continuous"}},
+		{"Rea.P10", {"Numeric", "Continuous"}},
+		{"Rea.P11", {"Numeric", "Continuous"}},
+		{"Rea.P12", {"Numeric", "Continuous"}},
+		{"Rea.P13", {"Numeric", "Continuous"}},
+		{"Rea.P14", {"Numeric", "Continuous"}},
+		{"Rea.P15", {"Numeric", "Continuous"}},
+		{"Rea.P16", {"Numeric", "Continuous"}},
+		{"Rea.P17", {"Numeric", "Continuous"}},
+		{"Rea.P18", {"Numeric", "Continuous"}},
+		{"Rea.P19", {"Numeric","Continuous"}},
+		{"Rea.P2", {"Numeric", "Continuous"}},
+		{"Rea.P20", {"Numeric", "Continuous"}},
+		{"Rea.P21", {"Numeric", "Continuous"}},
+		{"Rea.P22", {"Numeric", "Continuous"}},
+		{"Rea.P23", {"Numeric", "Continuous"}},
+		{"Rea.P24", {"Numeric", "Continuous"}},
+		{"Rea.P25", {"Numeric", "Continuous"}},
+		{"Rea.P26", {"Numeric", "Continuous"}},
+		{"Rea.P27", {"Numeric", "Continuous"}},
+		{"Rea.P3", {"Numeric", "Continuous"}},
+		{"Rea.P4", {"Numeric","Continuous"}},
+		{"Rea.P5", {"Numeric", "Continuous"}},
+		{"Rea.P6", {"Numeric", "Continuous"}},
+		{"Rea.P7", {"Numeric", "Continuous"}},
+		{"Rea.P8", {"Numeric", "Continuous"}},
+		{"Rea.P9", {"Numeric", "Continuous"}},
+		{"sample ID_data", {"Character", "Nominal"}},
+		{"Sample Kind", {"Character","Nominal"}},
+		{"Sample No.", {"Character", "Nominal"}},
+		{"Sec.P0", {"Character", "Nominal"}},
+		{"Sec.P1", {"Character", "Nominal"}},
+		{"Sec.P10", {"Character", "Nominal"}},
+		{"Sec.P11", {"Character", "Nominal"}},
+		{"Sec.P12", {"Character", "Nominal"}},
+		{"Sec.P13", {"Character", "Nominal"}},
+		{"Sec.P14", {"Character", "Nominal"}},
+		{"Sec.P15", {"Character", "Nominal"}},
+		{"Sec.P16", {"Character", "Nominal"}},
+		{"Sec.P17", {"Character","Nominal"}},
+		{"Sec.P18", {"Character", "Nominal"}},
+		{"Sec.P19", {"Character", "Nominal"}},
+		{"Sec.P2", {"Character", "Nominal"}},
+		{"Sec.P20", {"Character", "Nominal"}},
+		{"Sec.P21", {"Character", "Nominal"}},
+		{"Sec.P22", {"Character", "Nominal"}},
+		{"Sec.P23", {"Character", "Nominal"}},
+		{"Sec.P24", {"Character", "Nominal"}},
+		{"Sec.P25", {"Character", "Nominal"}},
+		{"Sec.P26", {"Character", "Nominal"}},
+		{"Sec.P27", {"Character","Nominal"}},
+		{"Sec.P3", {"Character", "Nominal"}},
+		{"Sec.P4", {"Character", "Nominal"}},
+		{"Sec.P5", {"Character", "Nominal"}},
+		{"Sec.P6", {"Character", "Nominal"}},
+		{"Sec.P7", {"Character", "Nominal"}},
+		{"Sec.P8", {"Character", "Nominal"}},
+		{"Sec.P9", {"Character", "Nominal"}},
+		{"Type", {"Character", "Nominal"}},
+		{"S. ID", {"Character", "Nominal"}}
+	}
+);
+ 
+errorList = associative array(
+	{
+		{"d", "Excluded from QC by user"}, 
+		{"e", "Data edited by user."}, 
+		{"(", "Shortage of wash solution for contamination parameters."}, 
+		{"Wa", "Result has been analyzed with an erroneous cuvette."}, 
+		{"R", "Insufficient reagent."}, 
+		{"#", "Insufficient sample."}, 
+		{"%", "Clot detected."}, 
+		{"?", "Unable to calculate a result."}, 
+		{"?a", "Sample/Reagent detection abnormal"}, 
+		{"n", "LIH test not performed."}, 
+		{"l", "Result may be affected by lipemia."}, 
+		{"i", "Result may be affected by icterus."}, 
+		{"h", "Result may be affected by hemolysis."}, 
+		{"Y", "Reagent blank OD at last photometric point high."}, 
+		{"U", "Reagent blank OD at last photometric point low."}, 
+		{"y", "Reagent blank/routine OD at first photometric point high."}, 
+		{"u", "Reagent blank/routine OD at first photometric point low."}, 
+		{"@", "OD is higher than 3.0."}, 
+		{"$", "Not enough data to determine linearity of reaction."}, 
+		{"D", "OD of reaction is higher than maximum OD range."},
+		{"B", "OD of reaction is lower than minimum OD range."}, 
+		{"*", "Linearity error in rate method."}, 
+		{"&", "Prozone test data is abnormal."}, 
+		{"Z", "Prozone error."}, 
+		{"E", "Overreaction in a rate assay detected."}, 
+		{"Fx", "Result (OD) is higher than the dynamic range."}, 
+		{"Gx", "Result (OD) is lower than the dynamic range."}, 
+		{"!", "Unable to calculate concentration."}, 
+		{")", "Reagent lot no. used at sample analysis is different from that used at calibration analysis."}, 
+		{"a", "Reagent expired."}, 
+		{"ba", "Calibration expired."}, 
+		{"bh", "No valid calibration used."}, 
+		{"bn", "Mastercurve used."}, 
+		{"bz", "Calibration curve for Prozone data used."}, 
+		{"F", "Result is higher than the dynamic range."}, 
+		{"G", "Result is lower than the dynamic range."}, 
+		{"ph", "Result is higher than the upper panic value."},
+		{"pl", "Result is lower than the low panic value."}, 
+		{"T", "Abnormality found in inter-chemistry check."}, 
+		{"P", "Positive"}, 
+		{"N", "Negative"}, 
+		{"H", "Result is higher than reference range."}, 
+		{"L", "Result is lower than reference range."}, 
+		{"J", "Result is higher than the repeat decision range."},
+		{"K", "Result is lower than the repeat decision range."}, 
+		{"fh", "Result is higher than the repeat run reflex range."}, 
+		{"fl", "Result is lower than the repeat run reflex range."}, 
+		{"Va", "The result of multiple measurement alienation check is NG."}, 
+		{"xQ", "Failure of one control used in a multirule QC."}, 
+		{"1Q", "QC data exceeds the range entered in the Single Check Level field."}, 
+		{"2Q", "QC data exceeds 13SD control range."}, 
+		{"3Q", "QC data continuously exceeds the 2 SD control limit."}, 
+		{"4Q", "QC data exceeds R4S control range."},
+		{"5Q", "QC data exceeds 41S control range."}, 
+		{"6Q", "A preset number of consecutive QC results fall on one side of the mean."}, 
+		{"7Q", "Consecutive QC results show steadily increasing or decreasing values."}, 
+		{"S", "Sample repeated and original results replaced by repeat result."},
+		{"/", "Test pending or not analyzed."}, 
+		{"r", "Data transmitted to host."}, 
+		{"c", "Data corrected by user."}
+	}
+);
+
+wholeList = {};
+fileInfo = associative array();
+failList = {};
+failPos = {};
+fileProcessing = "Now Processing File\!n\!n";
+
+//Sets up MMDDYYYY date for Table Naming
+todayDate=Short Date( Today() );
+newTodayDate = Munger(todayDate,1,"/","");
+nextTodayDate = Munger(newTodayDate,1,"/","");
+
+//new way for above dating: substitute(todayDate,"/","");
+
+////////////////////////////////////////////////
+//                                            //
+//             Functions                      //
+//                                            //
+////////////////////////////////////////////////
+
+openXLS = Function({list, listNum,colNameStart},
+	Open(list[listNum],
+		invisible, //not sure why this working and private not
+		//private,
+		worksheetsettings(1,
+			HasColumnHeaders(1),
+			Headers start on row(colNameStart),
+			data starts on row(colNameStart + 1)
+		)
+		
+	)
+);
+
+openCSV = Function({list,listNum,colNameStart},
+	Open(list[listNum],
+		Import Settings(
+			End Of Line( CRLF, CR, LF ),
+			End Of Field( Tab, Comma, CSV( 0 ) ),
+			Strip Quotes( 1 ),
+			Use Apostrophe as Quotation Mark( 0 ),
+			Use Regional Settings( 0 ),
+			Scan Whole File( 1 ),
+			Treat empty columns as numeric( 0 ),
+			CompressNumericColumns( 0 ),
+			CompressCharacterColumns( 0 ),
+			CompressAllowListCheck( 0 ),
+			Labels( 1 ),
+			Column Names Start( colNameStart ),
+			Data Starts( colNameStart + 1 ),
+			Lines To Read( "All" ),
+			Year Rule( "20xx" )
+		),
+		private
+	);
+);
+
+obtainFileInfo = Function({list,listNum},
+	{pathBreak,fileName,fileType,dt,headerStart,indexPieces,indexFileName,serialNum,fileInformation},
+//list = Files;
+//listNum = 1;
+	pathBreak = Words(list[listNum],"/");
+	fileName = pathBreak[nitems(pathBreak)];
+	fileType = Word(nitems(Words(fileName,".")),fileName,".");
+	fileNameNoExt = Munger(fileName,1,"."||fileType,"");
+		
+	Match(fileType,
+		"xlsx",
+		dt = Open(list[listNum], 
+			invisible, //not sure why this working and private not
+			//private,
+			worksheetsettings(
+				1,
+				HasColumnHeaders( 0 ), 
+				//Headers start on row(colNameStart),
+				data starts on row( 1 ),
+				data starts on column( 1 ),
+				data ends on row( 15 ),
+				data ends on column( 15 )
+			)
+		)
+	,
+		"csv",
+		dt = Open(list[listNum], 
+		   Scan Whole File( 0 ),
+		   Labels( 0 ), 
+		   Lines To Read( 15 ),
+		   Data Starts( 1 ),
+		   private
+		);
+	);
+	for(i=1,i<=nrow(dt),i++,
+		If(Contains(dt[i,1],"Measure")>0,
+			headerStart = i;
+			break();
+		)
+	);
+
+	modelFam = If(Contains(dt[headerStart,0],"CONC")> 0, "680"
+	,
+		Contains(dt[headerStart,0],"Conc.")> 0, "5800"
+	);
+	
+	If( Contains( modelFam, "68" ) > 0,
+		//rowNum = 2;
+		//colNum = 2;
+		indexPieces = Words(dt[2,2],":");
+		indexFileName = Trim(Concat(indexPieces[1],":",indexPieces[2]),Both);
+		serialNum = "";
+	,
+		//rowNum = 1;
+		//colNum = 1;
+		indexPieces = Words(dt[1,1],":");
+		indexFileName = Trim(Concat(indexPieces[1],":",indexPieces[2]),Both);
+		serialNum = dt[2,2]
+	);
+	fileInformation = EvalExpr(List(List(Expr(IndexFileName),Expr(headerStart),Expr(modelFam),Expr(serialNum),Expr(fileType),Expr(fileNameNoExt))));
+
+	InsertInto(fileInfo, fileName, fileInformation);
+	
+	Close( dt, nosave );
+	Return( fileInfo );
+);
+
+obtainCurveInfo = Function({dataTable},{runIDArray,rxnArray,respArray,currentKey,i,nextKey},
+	runIDArray = Associative Array(Column(datatable,"uniqueRunID"));
+	rxnArray = Associative Array(Column(datatable,"Reaction"));
+	respArray = Associative Array( {{"Resp", {}}, {"Var", {}}} );
+	
+	currentKey = runIDArray<<first;
+	For(i=1,i<=nitems(runIDArray),i++,
+		nextKey = runIDArray << Next(currentKey);
+		runIDArray[currentKey] = rxnArray;
+		runIDArray[currentKey]["Blank"] = respArray;
+		runIDArray[currentKey]["Color"] = respArray;
+		currentKey = nextKey
+	);
+	
+	for each row(dataTable,
+		InsertInto(runIDArray[:uniqueRunID][:Reaction]["Var"],:TimePoint);
+		InsertInto(runIDArray[:uniqueRunID][:Reaction]["Resp"],:OD);
+		
+	);
+	
+	Return(runIDArray);
+);
+
+beckmanCleanup = Function({list,iteration,fileName},{j,wholeList,i,a},
+	j = iteration;
+	wholeList = list;
+//j=1;
+//fileType = "csv";
+	//pulled in work from both models Trys will change columns that will change
+		//orig from 680
+	Try(Column(wholeList[j],"CONC") << Set Name("Conc."));
+	Try(Column(wholeList[j],"Conc.")<<Data Type("Numeric"));
+	Try(Column(wholeList[j],"Conc.")<<Modeling Type("Continuous"));
+		//orig from 5800
+	Try(Column(wholeList[j],"Measure Time") << Set Name("Measured Date/Time"),
+		//Show(Column(wholeList[j],1)<<getname);
+	);
+	Try(Column(wholeList[j],"S. No.") << Set Name("Sample No.") << Data Type("Character"));
+	Try(Column(wholeList[j],"Cal/QC No.") << Set Name("QC/CalNo."));
+	Try(Column(wholeList[j],"Data Flags") << Set Name("DataFlag"));
+	Try(Column(wholeList[j],"Conc.")<<Data Type("Numeric"));
+	Try(Column(wholeList[j],"Conc.")<<Modeling Type("Continuous"));
+	
+	If(fileInfo[fileName][5] == "csv" & (Column(wholeList[j],1)<<get data type) == "Character",
+		wholeList[j] << Selectwhere(IsMissing(Num(:Name("Measured Date/Time"))))<<deleterows;
+		For(i=1,i<=ncol(wholeList[j]),i++,
+			a = column(wholeList[j],i) << get name;
+			Column(wholeList[j],i) << Set Data Type(beckmanColumnArray[a][1]);
+			Column(wholeList[j],i) << Set Modeling Type(beckmanColumnArray[a][2]);
+		)
+	,
+		fileInfo[fileName][5] == "xlsx" & (Column(wholeList[j],1)<<get data type) == "Character",
+		wholeList[j] << SelectAllRows << deleterows;
+//don't remember why i temporarily commented this out
+		/*For(i=1,i<=ncol(wholeList[j]),i++,
+			a = column(wholeList[j],i) << get name;
+			Column(wholeList[j],i) << Set Data Type(beckmanColumnArray[a][1]);
+			Column(wholeList[j],i) << Set Modeling Type(beckmanColumnArray[a][2]);
+		);*/
+		InsertInto(failList,wholeList[j]<<getname);
+		InsertInto(failPos,j)
+	,
+		fileInfo[fileName][5] == "xlsx" & (Column(wholeList[j],1)<<get data type) == "Numeric",
+		wholeList[j] << Selectwhere(IsMissing(:Name("Measured Date/Time"))) << deleterows;
+	,
+		Empty()
+	);
+	
+	Try(Column(wholeList[j], "Measured Date/Time") << Format("m/d/y h:m:s"));
+	
+	Try(colList = wholeList[j] << get column names(string);
+		flagPos = Contains(colList,"DataFlag");
+		emptyCol = Column(wholeList[j],flagPos + 1) << GetName();
+		If(Word(1,emptyCol) == "Column", Column(wholeList[j],flagPos + 1) << Set Name("Wavelength"));
+		For(i=0,i<=27,i++,
+			colRef = "P"||Char(i);
+			Column(wholeList[j],colRef)<<Data Type("Numeric");
+			Column(wholeList[j],colRef)<<Modeling Type("Continuous");
+			Column(wholeList[j],colRef)<<SetName("Rea."||colRef);
+		);
+		wholeList[j] << SelectWhere(:Wavelength == "Reaction OD" | :Wavelength == "Reagent Blank")<<deleterows();
+	);
+	//Print("1");
+	wholeList[j] << Sort(
+		By( 
+			:Name( "Measured Date/Time" ),
+			:Sample No.,
+			:Test Name,
+			:Name( "QC/CalNo." ),
+			:Counts
+		),
+		Order( 
+			Ascending,
+			Ascending,
+			Ascending,
+			Ascending,
+			Ascending
+		),
+		Replace Table( 1 )
+	);
+	
+	wholeList[j] << New Column( "Lab", Character( 10 ), 
+		<< Set Each Value("IDX-Internal")
+	);
+	wholeList[j] << New Column( "Index File", Character( 10 ), 
+		<< Set Each Value(fileInfo[filename][1])
+	);
+	wholeList[j] << New Column( "Model Family", Character( 10 ), 
+		<< Set Each Value(fileInfo[filename][3])
+	);	
+	wholeList[j] << New Column( "Serial Number", Character( 10 ), 
+		<< Set Each Value(fileInfo[filename][4])
+	);
+
+	wholeList[j] << selectwhere( Contains( :Test Name, "SDMA" ) == 0 ) << deleterows;
+	
+/*	///////////////////
+	//		how to handle the following?
+	//			Lab
+	//			True model?
+	//			Serial No (can pull from 5800 files)
+	///////////////////
+*/
+	
+	///////////////////
+	//		how to handle 'reaction'
+	//			5800s need to end in C or B
+	//			680s need to have digit comparison
+	// 'XSDMA will end in C or B and program # on 680
+	///////////////////
+	wholeList[j] << New Column("Reaction",Character( 10 ), 
+		Formula(
+			If(
+				Contains(:Test Name, "/") > 0,
+				If(
+					Num( Word( 1, :Test Name, "." )) >
+					Num( Word( 1, Word( 2, :Test Name, "/" ), "." ) ),
+					"Blank"
+				,
+					"Color"
+				)
+			,	
+				Match(Right(:Test Name,1),
+					"C", "Color",
+					"B", "Blank"
+				)
+			);
+		)
+	);
+	Column(wholeList[j],"Reaction")<<delete formula;
+	//Print("2");
+	///////////////////
+	//		how to handle program
+	//			680s unchange? use methods like QC?
+	//			5800s Color only rxn? Combine?
+	// color progam only (no beckman number)
+	///////////////////
+	wholeList[j] << New Column("Program",Character( 10 ), 
+		Formula(
+			Match(:Reaction,
+				"Color", Word(1,Word(2,:Test Name,"."),"/")
+			,
+				"Blank", If(Contains(:Test Name, "/") > 0,
+					Word(3,:Test Name,".")
+				,
+					Substr(Word(2,:Test Name, "."),1,Length(Word(2,:Test Name, "."))-1)||"C"
+				)
+			)
+		)
+	);
+	Column(wholeList[j], "Program") << delete formula;
+	
+	/*Cal Level will be handled in the metadata run sheet file*/
+	
+//necessary???
+	/*wholeList[j] << Sort(
+		By( :Program, :Name( "Measured Date/Time" ) ),
+		Order( Ascending, Ascending ),
+		Replace Table(1)
+	);*/
+////	
+		//680s have no unit number
+	Try(IsScriptable(Column(wholeList[j],"Unit No."))
+	,
+		wholeList[j] << New Column("Unit No.",
+			<< Set Each Value(1)
+		)
+	);
+	
+	Try(
+		Column( wholeList[j], "QC/CalNo." ) << Set Property(
+			"Value Ordering",
+			{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+			"20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37",
+			"38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55",
+			"56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73",
+			"74", "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89", "90", "91",
+			"92", "93", "94", "95", "96", "97", "98", "99", "100"}
+		)
+	);
+////////// may need to update this between models???
+	/*Column(wholeList[j],"Sample Kind") << Set Property(
+		"Value Ordering",
+		{"RB", "ACAL", "Routine"}
+	);*/
+/////
+		////////Cal formulas
+	
+	wholeList[j] << Sort(
+		By( 
+			:Program,
+			:Name( "Measured Date/Time" ),
+			:Sample No.,
+			:Name( "QC/CalNo." ),
+			:Counts
+		),
+		Order( 
+			Ascending,
+			Ascending,
+			Ascending,
+			Ascending,
+			Ascending
+		),
+		Replace Table( 1 )
+	);
+	
+	wholeList[j] << New Column("Cal ID", Character(10),
+		Formula(
+			If(
+				Contains( :Sample No., "R" ) > 0 & Is Missing( Lag( :Sample No., 1 ) ),
+					Abbrev Date( :Name( "Measured Date/Time" ) ) || "_" ||
+					Format( Time Of Day( :Name( "Measured Date/Time" ) ), "hr:m:s" ) ||"_"|| :Program,
+				Contains( :Sample No., "R" ) > 0 & Contains( Lag( :Sample No., 1 ), "R" ) == 0,
+					Abbrev Date( :Name( "Measured Date/Time" ) ) || "_" ||
+					Format( Time Of Day( :Name( "Measured Date/Time" ) ), "hr:m:s" ) ||"_"|| :Program,
+				Contains( :Sample No., "A" ) > 0 & Contains( Lag( :Sample No., 1 ), "R" ) > 0,
+					Lag( :Cal ID, 1 ),
+				Contains( :Sample No., "R" ) > 0 & Contains( Lag( :Sample No., 1 ), "R" ) > 0,
+					Lag( :Cal ID, 1 ),
+				Contains( :Sample No., "A" ) > 0 & Contains( Lag( :Sample No., 1 ), "A" ) > 0,
+					Lag( :Cal ID, 1 )
+			)
+		)
+	);
+	Column(wholeList[j],"Cal ID")<<deleteformula;
+
+	wholeList[j] << New Column("Cal ID_DataFlag",Character(10),
+		Formula(
+			:Cal ID || "," || :DataFlag
+		)
+	);
+	Column(wholeList[j],"Cal ID_DataFlag")<<deleteformula;
+
+//print("3");
+	wholeList[j] << New Column("Cal Used", Character(10),
+		Formula(
+			If( Contains( :Sample No., "A" ) == 0 & Contains( :Sample No., "R" ) == 0,
+				If( Row() == 1,
+					"",
+					index = 1;
+					While(
+						Contains( Lag( :Sample No., index ), "A" ) == 0 | Lag( :Program, index )
+						 != :Program,
+						index++;
+						If( Row() - index <= 1,
+							Break()
+						);
+					);
+					Lag( :Cal ID, index );
+				)
+			)
+		)
+	);
+	Column(wholeList[j],"Cal Used")<<deleteformula;
+	
+	wholeList[j] << New Column("Cal Info",Character( 10 ), 
+		Formula(
+			If(IsMissing(:Cal Used),:Cal ID
+			,
+				IsMissing(:Cal ID),:Cal Used
+			)
+		)
+	);
+	Column(wholeList[j], "Cal Info") << deleteformula;
+		///////////
+//Print("3a");
+//Sorts all data to ensure things are lined up correctly for AR Calculations
+	wholeList[j] << Sort(
+		By( :Program, :Sample No., :Name( "QC/CalNo." ),:Wavelength, :Counts, :Reaction ),
+		Order( Ascending, Ascending, Ascending, Ascending, Ascending, Descending ),
+		replacetable( 1 )
+	);
+	
+/*		//// AR Calulation. First should match Reaction OD
+	wholeList[j] << New Column( "AR_Rxn-Blank",
+		Formula(
+			If(
+				:Reaction == "Color", :Rea.P16 - Lag( :Rea.P16, -1 ) - (:Rea.P12 - Lag( :Rea.P12, -1 )),
+				:Reaction == "Blank", Lag( :Name( "AR_Rxn-Blank" ), 1 )
+			)
+		)
+	);
+	Column( wholeList[j], "AR_Rxn-Blank" ) << delete formula;
+//Print("3b");	
+	wholeList[j] << New Column( "AR_Rxn",
+		Formula( If( :Reaction == "Color", :Rea.P16 - :Rea.P12, :Reaction == "Blank", Lag( :Name( "AR_Rxn" ), 1 ) ) )
+	);
+	Column( wholeList[j], "AR_Rxn" ) << delete formula;
+*/		/////////////////
+	wholeList[j] << New Column( "Run ID",Character( 10 ), 
+		Formula(
+			IF( Contains(:Sample No.,"R0") > 0, :Wavelength ||"_"|| Word(2,:Cal Info,"_") || "_" || "RB" || "/" || Char( :Counts )
+			,
+				Contains(:Sample No.,"A0") > 0 , :Wavelength ||"_"|| Word(2,:Cal Info,"_") || "_" || :Name("QC/CalNo.") || "/" || Char( :Counts )
+			,
+				Contains(:Sample No.,"Q0") > 0, :Wavelength ||"_"|| Word(2,:Cal Info,"_") || "_" || :Name("QC/CalNo.") || "/" || Char( :Counts )
+			,
+				:Wavelength ||"_"|| Word(2,:Cal Info,"_") || "_" || :Sample No.
+			)
+		)
+	);
+	Column( wholeList[j], "Run ID" ) << delete formula;
+	
+	wholeList[j] << New Column( "Reaction ID",Character( 10 ),  Formula( Char(:Run ID) || "_" || :Reaction ) );
+	Column( wholeList[j], "Reaction ID" ) << delete formula;
+	
+	wholeList[j] << New Column( "UniqueRunID",Character( 40 ), 
+		Formula( :Lab || "_" || :Index File || "_" || Char( :Unit No. ) || "_" || :Program || "_" || Char(:Run ID) )
+	);
+	Column( wholeList[j], "UniqueRunID" ) << evalFormula << delete formula;
+	
+	wholeList[j] << New Column( "Run Type",Character( 10 ), 
+		Formula(
+			If(
+				Contains( Char(:Sample No.), "Q" ) > 0, "QC",
+				Contains( Char(:Sample No.), "A" ) > 0, "Calibration",
+				Contains( Char(:Sample No.), "R" ) > 0, "Reagent Blank",
+				"Patient"
+			)
+		)
+	);
+	Column( wholeList[j], "Run Type" ) << delete formula;
+	
+	wholeList[j] << New Column( "Flag Desc",
+		Character( 10 ),
+		Formula(
+			dataList = Words( :DataFlag, " " );
+			errorDesc = {};
+			For( i = 1, i <= N Items( dataList ), i++,
+				Try(InsertInto(errorDesc,errorList[dataList[i]]))
+			);
+			//show(row(),errorDesc);
+			If( errorDesc == {},
+				"None",
+				Concat Items( errorDesc, "," )
+			);
+		)
+	);
+	Column( wholeList[j], "Flag Desc" ) << evalFormula << deleteFormula;//did to fix cases where first couple rows didn't get 'none'
+	
+	wholeList[j] << New Column( "Date", Character( 10 ), Formula( Short Date( :Name( "Measured Date/Time" ) ) ) );
+	Column( wholeList[j], "Date" ) << delete formula;
+	
+	//Print("3c");
+);
+
+failedImport = Function({failTables},{failList},
+	failList = failTables;
+	Print("These files failed import:");
+	For(i=1,i<=nitems(failList),i++,
+		Print(failList[i]);
+		Close(DataTable(failList[i]),nosave);
+	);
+	New Window( "Failed Import",
+		<<Modal,
+		Text Box( "Some files failed import", <<setfontstyle( "bold" ), <<setfontsize( 14 ) ),
+		Text Box( "Please see a list in the log: View>Log", <<setfontstyle( "bold" ), <<setfontsize( 12 )),
+		Text Box( "Please see Nathan Clark if you have questions on the failures", <<setfontstyle( "bold" ),<<setfontsize( 12 ) ),
+		Button Box( "OK" ),
+	)
+);
+
+newCap = Function({message,delayBool=1},{Default Local},
+	Caption(
+		{500, 500},
+		message,
+		Font( "Arial" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+	If(delayBool == 1,wait(0.5),Empty());
+);
+
+////////////////////////////////////////////////
+//                                            //
+//             Main                           //
+//                                            //
+////////////////////////////////////////////////
+
+Files = Pick File(
+	   ,
+	   ,
+	   {"All Files|*", "JMP Files|jmp;jsl;jrn"},
+	   1,
+	   0,
+	   ,
+	   Multiple
+);
+
+For(j=1, j<= nitems(Files),j++,
+	pathBreak = Words(Files[j],"/");
+	fileName = pathBreak[nitems(pathBreak)];
+	//fileType = Word(nitems(Words(fileName,".")),fileName,".");
+	//fileNameNoExt = Munger(fileName,1,"."||fileType,"");
+	//show(fileName,fileType);
+	
+	message = fileProcessing || Char(j) || " of " || Char(nitems(files));
+	newCap(message,1);
+
+	obtainFileInfo(files,j);
+	
+	wholeList[j] = Match(fileInfo[fileName][5],
+		"xlsx", openXLS(files,j,fileInfo[fileName][2])
+	,
+		"csv", openCSV(files,j,fileInfo[fileName][2])
+	);
+	wholeList[j] << SetName(fileInfo[fileName][6]);
+	//j=8;
+	//filetype="xlsx";
+	beckmanCleanup(wholeList,j,fileName);
+	//Print( fileName||" 3d");
+	
+	//If(Contains(failList,fileNameNoExt) > 0,
+	//	Empty()
+	//,
+		wholeList[j] << Move Selected Columns(
+			{
+				"Index File",
+				"UniqueRunID",
+				"Lab",
+				"Model Family",
+				"Serial Number",
+				"Date",
+				"Run Type",
+				"Reaction",
+				"Program",
+				"Run ID",
+				"Reaction ID", 
+				"Unit No.", 
+				"Cal ID",
+				"Cal Used",
+				"Cal Info",
+				"Reaction OD",
+				//"AR_Rxn-Blank",
+				//"AR_Rxn",
+				"Conc."},
+			To First
+		);
+		wholeList[j] << Move Selected Columns(
+			{
+				"Flag Desc",
+				"Cal ID_DataFlag"
+			},
+			After( "DataFlag" )
+		);
+	//);
+);
+
+message = "Finishing Data Processing";
+newCap(message,1);
+
+RemoveFrom(wholeList,failPos);
+If(nitems(wholeList) == 0,
+	
+	//If(nitems(failList)>0,
+		//Print("These files failed import:");
+		//For(i=1,i<=nitems(failList),i++,
+		//	Print(failList[i])
+		//);
+		failedImport(failList);
+		//Close(wholeList[1],nosave);
+		Throw();
+,
+	nitems(wholeList) == 1,
+	concatTable = wholeList[1] << Subset(
+		Copy Formula ( 1 ),
+		Suppress formula evaluation( 0 ),
+		All rows,
+		Selected columns only( 0 ),
+		Output Table( "Beckman_"||nextTodayDate||"_splitProgCurves" )
+	);
+	tblName = wholeList[1] << getname;
+	//concatTable << New Column("Source Table",Formula(tblName));
+	//Column(concatTable,"Source Table") << delete formula;
+,
+	startConcat = wholeList[1];
+	RemoveFrom(wholeList,1);
+	concatTable = startConcat << Concatenate(wholeList,Output Table( "Beckman_"||nextTodayDate||"_splitProgCurves" ))//,Create Source Column);
+);
+
+stackCols = {};
+For(j=ncol(concatTable), j>=1,j--,
+	a = Column(concatTable,j)<<getname;
+	If( Contains(a, "Sec."),
+		concatTable << delete columns(j);
+	)
+);
+For(i=1, i<=ncol(concatTable),i++,
+	a = Column(concatTable,i)<<getname;
+	If( Contains(a, "Rea.") | Contains(a, "Pre.") | Contains(a, "RB."),
+		Column(concatTable,a)<<data type("numeric");
+		Column(concatTable,a)<<modeling type("continuous");
+		InsertInto(stackCols, i)
+	)
+);
+
+stackTable = concatTable << Stack(
+	columns(
+		stackCols
+	),
+	Source Label Column( "CurveData" ),
+	Stacked Data Column( "OD" )
+);
+Column(stackTable,"OD") <<data type("numeric");
+Column(stackTable,"OD") <<modeling type("continuous");
+
+stackTable << New Column("Curve Source",Character( 10 ), 
+	Formula(
+		Word(1,:CurveData, ".")
+	)
+);
+Column(stackTable,"Curve Source") << Delete formula;
+
+stackTable << New Column("TimePoint",
+	Formula(
+		Num(Word(2,:CurveData,"P"))
+	)
+);
+Column(stackTable,"TimePoint") << Delete formula;
+
+curveArray = obtainCurveInfo(stackTable);
+
+arArray = Associative Array();
+cArray = Associative Array();
+bArray = Associative Array();
+currentKey = curveArray<<first;
+For(i=1,i<=nitems(curveArray),i++,
+	nextKey = curveArray << Next(currentKey);
+	//show(currentKey,curveArray[currentKey]["Blank"]["Resp"],curveArray[currentKey]["Blank"]["Resp"][17]);
+	Try(
+		Match(Word(1,currentKey,"_"),
+			"340nm", value = (curveArray[currentKey]["Color"]["Resp"][17] - curveArray[currentKey]["Blank"]["Resp"][17]) - (curveArray[currentKey]["Color"]["Resp"][13] - curveArray[currentKey]["Blank"]["Resp"][13]);
+			cValue = curveArray[currentKey]["Color"]["Resp"][17] - curveArray[currentKey]["Color"]["Resp"][13];
+			bValue = curveArray[currentKey]["Blank"]["Resp"][17] - curveArray[currentKey]["Blank"]["Resp"][13];
+		,
+			value = (curveArray[currentKey]["Color"]["Resp"][17] - curveArray[currentKey]["Blank"]["Resp"][17]) - (curveArray[currentKey]["Color"]["Resp"][13] - curveArray[currentKey]["Blank"]["Resp"][13]);
+			cValue = curveArray[currentKey]["Color"]["Resp"][17] - curveArray[currentKey]["Color"]["Resp"][13];
+			bValue = curveArray[currentKey]["Blank"]["Resp"][17] - curveArray[currentKey]["Blank"]["Resp"][13];
+		);
+		InsertInto(arArray,currentKey,value);
+		InsertInto(cArray,currentKey,cvalue);
+		InsertInto(bArray,currentKey,bvalue);
+	,
+		InsertInto(arArray,currentKey,-1);
+		InsertInto(cArray,currentKey,-1);
+		InsertInto(bArray,currentKey,-1);
+	);
+	currentKey = nextKey
+);
+
+stackTable << New Column("AR_Rxn",
+	Formula(
+		arArray[:uniqueRunID]
+	)
+);
+Column(stackTable,"AR_Rxn") << DeleteFormula;
+
+stackTable << New Column("cuvette_Rxn",
+	Formula(
+		Match(:Reaction,
+			"Color",cArray[:uniqueRunID],
+			"Blank",bArray[:uniqueRunID]
+		)
+	)
+);
+Column(stackTable,"cuvette_Rxn") << DeleteFormula;
+
+stackTable << Move Selected Columns(
+	{
+		"AR_Rxn",
+		"cuvette_Rxn"
+	}, After("Cal Info")
+);
+
+stackTable << SetName("Beckman_"||nextTodayDate||"_progCurves");
+
+stackTable << Select Where( (:Reaction != Lag(:Reaction,-1) | :UniqueRunID != Lag(:UniqueRunID,-1)) | Row() == NRow());
+//print("4");
+subTable = stackTable << Subset(
+	Selected Rows( 1 ),
+	Selected columns only( 0 ),
+	private
+);
+
+stackTable << Clear Select;
+
+splitTable = subTable << Split(
+	Split By( :Reaction ),
+	Split( :cuvette_Rxn),
+	Group( :UniqueRunID ),
+	Sort by Column Property
+);
+splitTable << Move Selected Columns(
+	{
+		"Color",
+		"Blank"
+	}, After("Cal Info")
+);
+
+splitTable << SetName("Beckman_"||nextTodayDate||"_justResults");
+
+//color splitProgCurve columns
+Column(concatTable,"Index File") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Lab") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Model Family") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Date") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Run Type") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Reaction") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Program") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Run ID") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Reaction ID") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Unit No.") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Cal ID") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Cal Used") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Cal Info") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"AR_Rxn-Blank") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"AR_Rxn") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"Curve Source") << Color Cells(RGBColor(103,255,247));
+Column(concatTable,"Cal ID_DataFlag") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"TimePoint") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"Blank") << Color Cells(RGBColor(103,255,247));
+//Column(concatTable,"Color") << Color Cells(RGBColor(103,255,247));
+
+//color progCurve columns
+Column(stackTable,"Index File") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Lab") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Model Family") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Date") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Run Type") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Reaction") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Program") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Run ID") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Reaction ID") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Unit No.") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Cal ID") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Cal Used") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Cal Info") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"AR_Rxn") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"cuvette_Rxn") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Curve Source") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"Cal ID_DataFlag") << Color Cells(RGBColor(103,255,247));
+Column(stackTable,"TimePoint") << Color Cells(RGBColor(103,255,247));
+//Column(stackTable,"Blank") << Color Cells(RGBColor(103,255,247));
+//Column(stackTable,"Color") << Color Cells(RGBColor(103,255,247));
+
+//color justResults columns
+Column(splitTable,"Index File") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Lab") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Model Family") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Date") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Run Type") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Program") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Run ID") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Reaction ID") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Unit No.") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Cal ID") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Cal Used") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Cal Info") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"AR_Rxn") << Color Cells(RGBColor(103,255,247));
+//Column(splitTable,"cuvette_Rxn") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Curve Source") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Cal ID_DataFlag") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"TimePoint") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Blank") << Color Cells(RGBColor(103,255,247));
+Column(splitTable,"Color") << Color Cells(RGBColor(103,255,247));
+
+splitTable << New Script("Sample Base Colors",
+	For Each Row(
+		Match(:Sample,
+			"Calibration", RowState() = ColorState("Black")
+		,
+			"QC", RowState() = ColorState("Blue")
+		,
+			"Patient", RowState() = ColorState("Red")
+		,
+			"Reagent Blank", RowState() = ColorState("BlueGreen")
+		)
+	)
+);
+
+For(i=1,i<=nitems(wholeList),i++,
+	Close(wholeList[i],nosave)
+);
+Try(Close(startConcat,nosave));
+Try(Close(subTable,nosave));
+
+Caption(Remove);
+
+If(nitems(failList)>0,
+	Print("These files failed import:");
+	For(i=1,i<=nitems(failList),i++,
+		Print(failList[i])
+	);
+	failedImport();
+);
+//clean up and get rid of tables correctly
+//Close All(Data Tables, Private);
+//wait(1);Close All(Data Tables, Invisible);

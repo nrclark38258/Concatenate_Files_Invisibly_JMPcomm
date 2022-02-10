@@ -1,0 +1,5 @@
+id=com.jmp.juchil.buildaddins
+name=Build Add-ins
+supportJmpSE=0
+addinVersion=1
+minJmpVersion=11

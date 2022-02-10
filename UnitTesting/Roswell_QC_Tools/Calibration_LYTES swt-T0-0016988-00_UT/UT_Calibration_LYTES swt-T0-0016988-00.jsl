@@ -1,0 +1,510 @@
+//////OPS PHBR Calibration jslHamcrest Unit Tests//////
+lytesCalUT = New Namespace("PHBRcalUnitTest");
+lytesCalUT:saveFile = 0;
+lytesCalUT:savePath = "C:\Users\nclark\Desktop/";
+lytesCalUT:reportName = "00_swt-T6-0016233-00_v1.0x_UnitTestReport.txt";
+
+lytesCalUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Calibration_LYTES swt-T0-0016988-00\CatalystLYTESJMPScriptCalibration.jsl";
+
+Match(lytesCalUT:saveFile,
+	1, ut global reporter = New Object("ut collecting reporter")
+);
+//use in setup / teardown or UT Tests
+
+lytesCalUT:saveTable = Function({tableName,savePath,filePrefix,fileSuffix,testingBOOL = 0,journalSave = 0},{default Local},
+	If( testingBOOL == 1,
+		If(journalSave == 0,
+			baseName = tableName << get name;
+			fileName = filePrefix || "_" || baseName || "_" || fileSuffix;
+			tableName << SaveAs(savePath||fileName);
+			tableName << Set Name(baseName);
+			,
+			baseName = tableName << get window title;
+			Substituteinto(baseName,":","");
+			fileName = filePrefix || "_" || baseName || "_" || fileSuffix;
+			//show(savePath,fileName);
+			tableName << Save Journal(savePath||fileName||".jrn")
+		)
+		,
+		Return(0)
+	);
+	Return(1);
+);
+
+//High level note that how we test table compare varies between JMP 15 and 16
+//Unit tests could be updated to test differently based on version being tested...
+lytesCalUT:tableCompare = Function({actual, expected},{default local},
+	result = actual << Compare Data Tables(
+		Compare with( expected ),
+		Compare Table Properties,
+		Compare Column Attributes and Properties,
+		Compare Data,
+		Show Difference Summary,
+		Show Difference Plot
+	);
+	
+	r = result << report;
+	Return(r,result)
+);
+
+wait(3);		
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          TEST CASES                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+varCheckTC = ut test case("A_Variable Checks")
+	<<Setup(Expr(
+		Include(lytesCalUT:toolPath);
+	));
+
+quickFunctionsTC = ut test case("B_Easy Function Tests")
+	<<Setup(Expr(
+		Include(lytesCalUT:toolPath);
+	));
+
+jsonObjTC = ut test case("C_Creating JSON Object")
+	<<Setup(Expr(
+		Include(lytesCalUT:toolPath);
+		filePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\";
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_MainCurves.jmp",invisible);
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_crosswebs.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_foils.jmp",invisible);
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_MainCurves_addRemoveCols.jmp",invisible);
+		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_crosswebs_addRemoveCols.jmp",invisible);
+		table6 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_foils_addRemoveCols.jmp",invisible);
+	));
+
+calfitTC = ut test case("D_calFitfunc")
+	<< setup(expr(
+		include(lytesCalUT:toolPath);
+		tablename = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_input_NA_Master.jmp",invisible)
+	));
+
+sublotcharTC = ut test case("E_subLotcharFunc")
+	<< setup(expr(
+		include(lytesCalUT:toolPath);
+		tablename = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\Subset of NA Master Sub Lot Table Concept_100321.jmp",invisible);
+	));
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          UNIT TESTS                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+		/////////////////////////////////////////////////////////////
+		//          Vars and supporting Functions                  //
+		/////////////////////////////////////////////////////////////
+lytesCalUT:utGroup = "A";
+lytesCalUT:utGroupTest = 0;
+
+ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starting Variables", 
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		uName = Get Environment Variable("username");
+
+		ut assert that(Expr(u), ut equal to(uName));
+		ut assert that(Expr(addinID), ut equal to("com.idexx.RoswellQCTools_LYTES_calibration"));
+		ut assert that(Expr(minJMPver), ut equal to("15.2"));
+
+	));
+ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starting assay Arrays", 
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		expectedMidPoint = Associative Array(
+			{
+				{"40", 115},
+				{"41", 4.3},
+				{"42", 153},
+				{"CL", 115},
+				{"K", 4.3},
+				{"NA", 153}			
+			}
+		);
+		// range lo, hi
+		expectedRange = Associative Array(
+			{
+				{"40", {50, 160}},
+				{"41", {0.8, 10}},
+				{"42", {85, 180}},
+				{"CL", {50, 160}},
+				{"K", {0.8, 10}},
+				{"NA", {85, 180}}		
+			}
+		);
+		//cubic coeffs for corrected 3P
+		expectedCorrectedCubic = Associative Array(
+			{
+				{"40", Associative Array(
+						{
+							{"int", 11.0422244319215},
+							{"lin", 0.631429652798366},
+							{"quad", 0.00384826612677856},
+							{"cub", -0.0000126863381553078}		
+						}
+					)
+				},
+				{"41", Associative Array(
+						{
+							{"int", (0.491047025197684 + 0.01)},
+							{"lin", 0.589025966029642},
+							{"quad", 0.0928461121150412},
+							{"cub", -0.00594812663885595}		
+						}
+					)
+				},
+				{"42", Associative Array(
+						{
+							{"int", 68.7983321009125},
+							{"lin", -0.829932786809422},
+							{"quad", 0.0156680172085102},
+							{"cub", -0.0000434008565567936}		
+						}
+					)
+				},
+				{"CL", Associative Array(
+						{
+							{"int", 11.0422244319215},
+							{"lin", 0.631429652798366},
+							{"quad", 0.00384826612677856},
+							{"cub", -0.0000126863381553078}		
+						}
+					)
+				},
+				{"K", Associative Array(
+						{
+							{"int", (0.491047025197684 + 0.01)},
+							{"lin", 0.589025966029642},
+							{"quad", 0.0928461121150412},
+							{"cub", -0.00594812663885595}		
+						}
+					)
+				},
+				{"NA", Associative Array(
+						{
+							{"int", 68.7983321009125},
+							{"lin", -0.829932786809422},
+							{"quad", 0.0156680172085102},
+							{"cub", -0.0000434008565567936}		
+						}
+					)
+				}
+			}
+		);
+
+		ut assert that(Expr(expectedMidPoint), ut equal to(assayMidPoint));
+		ut assert that(Expr(expectedRange), ut equal to(assayRange));
+		ut assert that(Expr(expectedCorrectedCubic), ut equal to(assayCorrectedCubic));
+		
+		currentKey = assayMidPoint << first;
+		For(i=1,i<=nitems(assayMidPoint),i++,
+			ut assert that(Expr(expectedMidPoint[currentKey]), ut equal to(assayMidPoint[currentKey]));
+			currentKey = assayMidPoint << Next(currentKey);
+		);
+		currentKey = assayRange << first;
+		For(i=1,i<=nitems(assayRange),i++,
+			ut assert that(Expr(expectedRange[currentKey]), ut equal to(assayRange[currentKey]));
+			currentKey = assayRange << Next(currentKey);
+		);
+		currentKey = assayCorrectedCubic << first;
+		For(i=1,i<=nitems(assayCorrectedCubic),i++,
+			ut assert that(Expr(expectedCorrectedCubic[currentKey]), ut equal to(assayCorrectedCubic[currentKey]));
+			currentKey = assayCorrectedCubic << Next(currentKey);
+		);
+
+	));
+
+lytesCalUT:utGroup = "B";
+lytesCalUT:utGroupTest = 0;
+
+ut test(quickFunctionsTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_JMP Version Check", 
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		//function pulls the version being executed on
+		ver = JMP Version();
+		currWords = words(ver,".");
+		backHalf = concatitems(currWords[2::nitems(currWords)],"");
+		newNumVer = Num(currWords[1]||"."||backHalf);
+
+		ut assert that(Expr(checkVersion(Char(newNumVer - 0.1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer - 1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 0.1))), ut equal to(0));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 1))), ut equal to(0));
+	));
+
+ut test(quickFunctionsTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_JMP Version Fail Window",
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+				
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				If(current window() << get window title == "Requires JMP 15.2",
+					text = (current window() << xpath("//TextBox"));
+					If( text[1] << get text == "This addin requires the used of JMP 15.2+",
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Error Dialog Executed Correctly")
+						,
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Wrong text version, Error Dialog Executed")
+					)
+					,
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+					Print("Wrong title version, Error Dialog Executed")
+				)
+			)
+		);
+		//Failures for the above should be controled at the function level as these checks ensure function has the parameter used in both the title and the text box
+		closemodal(2);
+		wrongVer(15.2);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Error Dialog Executed Correctly\!""));
+		
+		closemodal(2);
+		wrongVer(17);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Wrong title version, Error Dialog Executed\!""));
+	));
+
+ut test(quickFunctionsTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Factor Finder",
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		table1 = factorFinder(3);
+		table2 = factorFinder(6);
+		table3 = factorFinder(13);
+		table4 = factorFinder(40.3);
+		table5 = factorFinder(40);
+		
+		ut assert that(Expr(table1:"Factors"n << get as matrix), ut equal to([3]));
+		ut assert that(Expr(table2:"Factors"n << get as matrix), ut equal to([2, 3, 6]));
+		ut assert that(Expr(table3:"Factors"n << get as matrix), ut equal to([13]));
+		ut assert that(Expr(table4:"Factors"n << get as matrix), ut equal to([40.3]));
+		ut assert that(Expr(table5:"Factors"n << get as matrix), ut equal to([2, 4, 5, 8, 10, 20, 40]));
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          Creat JSON Object                              //
+		/////////////////////////////////////////////////////////////
+lytesCalUT:utGroup = "C";
+lytesCalUT:utGroupTest = 0;
+
+ut test(jsonObjTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_full JSON Expr Match w/diff number of lots/foils",
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		expJSONexpr = include(filePath || "jsontestforOLOL_noChemType_jsonExpr.jsl");
+		
+		jsonExpr = buildJSONarray(table1,table2,table3);
+		//show(jsonExpr);
+		ut assert that(Expr(jsonExpr), ut equal to(expJSONexpr));
+	)
+);
+ut test(jsonObjTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_full JSON Expr Match w/diff number of lots/foils",
+	Expr(
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		expJSONexpr = include(filePath || "jsontestforOLOL_addRemoveCols_jsonExpr.jsl");
+		
+		jsonExpr = buildJSONarray(table4,table5,table6);
+		//show(jsonExpr);
+		ut assert that(Expr(jsonExpr), ut equal to(expJSONexpr));
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          calFitFunc Function                             //
+		/////////////////////////////////////////////////////////////
+lytesCalUT:utGroup = "D";
+lytesCalUT:utGroupTest = 0;
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output 3P Table Compare",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_3P_Fit_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_3P_NA.jmp",invisible);
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "3P", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_3P_Fit_Post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Rodbard Table Compare",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Rodbard_Fit_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Rodbard_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Rodbard", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+	
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Rodbard_Fit_Post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Quad Table Compare",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Quad_Fit_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Quad_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Quad", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Quad_Fit_Post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Linear Table Compare",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Linear_Fit_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Linear_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Linear", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Linear_Fit_Post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Cubic Table Compare",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Cubic_Fit_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Cubic_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Cubic", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Cubic_Fit_Post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          Finishing Off                                  //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+Match(lytesCalUT:saveFile,
+	0, lytesCalUT << delete
+	,
+	1,
+	ut global reporter:save report(lytesCalUT:savePath||lytesCalUT:reportName);
+	lytesCalUT << delete;
+);

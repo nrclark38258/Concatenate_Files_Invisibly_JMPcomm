@@ -1,0 +1,496 @@
+﻿//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//------------------Revision History for both script and Help File--
+//
+//// list of supported assays should be updated for all assay dev (maybe shared variable in libs?)
+//	2.5.0.0 NClark 032621
+//		-> added cleanup() parameter to Bile portion of script
+//		-> added support for QSDMA
+//	2.4.0.1 NClark 021121
+//		-> updated two tableprep calls to reset table variable so not lost if tableprep makes new table
+//	2.4 NClark 021021
+//		-> Updated to use uniqueCurveID over uniqueAssayID
+//	2.3 NClark 082619
+//		-> Support for Bile Acids added
+//	2.2 NClark 030719
+//		-> added variable for all addins this one uses
+//		-> calls update function to see if any need updates
+//	2.1 NClark 012819
+//		-> added missingassay dialog
+//		-> added try around subsets to capture when assay column isn't present
+//		-> fixed so single assay final tables weren't deleted by cleaning function
+//	2.0 NClark 010519
+//		-> fixed to use proper scoping
+//		-> merges with other updated assay tools without issue
+//		-> checks for tool and versions and cleanly exits if version/tool mising
+//	1.1 NClark 080317
+//		-> Fixed typo that called wrong table prep file when non-supported assays present
+//	1.0 NClark 041417
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+mf = New Namespace(
+	"multiFile"
+);
+
+//---------------------------------------------
+
+	mf:minJMPver = "14";
+	
+	//Sets up MMDDYYYY date for Table Naming
+	mf:todayDate=Short Date( Today() );
+	mf:newTodayDate = Munger(mf:todayDate,1,"/","");
+	mf:nextTodayDate = Munger(mf:newTodayDate,1,"/","");
+	
+	mf:subsetDT = {};
+	mf:jrFileList = {};
+	mf:pcFileList = {};
+	
+	mf:supportAssays = {28, 17, 18, 23, 30, 21, 4};
+	
+	mf:batchCheck = {
+		"com.idexx.RnD_multAssay",
+		"com.idexx.RnD_TT4",
+		"com.idexx.RnD_P4",
+		"com.idexx.RnD_SDMA",
+		"com.idexx.RnD_CRP",
+		"com.idexx.RnD_Bile",
+		"com.idexx.RnD_QSDMA",
+		"com.idexx.assayDevLibraries2"
+	};
+
+//--------------------------------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_TablePreparation2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+
+mf:checkVersion = Function({minVer},{default local},
+	version = Num(substitute(minVer,".",""));
+	If(Num(Word(1,jmpversion(),".")) < version, a = 0, a = 1);
+	Return(a)
+);
+
+mf:wrongVer = Function({maxVer},{Default Local},
+	New Window( "Requires JMP "||char(maxVer), <<Modal, Text Box( "This addin requires the used of JMP "||char(maxVer)||"+" ), Button Box( "OK" ));
+);
+
+mf:notSupported = Function({},{},
+	New Window( "Unsupported Assays", <<Modal, Text Box( "No supported assays are within the table, please try another analysis tool" ), Button Box( "OK" ) )
+);
+
+mf:missingTools = Function({assayTool},{},
+	New Window( "Missing AR Tool",
+		<<Modal,
+		Text Box( "At least "|| assayTool || " AR tool is missing to analyze the data. Please ensure all AR tools are installed" ),
+		Button Box( "OK" )
+	)
+);
+
+mf:updateTool = Function({assayTool},{},
+	New Window( "Missing AR Tool",
+		<<Modal,
+		Text Box( assayTool || " AR tool does not meet minimum version specification. Please update" ),
+		Button Box( "OK" )
+	)
+);
+
+mf:missingAssay = Function({},{},
+	New Window( "Missing Assay Column",
+		<<Modal,
+		Text Box( "No Assay column to split out assays" ),
+		Text Box( "please add and retry. (column should be numeric)" ),
+		Button Box( "OK" )
+	)
+);
+
+mf:checkVersion = Function({minVer},{default local},
+	version = Num(substitute(minVer,".",""));
+	If(Num(Word(1,jmpversion(),".")) < version, a = 0, a = 1);
+	Return(a)
+);
+
+mf:checkToolVersion = Function({minVer,toolVer},{default local},
+	//toolVer = substitute(toolVer,"v","");
+	//toolVersion = Num(substitute(char(toolVer),".",""));
+	//minVersion = Num(substitute(char(minVer),".",""));
+	If(toolVer < minVer, a = 0, a = 1);
+	Return(a)
+);
+
+multiClean = Function({},{},
+	Try(
+		For(i=1,i<=nitems(mf:subsetDT),i++,
+			Close(mf:subsetDT[i],nosave)
+		);
+	);
+	Try(
+		If(nitems(mf:jrFileList)>0,
+			For(j=1,j<=nitems(mf:jrFileList),j++,
+				Close(mf:jrFileList[j],nosave);
+				Close(mf:pcFileList[j],nosave)
+			);
+		);
+	);
+	mf << delete;
+	Throw();
+);
+
+mf:multiFileCalc = Function({tableName},{},
+	//mf:dt_start = mf:begin;
+	mf:dt_start = tableName;
+	
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	mf:tableName = mf:dt_start<<GetName; //changed from dt_input to support addition of subset to leave original untouched
+	mf:titleName = Word(1,mf:tableName,"-");
+	mf:dateName = Substr(mf:tableName,Munger( mf:tableName, 1, "-" )+1,6);
+	
+	mf:masterSubset = mf:dt_start << Subset( Output Table( "All Assays" ), Selected Rows( 0 ), Selected columns only( 0 ), private );
+	
+	mf:masterSubset = tablePrep(mf:masterSubset);
+
+	//PUT IN CHECK FOR ONLY NON-SUPPORTED ASSAYS
+	Try(
+		For( i = 1, i <= N Items( mf:supportAssays ), i++,
+			mf:masterSubset << selectwhere( char(:Name("Assay")) == char(mf:supportAssays[i]) );
+			Insert Into( mf:subsetDT, mf:masterSubset << Subset( Output Table( Char(mf:supportAssays[i]) ), Selected Rows( 1 ), Selected columns only( 0 ),private ) );
+			mf:masterSubset << deleterows();
+		);
+		,
+		Close(mf:masterSubset,nosave);
+		mf:missingAssay();
+		Return(0);
+	);
+
+	For( i = N Items( mf:subsetDT ), i >= 1, i--,
+		If( Is Empty( mf:subsetDT[i] ),
+			Remove From( mf:subsetDT, i )
+		)
+	);
+
+	If(nitems(mf:subsetDT) == 0,
+		mf:notSupported();
+		Close(mf:masterSubset,nosave);
+		Return(0);
+	,
+		If(nrow(mf:masterSubset) == 0, Close(mf:masterSubset,nosave),
+			Insert Into( mf:subsetDT, mf:masterSubset );
+		);
+	);
+
+	For( mf:i = 1, mf:i <= N Items( mf:subsetDT ), mf:i++,
+		mf:dt_start = mf:subsetDT[mf:i];
+		Try(
+			Match( 
+				//mf:subsetDT[mf:i][1, "Assay"]
+				num(mf:dt_start << getname);
+				,
+				28,
+					Try(
+						ver = GetAddin("com.idexx.RnD_TT4")<<version;
+						If(mf:checkToolVersion(7.0,ver) == 0,
+							mf:updateTool("TT4");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("TT4")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_TT4)\RDTT4_ARCalculation.jsl" ); // TT4 7:1
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\TT4\AR Calculator\RDTT4_ARCalculation.jsl" );
+					
+					flagTable = tFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup());
+					tFunct:flagging(flagTable[1],assayFlags);
+					mf:jrFile = tFunct:finishingOff(flagTable[1],flagTable[2][1],units);
+					mf:pcFile = flagTable[1];
+					tAR << unlock;
+					tFunct << unlock;
+					tAR << delete namespace;
+					tFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				17,
+					Try(
+						ver = GetAddin("com.idexx.RnD_CRP")<<version;
+						If(mf:checkToolVersion(5.0,ver) == 0,
+							mf:updateTool("CRP");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("CRP")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_CRP)\RDCRP_ARCalculation.jsl" ); // CRP
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\CRP\AR Calculator\RDCRP_ARCalculation.jsl" ); // CRP
+					
+					flagTable = cFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup());
+					cFunct:flagging(flagTable[1],assayFlags,flagTable[3]);
+					mf:jrFile = cFunct:finishingOff(flagTable[1],flagTable[2][1],units,flagTable[3]);
+					mf:pcFile = flagTable[1];
+					cAR << unlock;
+					cFunct << unlock;
+					cAR << delete namespace;
+					cFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				18,
+					Try(
+						ver = GetAddin("com.idexx.RnD_SDMA")<<version;
+						If(mf:checkToolVersion(5.2,ver) == 0,
+							mf:updateTool("SDMA");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("SDMA")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_SDMA)\RDSDMA_ARCalculation.jsl" ); // SDMA
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\SDMA\AR Calculator\RDSDMA_ARCalculation.jsl" ); // SDMA
+					
+					flagTable = sFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup());
+					sFunct:flagging(flagTable[1],assayFlags);
+					mf:jrFile = sFunct:finishingOff(flagTable[1],flagTable[2][1],units);
+					mf:pcFile = flagTable[1];
+					sAR << unlock;
+					sFunct << unlock;
+					sAR << delete namespace;
+					sFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				30,
+					Try(
+						ver = GetAddin("com.idexx.RnD_TT4")<<version;
+						If(mf:checkToolVersion(7.0,ver) == 0,
+							mf:updateTool("TT4");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("TT4")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_TT4)\RDTT4_ARCalculation.jsl" ); // TT4 7:1 & 5:1
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\TT4\AR Calculator\RDTT4_ARCalculation.jsl" );
+					
+					flagTable = tFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup());
+					tFunct:flagging(flagTable[1],assayFlags);
+					mf:jrFile = tFunct:finishingOff(flagTable[1],flagTable[2][1],units);
+					mf:pcFile = flagTable[1];
+					tAR << unlock;
+					tFunct << unlock;
+					tAR << delete namespace;
+					tFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				23,
+					Try(
+						ver = GetAddin("com.idexx.RnD_P4")<<version;
+						If(mf:checkToolVersion(6.3,ver) == 0,
+							mf:updateTool("PROG");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("PROG")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_P4)\RDP4_ARCalculation.jsl" ); // TT4 5:1
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\PROG\AR Calculator\RDP4_ARCalculation.jsl" ); // PROG
+					
+					flagTable = pFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup());
+					pFunct:flagging(flagTable[1],assayFlags);
+					mf:jrFile = pFunct:finishingOff(flagTable[1],flagTable[2][1],units);
+					mf:pcFile = flagTable[1];
+					pAR << unlock;
+					pFunct << unlock;
+					pAR << delete namespace;
+					pFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				21,
+					Try(
+						ver = GetAddin("com.idexx.RnD_Bile")<<version;
+						If(mf:checkToolVersion(1.2,ver) == 0,
+							mf:updateTool("Bile");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("Bile")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_Bile)\RDBile_ARCalculation.jsl" ); 
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\Bile Acids\AR Calculator\RDBile_ARCalculation.jsl" ); // Bile
+					
+					flagTable = bFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup(bFunct));
+					bFunct:flagging(flagTable[1],assayFlags, flagTable[3]);
+					mf:jrFile = bFunct:finishingOff(flagTable[1],flagTable[2][1],units, flagTable[3]);
+					mf:pcFile = flagTable[1];
+					//bAR << unlock;
+					bFunct << unlock;
+					//bAR << delete namespace;
+					bFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				4,
+					Try(
+						ver = GetAddin("com.idexx.RnD_QSDMA")<<version;
+						If(mf:checkToolVersion(3.0,ver) == 0,
+							mf:updateTool("QSDMA");
+							Return(0);
+							,
+							Empty()
+						);
+						,
+						mf:missingTools("QSDMA")
+					);
+					Include( "$ADDIN_HOME(com.idexx.RnD_QSDMA)\RDQSDMA_ARCalculation.jsl" ); // QSDMA
+					//Include( "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\CRP\AR Calculator\RDCRP_ARCalculation.jsl" ); // CRP
+					
+					flagTable = qFunct:arCalc(mf:dt_start,knownChemtype,targetCode,1);
+					If(flagTable == 0, cleanup(qFunct));
+					qFunct:flagging(flagTable[1],assayFlags,flagTable[3]);
+					mf:jrFile = qFunct:finishingOff( flagTable[1], flagTable[2][1], units, flagTable[3], flagTable[4] );
+					mf:pcFile = flagTable[1];
+					qAR << unlock;
+					qFunct << unlock;
+					qAR << delete namespace;
+					qFunct << delete namespace;
+					insertinto(mf:pcFileList,mf:pcFile);
+					insertinto(mf:jrFileList,mf:jrFile);
+					mf:pcFile << show window(0);
+					mf:jrFile << show window(0);
+				,
+				//can delete all calculated results with no date/time entry
+				//mf:masterSubset << selectwhere(IsMissing(:DateTime))<<delete rows;
+				mf:masterSubset << Select Where( :uniqueCurveID != Lag(:uniqueCurveID,-1) | Row() == NRow());
+		
+				//Get subset with just the results
+				mf:jrFile = mf:masterSubset << Subset(output table name( "All Assays_jr" ));
+				mf:masterSubset << SelectAllRows;
+				mf:masterSubset << InvertRowSelection;
+				mf:pcFile = mf:masterSubset;
+				insertinto(mf:pcFileList,mf:pcFile);
+				insertinto(mf:jrFileList,mf:jrFile);
+				mf:pcFile << show window(0);
+				mf:jrFile << show window(0);	
+			)
+		,
+			Return(0);
+		);
+	);
+
+	If( N Items( mf:jrFileList ) > 1,
+		mf:jrFilelist1 = Remove(mf:jrFileList,1);
+		mf:pcFileList1 = Remove(mf:pcFileList,1);
+		
+		mf:finalJR = mf:jrFileList[1] << Concatenate(
+			mf:jrFileList1,
+			Output Table( mf:titleName || "-" || mf:dateName || "_" || "MULTI AR_" || mf:nextTodayDate || "_justResults" )
+		);
+		mf:finalPC = mf:pcFileList[1] << Concatenate(
+			mf:pcFileList1,
+			Output Table(mf:titleName||"-"||mf:dateName||"_"||"MULTI AR_"||mf:nextTodayDate|| "_progCurves")
+		)
+		,
+		mf:finalJR = DataTable(mf:jrFileList[1] << SetName( mf:titleName || "-" || mf:dateName || "_" || "MULTI AR_" || mf:nextTodayDate || "_justResults" ));
+		mf:finalPC = DataTable(mf:pcFileList[1] << SetName( mf:titleName||"-"||mf:dateName||"_"||"MULTI AR_"||mf:nextTodayDate|| "_progCurves" ));
+		removefrom(mf:pcFileList,1);
+		removefrom(mf:jrFileList,1);
+		mf:finalJR << show window(1);
+		mf:finalPC << show window(1);
+	);
+
+	//RUN on each table to rehide correct columns?
+	//Hides and groups all columns that are listed in 'hidecols'
+	//Default is for any column to be unhidden unless added to this list
+	mf:hideCols = {"Alg Calc Ar Error Status :4", "Algorithm Conc Error Flags", "Algorithm IM Error Flags", "Algorithm Status",
+	"AR Qualifer", "AR Qualifier", "AR2", "AR2 Qualifer", "AR2 Qualifier", "Concentration units", "Curve Area",
+	"Curve Cubic", "Curve Fifth", "Curve File Version", "Curve Intercept", "Curve Linear", "Curve Quad",
+	"Curves Version :5", "Date", "Date-orig", "Dilution Parts", "Dilution Type", "Discrepant Type",
+	"Dry Read Finish", "Dry Read Start", "DryReadingMean", "Final Scalar", "Flag :3", "Flag1 :4", "Flag2 :4",
+	"Flag3 :4", "From Optics Module", "Gain Applied", "Gain Applied :4", "Gain Applied 2", "GMTime",
+	"ID Source :2", "Log Entry Timestamp :3", "Normalized RD", "Num Dry Reads :2", "Num Of Assays",
+	"Num Of Points :2", "Num Of Readings :2", "Num Wavelengths Used :4", "Offset Applied", "Offset Applied :4",
+	"Offset Applied Type", "Paired Results Flag :4", "Point :3", "Post Analysis Notes", "Progress Curve Analysis",
+	"Qual :4", "Qualifier", "RD Normalization Reading", "Read Point", "Reading Time", "Reading2 :3",
+	"Reflective :2", "Re-Review of Consumable/Slide", "Run Done Timestamp", "Run Fault", "Sample Container",
+	"Sample_conjugate_alq2", "Scalar", "Scalar Adjustment", "Segment", "Slide Load Position :4", "Spot Time",
+	"Stored Wet Offset", "Stored WLC Offset", "Substrate_alq1", "Time", "Time Offset :2", "Time-orig",
+	"Timeseries pt", "Timeseries RD2", "TS Read Flag", "uldry Intensity", "ulfalse light Molded", "ulfalselight",
+	"ulfalselight Laminate", "ulwet Intensity", "Units :4", "Units :5", "Wash 1 End", "Wash 2 End", "Wash1_alq3",
+	"Wavelength", "Wavelength2", "Wavelength3", "Wavelengths Used", "X Intersect", "Y Intersect"};
+
+	hideGroupCols = {};
+	For(i = 1, i<=ncols(mf:finalJR),i++,
+		a = column(mf:finalJR,i)<<getname;
+		If(Contains(mf:hideCols,a) > 0,
+			Column(mf:finalJR,i)<<hide(1);
+			Column(mf:finalPC,i)<<hide(1);
+			InsertInto(hideGroupCols,a)
+		)
+	);
+
+	mf:finalJR<<groupcolumns("Hidden Columns",hideGroupCols);
+	mf:finalJR<<MoveColumnGroup(To Last, "Hidden Columns");
+	mf:finalPC<<groupcolumns("Hidden Columns",hideGroupCols);
+	mf:finalPC<<MoveColumnGroup(To Last, "Hidden Columns");
+);
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If(Length(Include File List()) == 1,
+	If(mf:checkVersion(mf:minJMPver) == 1,	
+		batchUpdateChk(mf:batchCheck);
+		//Gets data table if non opened
+		If(Ntable()==0,
+			mf:begin = Open()
+			, 
+			mf:begin = currentdatatable()
+		); 
+
+		if(mf:multiFileCalc(mf:begin) == 0, multiClean());
+		multiClean();		
+		,
+		wrongVer(minJMPver);
+		mf << delete namespace;
+	)
+	,
+	print("Script was included from another source");
+	mf << delete namespace;
+	Throw();
+);

@@ -1,0 +1,28 @@
+<jm:menu_and_toolbar_customizations xmlns:jm="http://www.jmp.com/ns/menu" version="3">
+  <jm:insert_in_main_menu>
+    <jm:insert_after>
+      <jm:name></jm:name>
+      <jm:menu>
+        <jm:name>AssayDev</jm:name>
+        <jm:caption>Assay Dev</jm:caption>
+		
+		
+		<jm:menu>
+			<jm:name>com.idexx.generic_beckman</jm:name>
+			<jm:caption>Generic</jm:caption>				
+			
+			<jm:command namesDefaultToHere="1">
+				<jm:name>com.idexx.nclark.generic</jm:name>
+				<jm:caption>Beckman Processing v1.1</jm:caption>
+				<jm:action type="path">$ADDIN_HOME(com.idexx.generic_beckman)\BeckmanProcessingTool.jsl</jm:action>
+				<jm:icon type="path">$ADDIN_HOME(com.idexx.generic_beckman)\beckman.ico</jm:icon>
+			</jm:command>
+			
+										
+		</jm:menu>
+		
+		
+      </jm:menu>
+    </jm:insert_after>
+  </jm:insert_in_main_menu>
+</jm:menu_and_toolbar_customizations>

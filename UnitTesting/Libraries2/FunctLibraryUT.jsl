@@ -1,0 +1,867 @@
+//////Function Library jslHamcrest Unit Tests//////
+fLibUT = New Namespace("FunctionLibraryUnitTest");
+fLibUT:saveFile = 0;
+fLibUT:savePath = "C:/Users/nclark/desktop/TestUnitFiles/";
+fLibUT:reportName = "testReport.txt";
+
+fLibUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Library Files2\AssayDev_FunctionLibrary2.jsl";
+//baUT:toolPath = "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\Bile Acids\AR Calculator\RDBile_ARCalculation.jsl";
+
+Match(fLibUT:saveFile,
+	1, ut global reporter = New Object("ut collecting reporter")
+);
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          TEST CASES                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+genInterp = ut test case("GenericInterpMetric")
+	<<Setup(Expr(
+		include(fLibUT:toolPath);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\TwoRunsExactTimesBeginMidEnd.jmp",invisible); //needed to be invisible for the functions to work
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\GenInterp_0 as start time.jmp",invisible);
+	));
+
+singleConc = ut test case("SingleConcCalc")
+	<< Setup(Expr(
+		include(fLibUT:toolPath);
+	));
+
+arrayConc = ut test case("ArrayConcCalc")
+	<< Setup(Expr(
+		include(fLibUT:toolPath);
+	));
+
+tableConc = ut test case("TableConcCalc")
+	<< Setup(Expr(
+		include(fLibUT:toolPath);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\TableConcentrationCalc_test1.jmp",private); 
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\TableConcentrationCalc_test2.jmp",private); 
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\TableConcentrationCalc_test3.jmp",private); 
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\TableConcentrationCalc_test4.jmp",invisible); //needed to be invisible for the functions to work
+	));
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          UNIT TESTS                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+	////////////////////////////////////////////////
+	//          genericInterpMetric               //
+	////////////////////////////////////////////////
+	
+ut test(genInterp, "NormalEPs",
+	Expr(
+
+		//Based on "normal" expected usages
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP20",0,20,"EP");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP100",0,100,"EP");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP161",0,161,"EP");
+		
+		ut assert that(Expr(table1:Name("EP20")[60]), ut approx(0.1001660224, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("EP100")[60]), ut approx(0.1167514596, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("EP161")[60]), ut approx(0.1158783540, {Relative Epsilon( 1e-9 )}));
+	
+	)
+);
+
+ut test(genInterp, "NormalSlopes",
+	Expr(
+
+		//Based on "normal" expected usages
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl7_36",7,36,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl7.5_36",7.5,36,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl100_123",100,123,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl72_100",72,100,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl135_161",135,161,"Slope");
+		
+		ut assert that(Expr(table1:Name("Sl7_36")[60]), ut approx(0.0004554524646, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl7.5_36")[60]), ut approx(0.0004948062051, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl100_123")[60]), ut approx(-0.00001288952466, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl72_100")[60]), ut approx(0.000006331497457, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl135_161")[60]), ut approx(-0.00001560551435, {Relative Epsilon( 1e-9 )}));
+
+	)
+);
+
+ut test(genInterp, "EP exact Match pos1",
+	Expr(
+
+		//Based on "normal" expected usages
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP7",0,7,"EP");
+		//genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP100",0,100,"EP");
+		//genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","EP161",0,161,"EP");
+		
+		ut assert that(Expr(table1:Name("EP7")[1]), ut approx(0.1015200007, {Relative Epsilon( 1e-9 )}));
+	
+	)
+);
+
+ut test(genInterp, "Slope exact Match Begin, Middle, End",
+	Expr(
+
+		//Based on "normal" expected usages
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl7_36",7,36,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl100_123",100,123,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl72_100",72,100,"Slope");
+		genericInterpMetric(table1,"Timeseries RD","Timeseries time","IVLS RunID","Sl135_161",135,161,"Slope");
+		
+		ut assert that(Expr(table1:Name("Sl7_36")[1]), ut approx(0.0005142797084, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl100_123")[1]), ut approx(-0.00001692642530, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl72_100")[1]), ut approx(0.000004182483091, {Relative Epsilon( 1e-9 )}));
+		ut assert that(Expr(table1:Name("Sl135_161")[1]), ut approx(-0.00002340895170, {Relative Epsilon( 1e-9 )}));
+	
+	)
+);
+
+ut test(genInterp, "Metrics with 0 as start time",
+	Expr(
+		
+		genericInterpMetric( table2, "ReflDens_avg", "Read Point_Glitch", "uniqueCurveID", "Slope0-1", 0, 1, "Slope" );
+		genericInterpMetric( table2, "ReflDens_avg", "Read Point_Glitch", "uniqueCurveID", "Range0-1", 0, 1, "Range" );
+		genericInterpMetric( table2, "ReflDens_avg", "Read Point_Glitch", "uniqueCurveID", "AvgEP0-1", 0, 1, "AvgEP" );
+		
+		table2Summ  = table2 << Summary(
+			Group("Slope0-1","Range0-1","AvgEP0-1")
+		);
+		ut assert that(Expr(Round(table2Summ:Name("Slope0-1") << get as matrix,7)), ut equal to([0.0031716,0.0033120,0.0033311]));
+		ut assert that(Expr(Round(table2Summ:Name("Range0-1") << get as matrix,7)), ut equal to([0.0031716,0.0033120,0.0033311]));
+		ut assert that(Expr(Round(table2Summ:Name("AvgEP0-1") << get as matrix,7)), ut equal to([0.1202200, 0.1201475, 0.1193574]));
+		
+	)
+);
+	////////////////////////////////////////////////
+	//           singleConcCalc                   //
+	////////////////////////////////////////////////
+	
+ut test(singleConc, "Coeff Mtrx Check",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc(45,"quadCube",3,3,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"Coefficients need to be matrix\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+	
+	)
+);
+
+ut test(singleConc, "Coeff Mtrx Fail Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc(45,"quadCube",3,3,4)), ut equal to({-999, [1 => "Coefficients need to be matrix"]}));
+		ut assert that(Expr(singleConcCalc([45],"quadCube",3,3,4)), ut not ({-999, [1 => "Coefficients need to be matrix"]}));
+	
+	)
+);
+
+ut test(singleConc, "Curve Method String Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],62,0.005,0,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"Equation Method must be string\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],62,0.005,0,4)), ut equal to({-999, [2 => "Equation Method must be string"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [2 => "Equation Method must be string"]}));
+	
+	)
+);
+
+ut test(singleConc, "LowerBound Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,"0",4)), ut log output("\!N\!"Errors Below:\!"\!N\!"Lower Bound must be number\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,"0",4)), ut equal to({-999, [3 => "Lower Bound must be number"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,4)), ut not({-999, [3 => "Lower Bound must be number"]}));
+	
+	)
+);
+
+ut test(singleConc, "UpperBound Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",30,0,"4")), ut log output("\!N\!"Errors Below:\!"\!N\!"Upper Bound must be number\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",30,0,"4")), ut equal to({-999, [4 => "Upper Bound must be number"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",30,0,4)), ut not({-999, [4 => "Upper Bound must be number"]}));
+	
+	)
+);
+
+ut test(singleConc, "UpperBound > LowerBound Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",4,3,3)), ut log output("\!N\!"Errors Below:\!"\!N\!"Upper Bound must be greater than Lower Bound\!""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",4,3,3)), ut equal to({-999, [5 => "Upper Bound must be greater than Lower Bound"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [5 => "Upper Bound must be greater than Lower Bound"]}));
+	
+	)
+);
+
+ut test(singleConc, "Analyzer Response Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube","3",3,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"Analyzer Response must be number\!""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube","3",3,4)), ut equal to({-999, [6 => "Analyzer Response must be number"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [6 => "Analyzer Response must be number"]}));
+	
+	)
+);
+
+ut test(singleConc, "Equation Method Exists Check and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"this",3,3,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"Unsupported Equation Method\!""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"this",3,3,4)), ut equal to({-999, [7 => "Unsupported Equation Method"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [7 => "Unsupported Equation Method"]}));
+	
+	)
+);
+
+ut test(singleConc, "Multiple Param Error and Return",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"this","3","4",3)), ut log output("\!N\!"Errors Below:\!"\!N\!"Lower Bound must be number\!"\!N\!"Analyzer Response must be number\!"\!N\!"Unsupported Equation Method\!""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"this","3","4",3)), ut equal to({-999, [3 => "Lower Bound must be number", 6 => "Analyzer Response must be number", 7 => "Unsupported Equation Method"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [3 => "Lower Bound must be number", 6 => "Analyzer Response must be number", 7 => "Unsupported Equation Method"]}));
+	
+	)
+);
+
+ut test(singleConc, "Correct Number of calCurveCoeffs Check and Return",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([45],"quadCube",3,3,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"4 Coefficients required for this method - even if 0 value\!""));
+		ut assert that(Expr(singleConcCalc([45],"quadCube",3,3,4)), ut equal to({-999, [8 => "4 Coefficients required for this method - even if 0 value"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,0,200)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45],"quadCube",3,3,4)), ut not({-999, [8 => "4 Coefficients required for this method - even if 0 value"]}));
+	
+	)
+);
+
+ut test(singleConc, "Correct Number of nonCubicCoeffs Check and Return",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([45],"biexp_4p",3,3,4)), ut log output("\!N\!"Errors Below:\!"\!N\!"5 Coefficients required for this method - even if 0 value\!""));
+		ut assert that(Expr(singleConcCalc([45],"biexp_4p",3,3,4)), ut equal to({-999, [8 => "5 Coefficients required for this method - even if 0 value"]}));
+		ut assert that(Expr(singleConcCalc([16.531,-347.94,4.955,-35.164,-0.355],"biexp_4p",0.005,3,7)), ut log output(""));
+		ut assert that(Expr(singleConcCalc([45,45,45,45,45],"biexp_4p",3,3,4)), ut not({-999, [8 => "5 Coefficients required for this method - even if 0 value"]}));
+	
+	)
+);
+
+ut test(singleConc, "No error using default low and up bound",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([16.531,-347.94,4.955,-35.164,-0.355],"biexp_4p",0.005)), ut log output(""));
+	
+	)
+);
+
+ut test(singleConc, "Mathematical QuadCube Cubic Test",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,1.46683e-7],"quadCube",3)), ut approx(356.106647450331, {Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(singleConc, "Mathematical QuadCube Quad Test",
+	Expr(
+		show(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.2,0,100));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.2,0,100)), ut approx(21.274,{Relative Epsilon(1e-3)}));
+	
+	)
+);
+
+ut test(singleConc, "Mathematical biExp_4p Test",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([16.531615,-347.94192,4.955125,-35.164614,-0.35531],"biexp_4p",0.005)), ut approx(6.70336066973618,{Relative Epsilon( 1e-6 )}));
+	
+	)
+);
+
+ut test(singleConc, "Mathematical logTransCubic Test",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,1.46683e-7],"LOGTRANSCUBIC_3P",30)), ut approx(0.304316333,{Relative Epsilon( 1e-6 )}));
+	
+	)
+);
+
+ut test(singleConc, "Mathematical Outside Bounds",
+	Expr(
+
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,1.46683e-7],"LOGTRANSCUBIC_3P",30,5,100)), ut equal to({-999, [9 => "Either too many or 0 concentrations within bounds"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,1.46683e-7],"LOGTRANSCUBIC_3P",30,5,100)), ut log output("\!N\!"Either too many or 0 concentrations within bounds\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,5,100)), ut equal to({-999, [9 => "Either too many or 0 concentrations within bounds"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,5,100)), ut log output("\!N\!"Either too many or 0 concentrations within bounds\!""));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,-5,200)), ut equal to({-999, [9 => "Either too many or 0 concentrations within bounds"]}));
+		ut assert that(Expr(singleConcCalc([0.01331708,.00998141,-.000056712,0],"quadCube",0.005,-5,200)), ut log output("\!N\!"Either too many or 0 concentrations within bounds\!""));
+	
+	)
+);
+
+ut test(singleConc, "Few Real Conc Tests",
+	Expr(
+		
+		ut assert that(Expr(singleConcCalc([0.3229295,	0.1921605,	-0.0218147,	0.0009644],"quadcube",0.9246578054,0, 40)), ut approx(6.8174649008,{Relative Epsilon( 1e-6 )}));
+		ut assert that(Expr(singleConcCalc([-0.000004,0.0000643,0.0000000345,0],"quadcube",0.0013242012)), ut approx(20.432319385,{Relative Epsilon( 1e-6 )}));
+		ut assert that(Expr(singleConcCalc([0.0002119,	2.9058e-7,	-7.404e-11,	0],"quadcube",0.0003300965,0, 1000)), ut approx(460.88379459,{Relative Epsilon( 1e-6 )}));
+		ut assert that(Expr(singleConcCalc([0.0001458564,	6.45732e-7,	-6.98196e-10,	3.64919e-13],"quadcube",0.0003452977,0, 1000)), ut approx(525.31411347,{Relative Epsilon( 1e-6 )}));
+		ut assert that(Expr(singleConcCalc([13.497662,	-111.711521,	44.909898,	-491.147394,	-0.118392],"biexp_4p",0.003523659,0, 1000)), ut approx(16.943912424,{Relative Epsilon( 1e-6 )}));
+	)
+);
+
+	////////////////////////////////////////////////
+	//           arrayConcCalc                    //
+	////////////////////////////////////////////////
+
+ut test(arrayConc, "Associative Array Check and Return",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray[1] = idCode;
+		
+		ut assert that(Expr(arrayConcCalc(45,1)), ut log output("\!N\!"Errors Below:\!"\!N\!"Parameter needs to be associative array\!""));
+		ut assert that(Expr(arrayConcCalc(45,1)), ut equal to({0, [1 => "Parameter needs to be associative array"]}));
+		ut assert that(Expr(arrayConcCalc(testArray,1)), ut log output(""));
+		ut assert that(Expr(arrayConcCalc(testArray,1)), ut not ({0, [1 => "Parameter needs to be associative array"]}));
+	
+	)
+);
+
+ut test(arrayConc, "Closes curve tables when done",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray[1] = idCode;
+		
+		arrayConcCalc(testArray,1);		
+		ut assert that(Expr(ntable()), ut equal to(0));//only really works when open set to not private
+	
+	)
+);
+
+ut test(arrayConc, "Correct Output calCurves",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray["calCurve1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(output << first), ut equal to(Expr("calCurve1")));
+		ut assert that(Expr(output["calCurve1"]["input"]), ut equal to(idCode));
+		ut assert that(Expr(output["calCurve1"]["output"][1]), ut equal to([0.2938925, 0.2056555, -0.0258173, 0.0012476]));
+		ut assert that(Expr(output["calCurve1"]["output"][2]), ut equal to("quadcube"));
+		ut assert that(Expr(output["calCurve1"]["output"][3]), ut approx(1.16225214644012,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Correct Output nonCubeCurves",
+	Expr(
+		chemcode = 30;
+		slidelot = 704012;
+		speciescode = 2;
+		ar = .005;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(output << first), ut equal to(Expr("nonCube1")));
+		ut assert that(Expr(output["nonCube1"]["input"]), ut equal to(idCode));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to([27.389941, -217.115409, 3.549366, -19.623121, -0.645714]));
+		ut assert that(Expr(output["nonCube1"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(11.8217136993097,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Multiple IDs",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray["calCurve1"] = idCode;
+		
+		chemcode1 = 30;
+		slidelot1 = 704012;
+		speciescode1 = 2;
+		ar1 = .005;
+		idCode1 = EvalList(list(chemcode1,slidelot1,speciescode1,ar1));
+		testArray["nonCube1"] = idCode1;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(output["calCurve1"]["input"]), ut equal to(idCode));
+		ut assert that(Expr(output["calCurve1"]["output"][1]), ut equal to([0.2938925, 0.2056555, -0.0258173, 0.0012476]));
+		ut assert that(Expr(output["calCurve1"]["output"][2]), ut equal to("quadcube"));
+		ut assert that(Expr(output["calCurve1"]["output"][3]), ut approx(1.16225214644012,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output["nonCube1"]["input"]), ut equal to(idCode1));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to([27.389941, -217.115409, 3.549366, -19.623121, -0.645714]));
+		ut assert that(Expr(output["nonCube1"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(11.8217136993097,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Correct Output with input Lower and Upper Bound",
+	Expr(
+		chemcode = 30;
+		slidelot = 704012;
+		speciescode = 2;
+		ar = .005;
+		lb = -5;
+		ub = 1000;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb,ub));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+
+		ut assert that(Expr(output << first), ut equal to(Expr("nonCube1")));
+		ut assert that(Expr(output["nonCube1"]["input"]), ut equal to(idCode));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to([27.389941, -217.115409, 3.549366, -19.623121, -0.645714]));
+		ut assert that(Expr(output["nonCube1"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(11.8217136993097,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Correct Output pulling bound error from SingleCalc",
+	Expr(
+		chemcode = 30;
+		slidelot = 704012;
+		speciescode = 2;
+		ar = .005;
+		lb = -5;
+		ub = 10;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb,ub));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(nitems(output["nonCube1"]["output"])), ut equal to(4));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(-999,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(output["nonCube1"]["output"][4]), ut equal to([9 => "Either too many or 0 concentrations within bounds"]));
+	
+	)
+);
+
+ut test(arrayConc, "Correct Output with no equation match",
+	Expr(
+		chemcode = 9999;
+		slidelot = 12345;
+		speciescode = 99;
+		ar = .005;
+		lb = -5;
+		ub = 10;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb,ub));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,1);
+		
+		ut assert that(Expr(nitems(output["nonCube1"]["output"])), ut equal to(4));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(-999,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(output["nonCube1"]["output"][4]), ut equal to([7 => "Unsupported Equation Method"]));
+	
+	)
+);
+
+ut test(arrayConc, "Error when no curve match, 1 ID",
+	Expr(
+		chemcode = 999;
+		slidelot = 12345;
+		speciescode = 99;
+		ar = .005;
+		lb = -5;
+		ub = 10;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb,ub));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+
+		ut assert that(Expr(nitems(output["nonCube1"]["output"])), ut equal to(3));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to("No matching curve information"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(-888,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Error when no curve match, multiple IDs",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray["calCurve1"] = idCode;
+		
+		chemcode1 = 999;
+		slidelot1 = 704012;
+		speciescode1 = 2;
+		ar1 = .005;
+		idCode1 = EvalList(list(chemcode1,slidelot1,speciescode1,ar1));
+		testArray["nonCube1"] = idCode1;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(nitems(output["calCurve1"]["output"])), ut equal to(3));
+		ut assert that(Expr(output["calCurve1"]["output"][1]), ut equal to([0.2938925, 0.2056555, -0.0258173, 0.0012476]));
+		ut assert that(Expr(output["calCurve1"]["output"][2]), ut equal to("quadcube"));
+		
+		ut assert that(Expr(nitems(output["nonCube1"]["output"])), ut equal to(3));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to("No matching curve information"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(-888,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Error when no method match, 1 ID",
+	Expr(
+		chemcode = 99999;
+		slidelot = 12345;
+		speciescode = 99;
+		ar = .005;
+		lb = -5;
+		ub = 10;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb,ub));
+		testArray = Associative Array();
+		testArray["nonCube1"] = idCode;
+		
+		output = arrayConcCalc(testArray,1);
+
+		ut assert that(Expr(nitems(output["nonCube1"]["output"])), ut equal to(3));
+		ut assert that(Expr(output["nonCube1"]["output"][1]), ut equal to([0, 0, 0, 0, 0]));
+		ut assert that(Expr(output["nonCube1"]["output"][2]), ut equal to("No Method Found"));
+		ut assert that(Expr(output["nonCube1"]["output"][3]), ut approx(-888,{Relative Epsilon(1e-6)}));
+	
+	)
+);
+
+ut test(arrayConc, "Opening cal tables Check and Return",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar));
+		testArray = Associative Array();
+		testArray[1] = idCode;
+		
+		ut assert that(Expr(arrayConcCalc(testArray,2)), ut log output("\!N\!"Errors Below:\!"\!N\!"Couldn't open one or more curve tables\!""));
+		ut assert that(Expr(arrayConcCalc(testArray,2)), ut equal to({0, [2 => "Couldn't open one or more curve tables"]}));
+		ut assert that(Expr(arrayConcCalc(testArray,0)), ut log output(""));
+		ut assert that(Expr(arrayConcCalc(testArray,0)), ut not ({0, [2 => "Couldn't open one or more curve tables"]}));
+	
+	)
+);
+
+ut test(arrayConc, "Incorrect number input params",
+	Expr(
+		chemcode = 17;
+		slidelot = 720016;
+		speciescode = 99;
+		ar = .5;
+		lb = 5;
+		idCode = EvalList(list(chemcode,slidelot,speciescode,ar,lb));
+		testArray = Associative Array();
+		testArray["calCurve1"] = idCode;
+		
+		output = arrayConcCalc(testArray,0);
+		
+		ut assert that(Expr(nitems(output["calCurve1"]["output"])), ut equal to(4));
+		ut assert that(Expr(output["calCurve1"]["output"][1]), ut equal to([0.2938925, 0.2056555, -0.0258173, 0.0012476]));
+		ut assert that(Expr(output["calCurve1"]["output"][2]), ut equal to("quadcube"));
+		ut assert that(Expr(output["calCurve1"]["output"][3]), ut approx(-888,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(output["calCurve1"]["output"][4]), ut equal to("Incorrect number of input parameters"));
+	
+	)
+);
+
+	////////////////////////////////////////////////
+	//          tableConcCalc                     //
+	////////////////////////////////////////////////
+	
+ut test(tableConc, "Param Type Checks",
+	Expr(
+		unique = "uniqueAssayID";
+		ar = "AR-Script";
+		species = "Species Name";
+		sLot = "Lot";
+		chem = "Assay";
+		table = table1;
+		
+		For(i=1,i<=5,i++,
+			Match(i,
+				1,unique = 1;ut assert that(Expr(show(unique);tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output("\!Nunique = 1;\!N\!"Errors Below:\!"\!N\!"All parameters need to be type STRING\!""));
+				,
+				2,ar = 1;ut assert that(Expr(show(ar);tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output("\!Nar = 1;\!N\!"Errors Below:\!"\!N\!"All parameters need to be type STRING\!""));
+				,
+				3,species = 1;ut assert that(Expr(show(species);tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output("\!Nspecies = 1;\!N\!"Errors Below:\!"\!N\!"All parameters need to be type STRING\!""));
+				,
+				4,sLot = 1;ut assert that(Expr(show(sLot);tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output("\!NsLot = 1;\!N\!"Errors Below:\!"\!N\!"All parameters need to be type STRING\!""));
+				,
+				5,chem = 1;ut assert that(Expr(show(chem);tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output("\!Nchem = 1;\!N\!"Errors Below:\!"\!N\!"All parameters need to be type STRING\!""));
+			);
+			//show(unique,ar,species,sLot,chem);
+			ut assert that(Expr(tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut equal to ({0, [1 => "All parameters need to be type STRING"]}));
+		
+			//ut assert that(Expr(arrayConcCalc(45,1)), ut equal to({0, [1 => "Parameter needs to be associative array"]}));
+			unique = "uniqueAssayID";
+			ar = "AR-Script";
+			species = "Species Name";
+			sLot = "Lot";
+			chem = "Assay";
+		);
+		
+		ut assert that(Expr(tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut log output(""));
+		ut assert that(Expr(tableConcCalc(unique,ar,species,sLot,chem,table,1)), ut not ({0, [1 => "Parameter needs to be associative array"]}));
+	
+	)
+);
+
+ut test(tableConc, "Data Table Check",
+	Expr(
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",6,1)), ut log output("\!N\!"Errors Below:\!"\!N\!"Invalid Data Table Reference\!""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",6,1)), ut equal to({0, [2 => "Invalid Data Table Reference"]}));
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output(""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut not ({0, [2 => "Invalid Data Table Reference"]}));
+	
+	)
+);
+
+ut test(tableConc, "Row 1 Chem Col Check",
+	Expr(
+	
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output(""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut not ({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+		
+		table1:Assay[1] = "test";
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output("\!N\!"Errors Below:\!"\!N\!"AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC\!""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut equal to({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+	
+	)
+);
+
+ut test(tableConc, "Row 1 AR Col Check",
+	Expr(
+	
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output(""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut not ({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+		
+		table1:Name("AR-Script")[1] = "test";
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output("\!N\!"Errors Below:\!"\!N\!"AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC\!""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut equal to({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+	
+	)
+);
+
+ut test(tableConc, "Row 1 Lot Col Check",
+	Expr(
+	
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output(""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut not ({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+		
+		table1:Lot[1] = "test";
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut log output("\!N\!"Errors Below:\!"\!N\!"AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC\!""));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table1,1)), ut equal to({0, [3 => "AR/Lot/Chem Column needs to be NUMERIC or STRING NUMERIC"]}));
+	
+	)
+);
+
+ut test(tableConc, "Random array input checks",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,1);
+		key = "CTDX007671_10388901_3660215059.154_ALT_16_8_364.37";
+		key1 = "CAT1002387_5680_3660898756.736_TT4_5_3_648.66";
+		key2 = "CAT1001200_5974_3661752387.642_TT4_5_3_649.14";
+		
+		ut assert that(Expr(output[2][key][1]), ut equal to(62));
+		ut assert that(Expr(output[2][key][2]), ut equal to(58912));
+		ut assert that(Expr(output[2][key][3]), ut equal to(99));
+		ut assert that(Expr(output[2][key][4]), ut approx(-0.0000436230309296508,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output[2][key1][3]), ut equal to(2));
+		ut assert that(Expr(output[2][key2][3]), ut equal to(2));
+			
+	)
+);
+
+ut test(tableConc, "Random array output checks",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,2);
+		//rows 3, 6, 10, 23, 25
+		
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][1]), ut equal to("No matching curve information"));
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][2]), ut equal to("No Method Found"));
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][3]), ut equal to(-888));
+		
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][1]), ut typed as("Matrix"));
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][2]), ut equal to("No Method Found"));
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][3]), ut equal to(-888));
+		
+		ut assert that(Expr(output[2]["CTDX013072_10525901_3658309347.618_UNKNOWN_4_1_586.86"]["output"][2]), ut equal to("quadcube"));
+		ut assert that(Expr(output[2]["CTDX013072_10525901_3658309347.618_UNKNOWN_4_1_586.86"]["output"][3]), ut approx(77.3509557573299,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["input"][3]), ut equal to(99));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["output"][3]), ut approx(1.84693002541721,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["input"][3]), ut equal to(2));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["output"][3]), ut approx(2.85373158568033,{Relative Epsilon(1e-6)}));
+			
+	)
+);
+
+ut test(tableConc, "Random array output checks, additional summary",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table3,2);
+		
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][1]), ut equal to("No matching curve information"));
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][2]), ut equal to("No Method Found"));
+		ut assert that(Expr(output[2]["CAT1005016_5818_._ALB/GLOB_._._."]["output"][3]), ut equal to(-888));
+		
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][1]), ut typed as("Matrix"));
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][2]), ut equal to("No Method Found"));
+		ut assert that(Expr(output[2]["CTDX007671_10388901_3660215059.154_ALT_16_8_364.37"]["output"][3]), ut equal to(-888));
+		
+		ut assert that(Expr(output[2]["CTDX013072_10525901_3658309347.618_UNKNOWN_4_1_586.86"]["output"][2]), ut equal to("quadcube"));
+		ut assert that(Expr(output[2]["CTDX013072_10525901_3658309347.618_UNKNOWN_4_1_586.86"]["output"][3]), ut approx(77.3509557573299,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["input"][3]), ut equal to(99));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.714_TT4_5_3_648.66"]["output"][3]), ut approx(1.84693002541721,{Relative Epsilon(1e-6)}));
+		
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["input"][3]), ut equal to(2));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["output"][2]), ut equal to("biexp_4p"));
+		ut assert that(Expr(output[2]["CAT1002387_5680_3660898756.736_TT4_5_3_648.66"]["output"][3]), ut approx(2.85373158568033,{Relative Epsilon(1e-6)}));
+			
+	)
+);
+
+ut test(tableConc, "Random array output fail, additional summary dupes",
+	Expr(
+		
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table4,2)), ut approx(0,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table4,2)), ut log output("\!N\!"Errors Below:\!"\!N\!"Duplicate IDs found with differing chem/species/lot/ar information\!""));
+		
+	)
+);
+
+ut test(tableConc, "Calc_Dose_All Column_fortesting=2",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,2);
+		
+		ut assert that(Expr(IsScriptable(Column(table2,"Calc_Dose_All"))), ut equal to(1));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[3]), ut equal to(-888));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[6]), ut equal to(-888));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[10]), ut approx (77.3509557573299,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[23]), ut approx (1.84693002541721,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[25]), ut approx (2.85373158568033,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All") << Get Formula), ut empty());
+		
+	)
+);
+
+ut test(tableConc, "Calc_Dose_All Column_fortesting=0",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,0);
+		
+		ut assert that(Expr(IsScriptable(Column(table2,"Calc_Dose_All"))), ut equal to(1));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[3]), ut equal to(-888));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[6]), ut equal to(-888));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[10]), ut approx (77.3509557573299,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[23]), ut approx (1.84693002541721,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[25]), ut approx (2.85373158568033,{Relative Epsilon(1e-6)}));
+		ut assert that(Expr(table2:Name("Calc_Dose_All") << Get Formula), ut empty());
+		
+	)
+);
+
+ut test(tableConc, "Calc_Dose_All Notes Column_fortesting=2",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,2);
+
+		ut assert that(Expr(IsScriptable(Column(table2,"Calc_Dose_All Notes"))), ut equal to(1));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes")[3]), ut equal to("No matching curve information_No Method Found"));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes")[6]), ut equal to("[-0.000017213, -0.0000005091836, -0.000000000478244, 0.0000000000002314616]_No Method Found"));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes")[10]), ut equal to("None"));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes") << Get Formula), ut empty());
+		
+	)
+);
+
+ut test(tableConc, "Calc_Dose_All Columns_fortesting=3_-999 Conc",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,3);
+		
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[17]), ut equal to(-999));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes")[17]), ut equal to("[7 => \!"Unsupported Equation Method\!"]"));
+		
+	)
+);
+
+ut test(tableConc, "Calc_Dose_All Columns_fortesting=4_no Network",
+	Expr(
+		
+		output = tableConcCalc("uniqueAssayID","AR-Script","Species Name","Lot","Assay",table2,4);
+
+		ut assert that(Expr(table2:Name("Calc_Dose_All")[17]), ut equal to(-999));
+		ut assert that(Expr(table2:Name("Calc_Dose_All Notes")[17]), ut equal to("[2 => \!"Couldn't open one or more curve tables\!"]"));
+		
+	)
+);
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          Finishing Off                                  //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+Match(fLibUT:saveFile,
+	0, fLibUT << delete,
+	1, ut global reporter:save report(fLibUT:savePath||fLibUT:reportName); fLibUT << delete;
+);

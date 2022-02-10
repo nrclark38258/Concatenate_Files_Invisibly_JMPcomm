@@ -1,0 +1,59 @@
+//Author:
+//Nathan Clark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+//27 June, 2019
+
+//This script compresses all columns that don't have formulas in a data table
+
+//------------------Revision History--------------------------------
+//
+//	1.1.0.2 NClark 070819
+//		-> Fixed bug in jmpcust file
+//	1.1.0.1 NClark 070819
+//		-> Fixed bug in jmpcust file
+//	1.1.0.0 NClark 062719
+//		-> Updated with revision history in prep for official addin creation
+//	1.0.0.0 NClark 
+//		-> First version created
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+//-----------Variable Declarations (above Main for easy access)--
+	
+	If(HostIs("Mac"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("username");
+	);
+	
+	addinID = "com.idexx.nrclark.noCompressFormula";
+	updateIDs = {"com.idexx.nrclark.noCompressFormula"};
+
+//-----------/Variable Declarations-----------------------
+
+include("$ADDIN_HOME(com.idexx.nrclark.noCompressFormula)\Utilities\AssayDev_Utilities.jsl");
+
+compressCols = Function({dtname},{default local},
+	colList = {};
+	For(i=1,i<=ncol(dtName),i++,
+		If(
+			!IsEmpty(Column(dtName,i) << Get Formula), Empty()
+		,
+			InsertInto(colList,Column(dtName,i) << Get Name)
+		)
+	);
+
+	dtName << compress selected columns(colList);
+);
+
+If( Length( Include File List() ) == 1,
+
+	batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+	dt = currentdatatable();
+	compressCols(dt);
+);

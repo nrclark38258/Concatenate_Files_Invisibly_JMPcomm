@@ -1,0 +1,2558 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+Names Default To Here( 1 );
+//------------------Revision History for script---------------------
+//
+//	3.7.7 NClark 021022
+//		-> added funct56 to handle all the slide_mfg node columns from slide manufacturing json sequence
+//		-> added funct57 for results_calculated.elapsed_time
+//		-> updated poss columns for results_calculated.elapsed_time
+//		-> updated updateColNames() for funct57 within loop
+//		-> updated updatedColNames() to put funct56 outside loop as it's tied to no specific column name
+//		-> updated lotExtractions() to accomodate the new way slide lot will come out (only 4 digits from a 10 digit barcode) so Foil can only be calculated from barcode, and will be -99 if it's not there
+//	3.7.6 NClark 020222
+//		-> Updated func23 to work differently when the column is character but empty vs character with all the same value present
+//	3.7.5 NClark 020222
+//		-> Updated func23 to work differently when the column is character but empty vs character with values present
+//	3.7.4 NClark 020222
+//		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//			-> IvlsRunId / 
+//		-> Updated the following functions to support the above
+//			->	funct23 IVLS Run ID
+//				-> force column to be numeric and ordinal as sometimes can come in blank in character form
+//	3.7.3 NClark 013122
+//		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//			->  / Flag 1
+//			->  / Flag 2
+//			->  / Flag 3
+//			-> container_location /
+//			-> cadence_interrupted_wet / CadenceInterruptedWet
+//			->  / SubLot
+//		-> Added functions to rename to the following
+//			-> funct49, Timeseries Pt 
+//			-> funct50, False Light
+//			-> funct51, Assay Gain
+//			-> funct52, Assay Offset
+//			-> funct53, Scalar
+//			-> funct54, Dry Read Start
+//			-> funct55, Dry Read End
+//		-> Updated the following functions to support the above
+//			->	funct32 DilutionParts (factor)
+//				-> works if parts comes in as character
+//			->	funct31 flagging
+//				-> handles new Flag 'x' parameters from KTS parser and defaults to type 4
+//			->	funct40 wet cadence interrupted
+//				-> changes the wet cadence column to Wet Candence Orig
+//			-> updateColNames()
+//				-> added the calls for functions 49-55
+//	3.7.2 NClark 012022
+//		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//			-> reads.rd / 
+//			-> species_id / 
+//			-> species / 
+//			-> reads.norm_refl / 
+//		-> Updated following possCols
+//			-> normalized reflectance, funct15 -- Changed to reference Name is Normal Reflectance
+//			-> species ID/species name, funct16 -- Changed to reference Name is Species ID
+//		-> added reversePosColNames() to create reverse poss column list
+//			-> Ex. ["Assay" -> {"Assay", "Assay :2".....}, "Species ID" -> ...]
+//		-> Updated the following functions to support the above
+//			->	funct2_7_15 ReflDens_avg / Normal Reflectance
+//				-> set up for RD and NR more cleaning and checks for if columns exist to create columns if needed
+//			->	funct16 Species ID / Species Name
+//				-> handles both numeric and char columns and if both are output from same source (KTS parsers)
+//		-> Moved species name stuff from tablePrep() into funct16
+//	3.7.1 NClark 011422
+//		-> deleted history pre 3.0
+//		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//			-> at /
+//		-> shifted old datetime stuff into it's own function (dateTimeModification) 
+//		-> Updated the following functions to support the above
+//			-> funct11 -- trimmed down for improved / new datetime function
+//			-> uniqueIDs -- added check to do runID column if only one column BUT there are more than one value in it
+//			-> dateTimeFunction -- updated to handle new char date from newer parser and extract Time zone adjustment into its own column
+//		-> inserted datetime function into slot of tablePrep function
+//	3.7.0.0 NClark 010722
+//		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//			-> results.alg_status / Algorithm Status
+//			-> results.analyte_response / AR
+//			-> chem_code / Assay
+//			-> barcode / Barcode
+//			-> chem_type / Chem Type
+//			-> results.computed_conc / Concentration
+//			-> curve_version / Curve File Version
+//			-> dilution_factor /
+//			->  / Dilution Parts
+//			-> dilution_type / Dilution Type
+//			-> instrument_id / Instrument ID
+//			->  / RunID
+//			-> software_version / Cat Software Version
+//			-> ivls_run_id / 
+//			-> patient_name
+//			-> results.analyte_conc /
+//			->  / Sample id
+//			-> segment / Segment
+//			-> slide_load_order / Slide Load Order
+//			-> slide_lot / Lot
+//			-> sublot / Sublot
+//			-> reads.time / Timeseries time
+//			-> reads.wl / Wavelength
+//			->  / Wavelength2
+//			->  / Wavelength3
+//		-> Updated the following functions to support the above
+//			->	funct9_13 Assay
+//			->	funct12 Wavelength
+//			->	funct29 Algorith Status
+//			->	funct43 Wavelength_2
+//			->	funct44 Wavelength_3
+//			->	funct48 Slide Sublot
+//	3.6.0.0 NClark 041221
+//		-> Updated Lot Extractions to work if Foil already exists in the data table
+//	3.5.0.0 NClark 032621
+//		-> Updated sorting for Date/Time to sort by uniqueRun AND uniqueSort for both 'normal' and 'isl' based data
+//	3.4.0.2 NClark 030821
+//		-> Added Slide Sublot to allowable sublot names
+//		-> Updated function 48 so all sublots are Numeric / Ordinal
+//	3.4.0.1 NClark 030821
+//		-> Added "Sub Lot" to allowable sublot names
+//	3.4.0.0 NClark 030721
+//		-> Changed Lot to come out as Slide Lot in Function10 and where appropriate
+//		-> Added Barcode to name changing system
+//		-> Added Slide Sublot to name changing system
+//		-> Added Sample id to name changing system
+//		-> Updated uniqueIDs function to use Sample id for uniqueRun under "Sort" option
+//		-> Added lotExtractions function which will use Barcode, Slide Sublot, and Slide lot to ensure every table has the following
+//			-> Slide Lot
+//			-> Slide Sublot
+//			-> Foil
+//	3.3.0.0 NClark 021721
+//		-> updated uniqueIDs function to force wavelength to fron of uniqueSort column
+//	3.2.0.1 NClark 021121
+//		-> added "Wavelength" to possColNames
+//	3.2.0.0 NClark 021021
+//		-> Updated funct 12, 43, and 44 to handle wavelengths that come in as chacter and not numeric
+//	3.1.0.1 NClark 020521
+// 		-> updatd wlrd function to handle mixed wl and rd cols BUT no data, and matching cols existing data (pull more data than need, example)
+// 		-> integrate wl rd stuff INTO main function
+//		-> added small wait in a date/time conversion as it was failing in testing
+//		-> added 'uniqueCurveID' to 'top columns' to have it move with remaining columns
+//		-> added 'Wavelength' to 'top columns' to have it move with remaining columns
+//		-> made base wavelength function (12) so wavelength is ordinal
+//		-> made funct45 for Dilution Factor
+//		-> updated funct32 for Dilution Parts and will make Dilution Factor column if there is none
+//		-> added additionional funct32 values
+//		-> updated updatecolnames for funct45
+//		-> updated funct33 for Dilution Type and will create Orig and new colume with Text values for types
+//	3.1.0.0 NClark 012621
+//		-> Added renaming to add in additional wavelength and readings columns
+//		-> Added functions 41-44 for renaming the above columns
+//		-> Added functions to identify / pair / stack wavelength/reading information
+//		-> moved the column remanming into it's own function for ease of testing
+//		-> moved unique ID creation into its own function for ease of testing and usage
+//			-> Sort, uniqueRun and uniqueAssay all can be done by one function
+//		-> Updated unique ID function to create a grouping: curve ID
+//			-> Sort, Run, Assay, Curve groupings
+//		-> Updated table prep to use updated col naming function
+//		-> Updated includes to be relative for testing
+//		-> Removed commonRunID
+//	3.0.0.0 NClark 122319
+//		-> Added two Reading: wavelength cols for by read wl col on catone
+//		-> updated function 12 to choose best wavelength column
+//		-> Added wavlength (lower 'w') to wavelenth cols for quest data
+//		-> Added Instrument Id (lower 'd') to instrument id cols for quest data
+//------------------------------------------------------------------
+
+defaultPath = Get Default Directory();
+include(defaultPath||"/AssayDev_AssayCodes2.jsl");
+include(defaultPath||"/AssayDev_FlagDecoding2.jsl");
+
+///////////////////////
+//      Functions    //
+///////////////////////
+
+//array of possible columns names associated with a function # to 'fix' it
+possColNames = Function({},{default local},
+	possArray = Associative Array(
+		{
+			//read times (TimeFromSampleDispense:sec)
+			{"Timeseries time",{1,"TimeFromSampleDispense:sec"}},
+			{"Timeseries Time",{1,"TimeFromSampleDispense:sec"}},
+			{"Time :3",{1,"TimeFromSampleDispense:sec"}},
+			{"Readings: Time Between Read and Dispense",{1,"TimeFromSampleDispense:sec"}},
+			{"TYP3_TIME",{1,"TimeFromSampleDispense:sec"}},
+			{"TIME_BTWN_READ_DISPENSE",{1,"TimeFromSampleDispense:sec"}},
+			{"reads.time",{1,"TimeFromSampleDispense:sec"}},
+			
+			//reflective density reads (ReflDens_avg) ... other WLs below
+			{"Timeseries RD",{2,"ReflDens_avg"}},
+			{"Reading :3",{2,"ReflDens_avg"}},
+			{"TYP3_READING",{2,"ReflDens_avg"}},
+			{"reads.rd",{2,"ReflDens_avg"}}, //KTS parser
+			
+			//SW vesion (Instrument Software Version)
+			{"DEVICE_SOFTWARE_VERSION",{3,"Instrument Software Version"}}, //same SAS DxC1
+			{"Device Software Version",{3,"Instrument Software Version"}},
+			{"Cat Software Ver",{3,"Instrument Software Version"}},
+			{"software_version",{3,"Instrument Software Version"}},
+			{"Cat Software Version",{3,"Instrument Software Version"}},
+			
+			//(Instrument ID) Operations
+			{"Instrument",{4,"Instrument ID"}}, //idxQCPrep
+
+			//read times (TimeFromSampleDispense:sec) Operations
+			{"Seconds from Dispense",{5,"TimeFromSampleDispense:sec"}},//idxQCPrep
+			
+			//Computed Concentration (Concentration)
+			{"Results: Result Computed Concentration",{6,"Concentration"}},
+			{"Concentration :5",{6,"Concentration"}},
+			{"TYP5_CONCENTRATION",{6,"Concentration"}},
+			{"RSLT_RESULTS_COMPUTED_CONC",{6,"Concentration"}},
+			{"results.computed_conc",{6,"Concentration"}},
+			
+			//reflective density reads (ReflDens_avg) Operations
+			{"Reflective Density",{7,"ReflDens_avg"}},//idxQCPrep
+
+			//Computed Concentration (Concentration) Operations
+			{"CONCENTRATION",{8,"Concentration"}},//idxQCPrep
+
+			//Assay (numerical) Operations
+			{"CHEMCODE",{9,"Assay"}},//idxQCPrep
+			
+			//Slide lot (Lot)
+			{"Results: Slide Lot Number",{10,"Slide Lot"}},
+			{"Lot :5",{10,"Slide Lot"}},
+			{"TYP2_LOT",{10,"Slide Lot"}},
+			{"RSLT_SLIDE_LOT",{10,"Slide Lot"}},
+			{"SLIDE_LOT_NUMBER",{10,"Slide Lot"}},
+			{"Chem Slide Lot Number",{10,"Slide Lot"}},
+			{"Lot",{10,"Slide Lot"}},
+			{"Slide Lot",{10,"Slide Lot"}},
+			{"slide_lot",{10,"Slide Lot"}},
+			
+			//Run start time (DateTime)
+			{"Run Start Timestamp",{11,"DateTime"}},
+			{"RUN_START_TS",{11,"DateTime"}},
+			{"RUN_START_LOG_TMSTMP",{11,"DateTime"}},
+			{"at",{11,"DateTime"}},
+			
+			//(Wavelength) ... other wavelengths below
+			{"Center Wavelengths1 :2",{12,"Wavelength"}},
+			{"TYP2_CENTER_WAVELENGTHS1",{12,"Wavelength"}},
+			{"Results Center Wavelengths 1",{12,"Wavelength"}},
+			{"RSLT_CENTER_WAVELENGTHS1",{12,"Wavelength"}},
+			{"READING_WAVELENGTH",{12,"Wavelength"}},
+			{"Readings: Wavelength (nm)",{12,"Wavelength"}},
+			{"wavelength",{12,"Wavelength"}},
+			{"Wavelength",{12,"Wavelength"}},
+			{"reads.wl",{12,"Wavelength"}},
+			
+			//Assay (numerical)
+			//IF MORE ARE ADDED HERE, FUNCTION 2_7_15 NEEDS TO BE UPDATED
+			{"Assay :2",{13,"Assay"}},
+			{"Assay :4",{13,"Assay"}},
+			{"Assay :5",{13,"Assay"}},
+			{"TYP2_ASSAY",{13,"Assay"}},
+			{"TYP4_ASSAY",{13,"Assay"}},
+			{"ASSAY_CODE",{13,"Assay"}},
+			{"Assay Code",{13,"Assay"}},
+			{"chem_code",{13,"Assay"}},
+			{"Assay",{13,"Assay"}},
+			
+			//(Segment)
+			{"Segment :4",{14,"Segment"}},
+			{"Segment :5",{14,"Segment"}},
+			{"TYP2_SEGMENT",{14,"Segment"}},
+			{"Results: Carousel Segment",{14,"Segment"}},
+			{"RSLT_SEGMENT_VALUE",{14,"Segment"}},
+			{"segment",{14,"Segment"}},
+			
+			//normalized reflectance (from catone) 
+			{"Readings: Normal Reflectance",{15,"Normal Reflectance"}}, //need to convert to Refldens_avg, not just rename
+			{"READING_NORM_REFLECTANCE",{15,"Normal Reflectance"}},
+			{"reads.norm_refl",{15,"Normal Reflectance"}},  //KTS parser
+			
+			//(Species ID / Species Name) will be created if necessary
+			{"Species",{16,"Species ID"}},
+			{"SPECIES_NAME",{16,"Species ID"}},
+			{"SPECIES",{16,"Species ID"}}, //same in cat1
+			{"species",{16,"Species ID"}},  //KTS parser
+			{"species_id",{16,"Species ID"}},  //KTS parser
+			
+			//Assay (character)
+			//IF MORE ARE ADDED HERE, FUNCTION 2_7_15 NEEDS TO BE UPDATED
+			{"Assay Type",{17,"Chem Type"}},
+			{"ASSAY_TYPE",{17,"Chem Type"}},
+			{"chem_type",{17,"Chem Type"}},
+			
+			//Dispense time of the sample/conjugate (IA SampMix Event)
+			{"SampleConjugateDispenseTime",{18,"IA SampMix Event"}},
+			{"Conjugate Dispense Time :2",{18,"IA SampMix Event"}},
+			{"DT: Sample Conjugate Dispense Time (1) (sec)",{18,"IA SampMix Event"}},
+			{"TYP2_SAMPLE_CNJGT_DISPENSE_TM",{18,"IA SampMix Event"}},
+			{"DSPNS_TIMES_SMPL_CONJUGAT_ALQ1",{18,"IA SampMix Event"}},
+			{"conjugate_alq1",{18,"IA SampMix Event"}},
+						
+			//Wash dispense time (IA Wash Event)
+			//{"Wash1BeginTime",19}, not valid wash column
+			{"SampleDispenseTilWash1EndDeltaTime",{19,"IA Wash Event"}},
+			{"Sampdisp Tilwash1end D Time :2",{19,"IA Wash Event"}},
+			{"DT: Wash Dispense Time (1) (sec)",{19,"IA Wash Event"}},
+			{"TYP2_SAMPDISP_TILWASH1END_D_TM",{19,"IA Wash Event"}},
+			{"DSPNS_TIMES_WASH1_ALQ1",{19,"IA Wash Event"}},
+			{"wash_alq1",{19,"IA Wash Event"}},
+
+			//Substrate dispense time (IA Substrate Event)
+			{"SubstrateDispenseTime",{20,"IA Substrate Event"}},
+			{"Substrate Dispense Time :2", {20,"IA Substrate Event"}},
+			{"DT: Substrate Dispense Time (1) (sec)",{20,"IA Substrate Event"}},
+			{"TYP2_SUBSTRATE_DISPENSE_TIME",{20,"IA Substrate Event"}},
+			{"DSPNS_TIMES_SUBSTRATE_ALQ1",{20,"IA Substrate Event"}},
+			{"substrate_alq1",{20,"IA Substrate Event"}},
+			
+			//(Instrument ID)
+			{"Instrument Serial Number",{21,"Instrument ID"}},
+			{"DEVICE_SERIAL_NUMBER",{21,"Instrument ID"}},
+			{"INSTRUMENT_SERIAL_NUMBER",{21,"Instrument ID"}},
+			{"Instrument Id",{21,"Instrument ID"}},
+			{"instrument_id",{21,"Instrument ID"}},
+
+			//(AR)
+			{"Results: Results Analyzer Response",{22,"AR"}},
+			{"Result :4",{22,"AR"}},
+			{"RSLT_RESULTS_ANALYZER_RESPONSE",{22,"AR"}},
+			{"TYP4_RESULT",{22,"AR"}},
+			{"results.analyte_response",{22,"AR"}},
+
+			//(IVLS Run ID)
+			{"IVLS_RUN_ID",{23,"IVLS Run ID"}},
+			{"NATIVE_IVLS_RUN_ID",{23,"IVLS Run ID"}},
+			{"DB_RUN_ID",{23,"IVLS Run ID"}},
+			{"DB Run ID",{23,"IVLS Run ID"}},
+			{"IVLS RunID",{23,"IVLS Run ID"}},
+			{"ivls_run_id",{23,"IVLS Run ID"}},
+			{"IvlsRunId",{23,"IVLS Run ID"}},
+
+			//(Instrument Run ID) (only CDx)
+			{"LOG_RUN_ID",{24,"Instrument Run ID"}},
+			{"RunID",{24,"Instrument Run ID"}},
+
+			//(Patient Name)
+			{"RUN_NAME",{25,"Patient Name"}}, //may also be patient name
+			{"PATIENT_NAME",{25,"Patient Name"}},
+			{"patient_name",{25,"Patient Name"}},
+
+			//SAP (Customer SAP)
+			{"SAP_NUMBER_CONVERSION",{26,"Customer SAP"}},
+			{"SAP",{26,"Customer SAP"}},
+			{"Cust SAP Number",{26,"Customer SAP"}},
+
+			//(Activity Date)
+			{"ACTIVITY_DATE",{27,"Activity Date"}},
+			{"RUN_START_DATE",{27,"Activity Date"}},
+
+			//(Slide Load Order)
+			{"RSLT_SLIDE_LOAD_ORDER",{28,"Slide Load Order"}},
+			{"TYP2_SLIDE_LOAD_POSITION",{28,"Slide Load Order"}},
+			{"Results: Slide Load Order",{28,"Slide Load Order"}},
+			{"Slide Load Position :4",{28,"Slide Load Order"}},
+			{"Slide Load Position :5",{28,"Slide Load Order"}},
+			{"Slide Load Position :2",{28,"Slide Load Order"}},
+			{"Slide Load Position :3",{28,"Slide Load Order"}},
+			{"slide_load_order",{28,"Slide Load Order"}},
+			{"Slide Load Order",{28,"Slide Load Order"}},
+
+			//(Algorithm Status)
+			{"RSLT_RESULTS_ALGORITHM_STATUS",{29,"Algorithm Status"}},
+			{"TYP4_ALG_CALC_AR_ERROR_STATUS",{29,"Algorithm Status"}},
+			{"results.alg_status",{29,"Algorithm Status"}},
+			{"Algorithm Status",{29,"Algorithm Status"}},
+
+			//(Reported Concentration)
+			{"Results: Result Analyte Concentration",{30,"Reported Concentration"}},
+			{"RSLT_RESULTS_ANALYTE_CONC",{30,"Reported Concentration"}},
+			{"RESULT_VALUE",{30,"Reported Concentration"}},
+			{"Result Value",{30,"Reported Concentration"}},
+			{"results.analyte_conc",{30,"Reported Concentration"}},
+
+			//flag columns
+			{"TYP4_FLAG1",{31,"Flag1_4"}},
+			{"TYP4_FLAG2",{31,"Flag2_4"}},
+			{"TYP4_FLAG3",{31,"Flag3_4"}},
+			{"TYP5_FLAG1",{31,"Flag1_5"}},
+			{"TYP5_FLAG2",{31,"Flag2_5"}},
+			{"TYP5_FLAG3",{31,"Flag3_5"}},
+			{"DATA_4_Flag1",{31,"Flag1_4"}},
+			{"DATA_4_Flag2",{31,"Flag2_4"}},
+			{"DATA_4_Flag3",{31,"Flag3_4"}},
+			{"DATA_5_Flag1",{31,"Flag1_5"}},
+			{"DATA_5_Flag2",{31,"Flag2_5"}},
+			{"DATA_5_Flag3",{31,"Flag3_5"}},
+			{"Flag1 :4",{31,"Flag1_4"}},
+			{"Flag2 :4",{31,"Flag2_4"}},
+			{"Flag3 :4",{31,"Flag3_4"}},
+			{"Flag1 :5",{31,"Flag1_5"}},
+			{"Flag2 :5",{31,"Flag2_5"}},
+			{"Flag3 :5",{31,"Flag3_5"}},
+			{"Results: Result Flag Value 1",{31,"Results Flag1"}},
+			{"Results: Result Flag Value 2",{31,"Results Flag2"}},
+			{"Results: Result Flag Value 3",{31,"Results Flag3"}},
+			{"Results: Result Flag Value 4",{31,"Results Flag4"}},
+			{"Results: Result Flag Value 5",{31,"Results Flag5"}},
+			{"RSLT_RESULTS_FLAGS1",{31,"Results Flag1"}},
+			{"RSLT_RESULTS_FLAGS2",{31,"Results Flag2"}},
+			{"RSLT_RESULTS_FLAGS3",{31,"Results Flag3"}},
+			{"RSLT_RESULTS_FLAGS4",{31,"Results Flag4"}},
+			{"RSLT_RESULTS_FLAGS5",{31,"Results Flag5"}},
+			{"Flag 1",{31,"Flag1_4"}},
+			{"Flag 2",{31,"Flag2_4"}},
+			{"Flag 3",{31,"Flag3_4"}},
+
+			//(Dilution Parts ... may make Dilution Factor) DF below in diff function
+			{"Dilution Parts",{32,"Dilution Parts"}}, //final desired name, only needed to trigger potential DF column
+			{"Dilution Parts :5",{32,"Dilution Parts"}},
+			{"TYP5_DILUTION_PARTS",{32,"Dilution Parts"}},
+			{"DILUTION_PARTS",{32,"Dilution Parts"}},
+
+			//(Dilution type)
+			{"Dilution Type :5",{33,"Dilution Type"}},
+			{"TYP5_DILUTION_TYPE",{33,"Dilution Type"}},
+			{"DILUTION_TYPE",{33,"Dilution Type"}},
+			{"RUN_DILUTION_TYPE",{33,"Dilution Type"}},
+			{"Dilution Type",{33,"Dilution Type"}}, //needed to force creation of text version of type
+			{"dilution_type",{33,"Dilution Type"}},
+
+			//(Patient ID
+			{"DP Patient ID",{34,"Patient ID"}},
+			{"DB_PATIENT_ID",{34,"Patient ID"}},
+
+			//(Customer name)
+			{"CUSTOMER_NAME",{35,"Customer Name"}},
+			
+			//(Curve version)
+			{"CURVE_VERSION",{36,"Curve Version"}},
+			{"TYP5_CURVES_VERSION",{36,"Curve Version"}},
+			{"Curve Version",{36,"Curve Version"}},
+			{"Results: Curve Version",{36,"Curve Version"}},
+			{"Curves Version :5",{36,"Curve Version"}},
+			{"curve_version",{36,"Curve Version"}},
+			{"Curve File Version",{36,"Curve Version"}},
+			
+			//(Sample Type) _num (serum, plassma, wholeblood, etc (or num version))
+			{"SAMPLE_TYPE",{37,"Sample Type"}},
+			{"Sample Type",{37,"Sample Type"}},
+			{"SAMPLE_TYPE_NAME",{37,"Sample Type"}},
+			{"Sample Type Name",{37,"Sample Type"}},
+			
+			//(Sample cup) (WBS or Sample Cup)
+			{"DC_WBS_SAMPLECUP",{38,"Sample Cup"}},
+			{"Sample Type (WBS or Sample Cup)",{38,"Sample Cup"}},
+			{"container_location",{38,"Sample Cup"}},
+			
+			//IVLS Serial Number
+			{"IVLS_SERIAL_NUMBER",{39,"IVLS Serial Number"}},
+			
+			//Wet Cadence Interrupted
+			{"RSLT_CADENCE_INTERRUPTED_WET",{40,"Wet Cadence Interrupted"}}, //SAS CatOne
+			{"TYP2_CADENCE_INTRRPTD_WET_FLAG",{40,"Wet Cadence Interrupted"}}, //SAS CatDx
+			{"Cadence_interrupted_wet",{40,"Wet Cadence Interrupted"}}, //old parser CatOne
+			/*{"",40},not here yet //parser CatDx*/
+			{"Results: Cadence Interrupted Wet",{40,"Wet Cadence Interrupted"}}, //CatOne Universe
+			{"Cadence Interrupted Wet :2",{40,"Wet Cadence Interrupted"}}, //CatDx Universe
+			{"cadence_interrupted_wet",{40,"Wet Cadence Interrupted"}}, //KTS Parser Cat1
+			{"CadenceInterruptedWet",{40,"Wet Cadence Interrupted"}}, //KTS Parser CatDx
+
+			//reflective density reads, 2nd wavelength (ReflDens_avg 2)
+			{"Timeseries RD2",{41,"ReflDens_avg_2"}},
+			{"Reading2 :3",{41,"ReflDens_avg_2"}},
+			{"TYP3_READING2",{41,"ReflDens_avg_2"}},
+
+			//reflective density reads, 3rd wavelength (ReflDens_avg 3)
+			{"Timeseries RD3",{42,"ReflDens_avg_3"}},
+			{"Reading3 :3",{42,"ReflDens_avg_3"}},
+			{"TYP3_READING3",{42,"ReflDens_avg_3"}},
+
+			//2nd Wavelength
+			{"Center Wavelengths2 :2",{43,"Wavelength_2"}}, //CDx BI
+			{"TYP2_CENTER_WAVELENGTHS2",{43,"Wavelength_2"}}, //CDx SAS
+			{"Wavelength2",{43,"Wavelength_2"}}, //parsers
+
+			//3nd Wavelength
+			{"Center Wavelengths3 :2",{44,"Wavelength_3"}},
+			{"TYP2_CENTER_WAVELENGTHS3",{44,"Wavelength_3"}},
+			{"Wavelength3",{44,"Wavelength_3"}},
+
+			//(Dilution Factor
+			{"RUN_DILUTION_FACTOR",{45,"Dilution Factor"}},
+			{"DILUTION_FACTOR",{45,"Dilution Factor"}},
+			{"dilution_factor",{45,"Dilution Factor"}},
+
+			//Sample id
+			{"Sample Id",{46,"Sample id"}},
+			{"Sample ID",{46,"Sample id"}},
+
+			//Barcode
+			{"Barcode String :2",{47,"Barcode"}},
+			{"TYP2_BARCODE_STRING",{47,"Barcode"}},
+			{"barcode",{47,"Barcode"}},
+
+			//Slide Sublot
+			{"Sublot :2",{48,"Slide Sublot"}},
+			{"Sublot :5",{48,"Slide Sublot"}},
+			{"TYP2_SLIDE_SUBLOT",{48,"Slide Sublot"}},
+			{"RSLT_SLIDE_SUBLOT",{48,"Slide Sublot"}},
+			{"Results: Sublot",{48,"Slide Sublot"}},
+			{"Sub Lot",{48,"Slide Sublot"}},
+			{"Slide Sublot",{48,"Slide Sublot"}},
+			{"sublot",{48,"Slide Sublot"}},
+			{"Sublot",{48,"Slide Sublot"}},
+
+			//Timeseries Pt
+			{"reads.index",{49,"Timeseries Pt"}}, //KTS Parser catone
+
+			//False Light
+			{"false_light",{50,"False Light"}}, //KTS Parser catone
+			{"ulfalse_light",{50,"False Light"}}, //KTS Parser catdx
+			{"Lytes False Light",{50,"False Light"}}, //datamart catone
+			{"False Light :30",{50,"False Light"}}, //datamart cdx (currently chooseing not to support type 50)
+			{"ulfalselight",{50,"False Light"}}, //old cdx parser
+
+			//Assay Gain
+			{"Results: Assay Gain",{51, "Assay Gain"}}, //datamart catone
+			{"Gain Applied :4",{51, "Assay Gain"}}, //datamart catdx (currently chooseing not to support type 25 and 29)
+			{"Assay Gain :30",{51, "Assay Gain"}}, //datamart catdx
+			{"assay_gain",{51, "Assay Gain"}}, //KTS Parser catone
+			{"Gain Applied",{51, "Assay Gain"}}, //KTS Parser catdx
+
+			//Assay Offset
+			{"Results: Assay Offset",{52, "Assay Offset"}}, //datamart catone
+			{"Offset Applied :4",{52, "Assay Offset"}}, //datamart catdx (currently chooseing not to support type 25 and 29)
+			{"Assay Offset :30",{52, "Assay Offset"}}, //datamart catdx
+			{"assay_offset",{52, "Assay Offset"}}, //KTS Parser catone
+			{"Offset Applied",{52, "Assay Offset"}}, //KTS Parser catdx
+
+			//Scalar
+			{"Lytes Scalar",{53, "Scalar"}}, //datamart catone
+			{"Scalar :50",{53, "Scalar"}}, //datamart catdx 
+			{"scalar",{53, "Scalar"}}, //KTS Parser catone
+			{"fscalar",{53, "Scalar"}}, //KTS Parser catdx
+
+			//Dry Read Start
+			{"Lytes Dry Read Start",{54, "Dry Read Start"}}, //datamart catone
+			{"Dry Avg Start :30",{54, "Dry Read Start"}}, //datamart catdx 
+			{"dry_read_start",{54, "Dry Read Start"}}, //KTS Parser catone
+			{"Dry_Read_Start",{54, "Dry Read Start"}}, //KTS Parser catdx
+
+			//Dry Read End
+			{"Lytes Dry Read End",{55, "Dry Read End"}}, //datamart catone
+			{"Dry Avg End :30",{55, "Dry Read End"}}, //datamart catdx 
+			{"dry_read_end",{55, "Dry Read End"}}, //KTS Parser catone
+			{"Dry_Read_Finish",{55, "Dry Read End"}}, //KTS Parser catdx
+			{"Dry Read Finish",{55, "Dry Read End"}}, //old cdx parser
+
+			//Slide Mfg columns
+			// function 56 isn't specific to column names and function renames a batch of columns
+
+			//Assay Elapsed Time
+			{"results_calculated.elapsed_time",{57, "Assay Elapsed Time"}} //KTS Parser Catone
+		}
+	);
+	Return(possArray);
+);
+
+//reversing of the possible columns function so that it's possible to pick a final column name
+//and see the different naming conventions which would become that name
+reversePosColNames = Function({},{default local},
+
+	posColAA = possColNames();
+	reversePosColAA = AssociativeArray();
+	currentKey = posColAA << first;
+	For(i=1,i<=nitems(posColAA),i++,
+		
+		reversePosColAA[posColAA[currentKey][2]] = {};
+		currentKey = posColAA << next(currentKey)
+	);
+	currentKey = posColAA << first;
+	For(i=1,i<=nitems(posColAA),i++,
+		insertinto(reversePosColAA[posColAA[currentKey][2]],currentKey);
+		
+		currentKey = posColAA << next(currentKey)
+	);
+	
+	Return(reversePosColAA)
+);
+
+//array of columns desired to be moved to the front of the table
+topColumns = Function({},{default Local},
+	list = {
+	//clinc level
+		"Customer SAP",
+		"Customer Name",
+	//patient level
+		"Patient Name",
+		"Patient ID",
+		"Species Name",
+	//run level
+		"DateTime",
+		"Date",
+		"Time",
+		"Char_Date",
+		"uniqueRunID",
+		"uniqueAssayID",
+		"uniqueCurveID",
+		"commonRunID",
+		"IVLS Run ID",
+		"Instrument ID",
+		"Instrument Run ID",
+		"Inst Type",
+		"Instrument Software Version",
+		"Sample Type",
+		"Sample Cup",
+		"Dilution Type",
+		"Dilution Factor",
+	//result level
+		"Chem Type",
+		"Assay",
+		"Slide Lot",
+		"AR",
+		"Concentration",
+		"Reported Concentration",
+		"Segment",
+		"Slide Load Order",
+		"TimeFromSampleDispense:sec",
+		"ReflDens_avg",
+		"Wavelength",
+		"Read Point",
+		"Algorithm Status",
+		"Wet Cadence Interrupted"
+	};
+	Return(list)
+);
+
+// rough list of col functions and what they do
+/*	1_5, Time from sample dispense (ops and non)
+	2_7_15, reflective density (ops, non, norm refl)
+	3, Inst Software Version
+	4_21, Instrument ID (ops and non)
+	6_8, Computed Concentration (ops and non)
+	9_13, Chem Code (ops and non)
+	10, Slide Lot
+	11, DateTime
+	12, wavelength
+	14, segment
+	16, Species
+	17, assay type
+	18, samp/mix disp event
+	19, wash disp event
+	20, substrate disp event
+	21, instrument id
+	22, AR
+	23, ivls run id
+	24, instrument run id
+	25, patient name
+	26, sap
+	27, activity date
+	28, slide load order
+	29, algorithm status
+	30, reported conc (not above or below reported range)
+	31, results flag columns from cdx and one
+	32, dilution parts
+	33, dilution type
+	34, patient id
+	35, customer name
+	36, curve version
+	37, Sample Type
+	38, Sample Cup
+	39, IVLS Serial Number
+	40, Wet Cadence Interrupted
+	41, ReflDens_avg_2
+	42, ReflDens_avg_3
+	43, Wavelength_2
+	44, Wavelength_3
+	45, Dilution Factor
+	46, Sample id
+	47, Barcode
+	48, Slide Sublot
+	49, Timeseries Pt
+	50, False Light
+	51, Assay Gain
+	52, Assay Offset
+	53, Scalar
+	54, Dry Read Start
+	55, Dry Read End
+*/
+funct1_5 = Function({dtName,colName,ops="n"},{dtName,dt,colName,parseColName,ops},
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+
+	Match(ops,
+		"y", dt << New Column("TimeFromSampleDispense:sec",Numeric,Continuous,
+			Formula(Round(parseColName,6))
+		);
+		Try(Column(dt,"TimeFromSampleDispense:sec") << Delete Formula)
+	,
+		"n", dt << New Column("TFSD:sec",Numeric,Continuous,
+			Formula(Round(parseColName,6))
+		);
+		Column(dt,"TFSD:sec") << DeleteFormula;
+		dt << Delete Columns(colName);
+		Column(dt, "TFSD:sec") << Set Name("TimeFromSampleDispense:sec")
+	)
+);
+
+funct2_7_15 = Function({dtName,colName,normRef="n",ops="n"},{default local},
+	//IF CatOne, new col -log10()
+	dt = dtName;
+	columnArray = Associative Array(dt << Get Column Names(string));
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	
+	revPosColAA = reversePosColNames();
+	assayArray = Associative Array(revPosColAA["Assay"]);
+	assayTypeArray = Associative Array(revPosColAA["Chem Type"]);
+	rdArray = Associative Array(revPosColAA["ReflDens_avg"]);
+	rdArray["ReflDens_avg"] = 1; //doesn't need to be in main list so adding it here for check
+
+	assayCol = 0;
+	assayTypeCol = 0;
+	rdCol = 0;
+	currentKey = columnArray << First;
+	For(i=1,i<=nitems(columnArray),i++,
+		if( assayArray[currentKey] == 1,
+			assayCol = assayArray[currentKey];
+			assayColName = currentKey;
+			break()
+		);
+		if( assayTypeArray[currentKey] == 1,
+			assayTypeCol = assayTypeArray[currentKey];
+			assayColName = currentKey;
+			break()
+		);
+		//show(assayCol,assayTypeCol);
+		currentKey = columnArray << Next(currentKey);
+	);
+	currentKey = columnArray << First;
+	For(i=1,i<=nitems(columnArray),i++,
+		if( rdArray[currentKey] == 1,
+			rdCol = rdArray[currentKey];
+			break()
+		);
+		//show(assayCol,assayTypeCol);
+		currentKey = columnArray << Next(currentKey);
+	);
+	assayParseColName = Parse( Eval Insert( ":name(\!"^assayColName^\!" )" ) );
+	//show(columnArray,rdArray,rdCol,assayCol,assayTypeCol,assayParseColName);
+	Match(normRef,
+		"n", 
+		Match(ops,
+			"y", 
+			dt << New Column("ReflDens_avg",
+				Formula(parseColName)
+			);
+			Try(Column(dt,"ReflDens_avg") << Delete Formula)
+			,
+			"n", 
+			Try(
+				IsScriptable(Column(dt,"ReflDens_avg"))
+				,
+				Column(dt, colName) << Set Name ("ReflDens_avg")
+			)
+		)
+		,
+		"y", 
+		If( rdCol == 1,
+			Column(dt,colName) << Set Name("Normal Reflectance");
+			,
+			rdCol == 0,
+			If(assayCol == 1,
+				dt << New Column("ReflDens_avg", Numeric,
+					Formula(
+						If(Num(assayParseColName) == 40 | Num(assayParseColName) == 41 | Num(assayParseColName) == 42 | Num(assayParseColName) == 4,
+							parseColName * (450000 / 0.985)
+							,
+							-Log10(parseColName)
+						)
+					)
+				);
+				Column(dt,colName) << Set Name("Normal Reflectance");
+				Try(Column(dt,"ReflDens_avg") << Delete Formula)
+				,
+				assayTypeCol == 1,
+				dt << New Column("ReflDens_avg", Numeric,Continuous,
+					Formula(
+						If(assayParseColName == "NA" | assayParseColName == "K" | assayParseColName == "CL",
+							parseColName * (450000 / 0.985)
+							,
+							assayParseColName == "SDMA",
+							Print("Can't convert for SDMA RD for CatOne without assay code");
+							-999
+							,
+							-Log10(parseColName)
+						)
+					)
+				);
+				Column(dt,colName) << Set Name("Normal Reflectance");
+				Try(Column(dt,"ReflDens_avg") << Delete Formula)
+				,
+				assayCol == 0 & assayTypeCol == 0,
+				dt << New Column("ReflDens_avg", Numeric,Continuous,
+					<< set each value(-999)
+				);
+				Column(dt,colName) << Set Name("Normal Reflectance");
+				Try(Column(dt,"ReflDens_avg") << Delete Formula);
+				Print("Can't convert without assay code");
+			)
+		)
+	)
+);
+
+funct3 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Instrument Software Version");
+);
+
+funct4_21 = Function({dtName,colName,ops="n"},{dtName,dt,colName,parseColName,ops},
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+
+	Match(ops,
+		"y", dt << New Column("Instrument ID",
+			Formula(parseColName)
+		);
+		Try(Column(dt,"Instrument ID") << Delete Formula)
+	,
+		"n", Column(dt, colName) << Set Name("Instrument ID")
+	)
+);
+
+funct6_8 = Function({dtName,colName,ops="n"},{dtName,dt,colName,parseColName},
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+
+	Match(ops,
+		"y",
+			dt << New Column("Concentration Slide",
+					Formula(parseColName)
+			);
+			Try(Column(dt,"Concentration Slide") << Delete Formula)
+	,
+		"n", Column(dt, colName) << Set Name("Concentration")
+	)
+);
+
+funct9_13 = Function({dtName,colName,ops="n"},{dtName,dt,colName,parseColName,ops,dtColList},
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	dtColList = dt << get column names(string);
+	
+	Match(ops,
+		"y", dt << New Column("Assay",
+			Formula(parseColName)
+		);
+		Try(Column(dt,"Assay") << Delete Formula)
+	,
+		"n",
+		If( colName == "Assay",
+			Column(dt, colName) << Data Type("Numeric") << Modeling Type("Nominal");
+			,
+			If(
+				contains(dtColList,"Assay"),
+				Empty()
+				,
+				If(
+					colName == "TYP2_ASSAY" | colName == "Assay :2",
+					Column(dt, colName) << Data Type("Numeric") << Modeling Type("Nominal");
+					Column(dt, colName) << Set Name("Assay")
+					,
+					If(
+						contains(dtColList,"TYP2_ASSAY") | contains(dtColList,"Assay :2"),
+						Empty()
+						,
+						colName == "Assay :4",
+						Column(dt, colName) << Data Type("Numeric") << Modeling Type("Nominal");
+						Column(dt, colName) << Set Name("Assay")
+						,
+						If(
+							contains(dtColList,"Assay :4"),
+							Empty()
+							,
+							Column(dt, colName) << Data Type("Numeric") << Modeling Type("Nominal");
+							Column(dt, colName) << Set Name("Assay")
+						)
+					)			
+				)
+			)
+		)
+	)
+);
+
+funct10 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Modeling Type("nominal");
+	Column(dt, colName) << Set Name("Slide Lot");
+);
+
+funct11 = Function({dtName,colName},{dtName,dt,colName,parseColName},
+	/*
+	This is just be a rename and a separate function
+	will handle specific modifications to date and time columns
+	*/
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	
+	Column(dt, colName) << Set Name("DateTime");
+);
+
+funct12 = Function({dtName,colName},{dtName,dt,colName,a,b},
+	/*
+	Prioritization is because both Readings: ...  and READING_ have existed in data along other options
+	The other named	options do not occur in the same data sources so do not need prioritization. Wavelength
+	will be used if it exists, and checked for being character as older legacy units output as WL_xxx as
+	opposed to numeric wavelengths
+	*/
+	
+	dt = dtName;
+	
+	colList = dt << get column names(string);
+	If( colName == "Wavelength",
+		If(Column(dt, colName) << get data type == "Character",
+			Column(dt, colName) << set name("WL Orig");
+			dt << New Column("Wavelength", Numeric, Ordinal,
+				Formula(
+					If(
+						Is Missing( :"WL Orig"n ) | :"WL Orig"n == "0" |
+						Is Missing( Num( Word( 2, :"WL Orig"n, "_" ) ) ),
+						0,
+						Num( Word( 2, :"WL Orig"n, "_" ) )
+					)
+				)
+			);
+			dt:"Wavelength"n << delete formula;
+			,
+			Column(dt, colName) << Modeling Type("ordinal");
+		)
+		,
+		Contains(colList,"Wavelength"),
+		Empty()
+		,
+		colName == "Readings: wavelength (nm)" | colName == "READING_WAVELENGTH",
+		Column(dt, colName) << Modeling Type("ordinal");
+		Column(dt, colName) << Set Name("Wavelength");
+		,
+		Contains(colList,"Readings: wavelength (nm)") | Contains(colList,"READING_WAVELENGTH"),
+		Empty()
+		,
+		Column(dt, colName) << Modeling Type("ordinal");
+		Column(dt, colName) << Set Name("Wavelength");
+	)
+	
+);
+
+funct14 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Segment")
+);
+
+funct16 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+	columnArray = Associative Array(dt << Get Column Names(string));
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+
+	If(
+		IsMissing(Num(Column(dt,colName)[1])),
+		dt << New Column("Species ID", Numeric,
+			Formula(
+				Match(parseColName, "Canine", 1, "Feline", 0, "Equine", 2, "Unknown", 3, "QC", 4, 999)
+			)
+		);
+		Column(dt,colName) << set name("Species Name");
+		dt:"Species ID"n << delete formula;
+		,
+		!IsMissing(Num(Column(dt,colName)[1])),
+		If(
+			columnARray["Species Name"] == 0,
+			dt << New Column("Species Name", Numeric,
+				Formula(
+					Match(parseColName, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
+				)
+			);
+			Column(dt,colName) << set name("Species ID");
+			dt:"Species Name"n << delete formula;
+			,
+			columnARray["Species Name"] == 1,
+			Column(dt,colName) << set name("Species ID");
+		)
+	);
+
+);
+
+funct17 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Chem Type")
+);
+
+funct18 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("IA SampMix Event")
+);
+
+funct19 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("IA Wash Event")
+);
+
+funct20 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("IA Substrate Event")
+);
+
+funct22 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("AR")
+);
+
+funct23 = Function({dtName,colName},{dtName,colName},
+
+	colArray = Associative ARray( Column(dtName, colName) << get as matrix );
+	If( nitems( colArray ) == 1 & colArray << first == "",
+		Column(dtName, colName) << Set Data Type("Numeric");
+		Column(dtName, colName) << Set Modeling Type("Ordinal");
+		Column(dtName, colName) << Set Name("IVLS Run ID")
+		,
+		Column(dtName, colName) << Set Modeling Type("Ordinal");
+		Column(dtName, colName) << Set Name("IVLS Run ID")
+	)
+);
+
+funct24 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Instrument Run ID")
+);
+
+funct25 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Patient Name")
+);
+
+funct26 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Customer SAP")
+);
+
+funct27 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Activity Date")
+);
+
+funct28 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Modeling Type("Ordinal");
+	Column(dt, colName) << Set Name("Slide Load Order");
+);
+
+funct29 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Modeling Type("Nominal");
+	Column(dt, colName) << Set Name("Algorithm Status");
+);
+
+funct30 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Reported Concentration");
+	/*
+		Add Stuff to do reported concs for all assays
+	*/
+);
+
+funct31 = Function({dtName,colName},{dtName,dt,colName,flagValue,flagType},
+	dt = dtName;
+
+	If(Contains(lowercase(colName),"result") > 0,
+		flagValue = Right(colName,1);
+		Column(dt, colName) << Set Name("Results Flag"||flagValue);
+	,
+		If(
+			Contains(colName,"4") | Contains(colName,"5"),
+				flagValue = Substr(colName,Contains(lowercase(colName),"flag")+4,1);
+				If(
+					Contains(colName,"4"), flagType = "4"
+				,
+					Contains(colName,"5"), flagType = "5"
+				);
+				Column(dt, colName) << Set Name("Flag"||flagValue||"_"||flagType);
+			,
+			flagValue = Right(colName,1);
+			Column(dt, colName) << Set Name("Flag"||flagValue||"_4");
+		)
+	)
+);
+
+funct32 = Function({dtName,colName},{dtName,colName,dtColList},
+	dtColList = dtName << get column names(string);
+	If(	colName == "DILUTION_PARTS" | colName == "Dilution Parts",
+		Column(dtName, colName) << set data type("Numeric");
+		Column(dtName, colName) << Set Name("Dilution Parts");
+		If(
+			contains(dtColList,"Dilution Factor") | contains(dtColList,"RUN_DILUTION_FACTOR"),
+			Empty()
+			,
+			dtName << New Column("Dilution Factor",
+				Formula(
+					:Name("Dilution Parts") + 1
+				)
+			);
+			dtName:"Dilution Factor"n << delete formula
+		)
+		,
+		colName != "DILUTION_PARTS" & colName != "Dilution Parts" & (contains(dtColList,"DILUTION_PARTS") | contains(dtColList,"Dilution Parts")),
+		Empty()
+		,
+		Column(dtName, colName) << set data type("Numeric");
+		Column(dtName, colName) << Set Name("Dilution Parts");
+		If(
+			contains(dtColList,"Dilution Factor") | contains(dtColList,"RUN_DILUTION_FACTOR"),
+			Empty()
+			,
+			dtName << New Column("Dilution Factor",
+				Formula(
+					:Name("Dilution Parts") + 1
+				)
+			);
+			dtName:"Dilution Factor"n << delete formula
+		)
+	);
+);
+
+funct33 = Function({dtName,colName},{dtName,dt,colName,dtColList},
+	dt = dtName;
+	dtColList = dt << get column names(string);
+	If(
+		contains(dtColList,"Dilution Type"),
+		Empty()
+		,
+		Column(dt, colName) << Set Name("Dilution Type")
+	);
+	If(Column(dt,"Dilution Type") << get data type == "Numeric",
+		Column(dt,"Dilution Type") << Set Name("Dilution Type Orig");
+		dt << New Column("Dilution Type", Character(10),
+			Formula(
+				Match( :Name( "Dilution Type Orig" ), 0, "NONE", 1, "MANUAL", 2, "AUTOMATIC" )
+			)
+		);
+		dt:Dilution Type << Delete formula;
+		,
+		Empty()
+	);
+);
+
+funct34 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Patient ID");
+);
+
+funct35 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Customer Name");
+);
+
+funct36 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Curve Version");
+);
+
+funct37 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Sample Type");
+);
+
+funct38 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("Sample Cup");
+);
+
+funct39 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("IVLS Serial Number");
+);
+
+funct40 = Function({dtName,colName},{default local},
+	dt = dtName;
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	dtColList = dt << get column names(string);
+	
+	If(
+		contains(dtColList,"Wet Cadence Interrupted"),
+		Empty()
+		,
+		dt << New Column("Wet Cadence Interrupted", Character(10),
+			Formula(
+				Match(Uppercase(Char(parseColName)),
+					"TRUE", "true",
+					"FALSE", "false",
+					"Y", "true",
+					"N", "false",
+					Char(parseColName)
+				)
+			)
+		);
+		Column(dt,"Wet Cadence Interrupted") << Delete Formula;
+		Column(dt, colName) << set name("Wet Cadence Orig");
+	)
+);
+
+funct41 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("ReflDens_avg_2");
+);
+
+funct42 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	Column(dt, colName) << Set Name("ReflDens_avg_3");
+);
+
+funct43 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	If(Column(dt, colName) << get data type == "Character",
+		Column(dt, colName) << set name("WL2 Orig");
+		dt << New Column("Wavelength_2", Numeric, Ordinal,
+			Formula(
+				If(
+					Is Missing( :"WL2 Orig"n ) | :"WL2 Orig"n == "0" |
+					Is Missing( Num( Word( 2, :"WL2 Orig"n, "_" ) ) ),
+					0,
+					Num( Word( 2, :"WL2 Orig"n, "_" ) )
+				)
+			)
+		);
+		dt:"Wavelength_2"n << delete formula;
+		,
+		Column(dt, colName) << Set Modeling Type("Ordinal");
+		Column(dt, colName) << Set Name("Wavelength_2");
+	);
+	
+);
+
+funct44 = Function({dtName,colName},{dtName,dt,colName},
+	dt = dtName;
+
+	If(Column(dt, colName) << get data type == "Character",
+		Column(dt, colName) << set name("WL3 Orig");
+		dt << New Column("Wavelength_3", Numeric, Ordinal,
+			Formula(
+				If(
+					Is Missing( :"WL3 Orig"n ) | :"WL3 Orig"n == "0" |
+					Is Missing( Num( Word( 2, :"WL3 Orig"n, "_" ) ) ),
+					0,
+					Num( Word( 2, :"WL3 Orig"n, "_" ) )
+				)
+			)
+		);
+		dt:"Wavelength_3"n << delete formula;
+		,
+		Column(dt, colName) << Set Modeling Type("Ordinal");
+		Column(dt, colName) << Set Name("Wavelength_3");
+	);
+);
+
+funct45 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Dilution Factor")
+);
+
+funct46 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Sample id")
+);
+
+funct47 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Barcode")
+);
+
+funct48 = Function({dtName,colName},{dtName,colName},
+	/*
+	Prioritization is because both :2 and :5 can come from same source, :2 gets populated earlier
+	and results in fewer missing values (like if something hapened in the run). The other named
+	options do not occur in the same data sources so do not need prioritization
+	*/
+	colList = dtName << get column names( string );
+
+	If( colName == "Sublot :2",
+		Column(dtName, colName) << Set Data Type("Numeric");
+		Column(dtName, colName) << Set Modeling Type("Ordinal");
+		Column(dtName, colName) << Set Name("Slide Sublot")
+	,
+		colName != "Sublot :2" & Contains(colList, "Sublot :2"),
+		Empty()
+	,
+		Column(dtName, colName) << Set Data Type("Numeric");
+		Column(dtName, colName) << Set Modeling Type("Ordinal");	
+		Column(dtName, colName) << Set Name("Slide Sublot")
+	);
+
+);
+
+funct49 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Timeseries Pt")
+);
+
+funct50 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("False Light")
+);
+
+funct51 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Assay Gain")
+);
+
+funct52 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Assay Offset")
+);
+
+funct53 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Scalar")
+);
+
+funct54 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Dry Read Start")
+);
+
+funct55 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Dry Read End")
+);
+
+funct56 = Function({dtName},{dtName},
+	/* no colname input as this function handles all the slide mfg values at once*/
+	colList = {};
+	For(i=1,i<=ncol(dtName),i++,
+		colname = Column(dtName,i)<<get name;
+		If(Contains(colname,"slide_manufacturing_run_data") | colname == "assay_calibration_source" | colname == "assay_calibration_timestamp",
+			insertinto(colList,colname);
+		)
+	);
+	//show(colList);
+
+	slideMfgNameArray = Associative Array(
+		{
+			{"slide_manufacturing_run_data.at", "Slide Mfg Run Start"},
+			{"slide_manufacturing_run_data.current_state", "Slide Mfg Current State"},
+			{"slide_manufacturing_run_data.instrument_id", "Slide Mfg Inst ID"},
+			{"slide_manufacturing_run_data.ivls_event", "Slide Mfg IVLS Event"},
+			{"slide_manufacturing_run_data.loop_lot", "Slide Mfg Loop Lot"},
+			{"slide_manufacturing_run_data.operator", "Slide Mfg Operator"},
+			{"slide_manufacturing_run_data.package_version", "Slide Mfg Pkg Version"},
+			{"slide_manufacturing_run_data.panel_dose", "Slide Mfg Dose"},
+			{"slide_manufacturing_run_data.panel_lot", "Slide Mfg Panel Lot"},
+			{"slide_manufacturing_run_data.run_number", "Slide Mfg Run Number"},
+			{"slide_manufacturing_run_data.slide_mfg_script_name", "Slide Mfg Script Name"},
+			{"slide_manufacturing_run_data.software_version", "Slide Mfg Software Version"},
+			{"assay_calibration_source", "Assay Calibration Source"},
+			{"assay_calibration_timestamp", "Assay Calibration DateTime"}
+		}
+	);
+
+	//currentKey = slideMfgNameArray << First;
+	For(i=1,i<=nitems(colList),i++,
+		tempArray = Associative Array( Column(dtName, colList[i]) << get as matrix );
+		If(
+			nitems(tempArray) == 1 & (IsMissing(tempArray << first) | tempArray << first == ""),
+			dtName << delete columns(colList[i]);
+			,
+			Try(Column(dtName, colList[i]) << set name(slideMfgNameArray[colList[i]]))
+		);
+	);
+);
+
+funct57 = Function({dtName,colName},{dtName,colName},
+
+	Column(dtName, colName) << Set Name("Assay Elapsed Time")
+);
+
+updateColNames = Function({dtName},{default local},
+	columnArray = Associative Array(dtName << Get Column Names(string));
+	possArray = possColNames();
+	assayCodes = assayNums(); //populates code conversions if needed later
+
+	currentKey = columnArray << First;
+	//Renames columns and adds duplicates/formula cols if necessary
+	For(i=1,i<=nitems(columnArray),i++,
+		Try(
+			functionCall = possArray[currentKey][1];
+		,
+			functionCall = 0
+		);
+		//show(functionCall);
+		Match(functionCall,
+			0, Empty()
+			,
+			1, funct1_5(dtName,currentKey)
+			,
+			2, funct2_7_15(dtName,currentKey)
+			,
+			3, funct3(dtName,currentKey)
+			,
+			4, funct4_21(dtName,currentKey,"y")
+			,
+			5, funct1_5(dtName,currentKey,"y")
+			,
+			6, funct6_8(dtName,currentKey)
+			,
+			7, funct2_7_15(dtName,currentKey,"n","y")
+			,
+			8, funct6_8(dtName,currentKey,"y")
+			,
+			9, funct9_13(dtName,currentKey,"y")
+			,
+			10, funct10(dtName,currentKey)
+			,
+			11, funct11(dtName,currentKey)
+			,
+			12, funct12(dtName,currentKey)
+			,
+			13, funct9_13(dtName,currentKey)
+			,
+			14, funct14(dtName,currentKey)
+			,
+			15, funct2_7_15(dtName,currentKey,"y","n")
+			,
+			16, funct16(dtName,currentKey)
+			,
+			17, funct17(dtName,currentKey)
+			,
+			18, funct18(dtName,currentKey)
+			,
+			19, funct19(dtName,currentKey)
+			,
+			20, funct20(dtName,currentKey)
+			,
+			21, funct4_21(dtName,currentKey)
+			,
+			22, funct22(dtName,currentKey)
+			,
+			23, funct23(dtName,currentKey)
+			,
+			24, funct24(dtName,currentKey)
+			,
+			25, funct25(dtName,currentKey)
+			,
+			26, funct26(dtName,currentKey)
+			,
+			27, funct27(dtName,currentKey)
+			,
+			28, funct28(dtName,currentKey)
+			,
+			29, funct29(dtName,currentKey)
+			,
+			30, funct30(dtName,currentKey)
+			,
+			31, funct31(dtName,currentKey)
+			,
+			32, funct32(dtName,currentKey)
+			,
+			33, funct33(dtName,currentKey)
+			,
+			34, funct34(dtName,currentKey)
+			,
+			35, funct35(dtName,currentKey)
+			,
+			36, funct36(dtName,currentKey)
+			,
+			37, funct37(dtName,currentKey)
+			,
+			38, funct38(dtName,currentKey)
+			,
+			39, funct39(dtName,currentKey)
+			,
+			40, funct40(dtName,currentKey)
+			,
+			41, funct41(dtName,currentKey)
+			,
+			42, funct42(dtName,currentKey)
+			,
+			43, funct43(dtName,currentKey)
+			,
+			44, funct44(dtName,currentKey)
+			,
+			45, funct45(dtName,currentKey)
+			,
+			46, funct46(dtName,currentKey)
+			,
+			47, funct47(dtName,currentKey)
+			,
+			48, funct48(dtName,currentKey)
+			,
+			49, funct49(dtName,currentKey)
+			,
+			50, funct50(dtName,currentKey)
+			,
+			51, funct51(dtName,currentKey)
+			,
+			52, funct52(dtName,currentKey)
+			,
+			53, funct53(dtName,currentKey)
+			,
+			54, funct54(dtName,currentKey)
+			,
+			55, funct55(dtName,currentKey)
+			// 56 called outside of this loop
+			,
+			57, funct57(dtName,currentKey)
+		);
+
+		currentKey = columnArray << Next(currentKey);
+	);
+
+	funct56(dtName)
+
+);
+
+rdwlIdent = Function({dtName},{default local},
+	colNames = dtName << get column names(string);
+	rdCols = {};
+	wlCols = {};
+	For(i=1,i<=nitems(colNames),i++,
+		If(
+			colNames[i] == "ReflDens_avg" | colNames[i]  == "ReflDens_avg_2" | colNames[i]  == "ReflDens_avg_3",
+			Summarize(dtName, a = Mean(AsColumn(colNames[i])));
+			If(a > 0,
+				insertinto(rdCols,colNames[i])
+				,
+				Empty()
+			)
+			,
+			colNames[i] == "Wavelength" | colNames[i]  == "Wavelength_2" | colNames[i]  == "Wavelength_3",
+			Summarize(dtName, b = Mean(AsColumn(colNames[i])));
+			If(b > 0,
+				insertinto(wlCols,colNames[i])
+				,
+				Empty()
+			)
+		);
+	);
+	SortListInto(rdCols);
+	SortListInto(wlCols);
+	
+	Return(rdCols,wlCols);
+);
+
+rdwlPairsCheck = Function({rdList,wlList},{default local},
+	correctPairs = {"ReflDens_avgWavelength","ReflDens_avg_2Wavelength_2","ReflDens_avg_3Wavelength_3"};
+
+	If(nitems(rdList) == 1 & nitems(wlList) == 1,
+		Print("Only one RD and Wavelength Column");
+		Return(0)
+		,
+		If(rdList == {} & wlList == {},
+			Print("No RD or WL Columns Present");
+			Return(0)
+			,
+			nitems(rdList) == nitems(wlList),
+			For(i=1,i<=nitems(rdList),i++,
+				If(
+					Contains(correctPairs,rdList[i]||wlList[i]) > 0,
+					Empty()
+					,
+					Print("RD and WL columns not present in matching pairs");
+					Return(0)
+				)
+			);
+			Return(1);
+			,
+			Print("Differing number of RD and WL Columns");
+			Return(0);
+		)
+	)
+);
+
+wlStack = Function({dtName,rdList,wlList},{default local},
+	//dtName = dt;
+	//rdList = wl_rdCols[1];
+	//wlList = wl_rdCols[2];
+	rdwlCols = rdList || wlList;
+
+	dtName << move selected columns(rdwlCols,to first);
+	origName = dtName << get name;
+	dtStack = dtName << Stack(
+		columns(
+			Eval(EvalList(rdList)),
+			Eval(EvalList(wlList))
+		),
+		Source Label Column( "Label" ),
+		Stacked Data Column( "Data" ),
+		//Move Columns( After( "TimeFromSampleDispense:sec" ) ), Only works in JMP 16+
+		Number of Series( 2 ),
+		Contiguous
+	);
+	dtName << close window;
+	dtStack << set name(origName);
+	
+	dtStack:Data << Set Name("ReflDens_avg");
+	dtStack:Data 2 << set Name("Wavelength");
+	dtStack:Wavelength << set modeling type("Ordinal");
+	dtStack << Move Selected Columns({"ReflDens_avg","Wavelength"},After("TimeFromSampleDispense:sec"));//added in lieu of line in stack command for JMP16+
+	
+	dtStack << delete columns("Label","Label 2");
+	
+	dtStack << Select Where(IsMissing(:Wavelength) & :Chem Type != "ALB/GLOB" & :Chem Type != "BUN/CREA" & :Chem Type != "GLOB" & :Chem Type != "Na/K" & :Chem Type != "OSM CALC") << delete rows;
+	
+	dtStack << Select Where(:"ReflDens_avg"n == 0) << delete rows;
+
+	Return(dtStack);
+);
+
+uniqueIDs = Function({dtName,method},{default local},
+
+	//Sort is just for the base sorting array and gives one column
+	//IDs will give final id cols: uniqueRun, uniqueAssay, and uniqueCurve ID colummns
+	sortIDarray = Associative Array(
+		{
+			{"Customer SAP",1},
+			{"IVLS Serial Number",1},
+			{"IVLS Run ID",1},
+			{"Instrument ID",1},
+			{"Instrument Run ID",1},
+			{"Slide Load Order",1},
+			{"Segment",1},
+			{"Chem Type",1},
+			{"DateTime",1},
+			{"Date",1},
+			{"Time",1},
+			{"Wavelength",1}
+		}
+	);
+	sortRunIDlist = {
+		"Customer SAP",
+		"IVLS Serial Number",
+		"IVLS Run ID",
+		"Instrument ID",
+		"Instrument Run ID",
+		"Sample id"
+	};
+	runIDarray = AssociativeArray(
+		{
+			{"Customer SAP",1},
+			{"Instrument ID",1},
+			{"IVLS Serial Number",1},
+			{"Instrument Run ID",1},
+			{"IVLS Run ID",1},
+			{"Time",1}
+		}
+	);
+	assayIDarray = Associative Array(
+		{
+			{"Segment",1},
+			{"Slide Load Order",1},
+			{"Chem Type",1}
+		}
+	);
+	curveIDarray = Associative Array(
+		{
+			{"Wavelength",1}
+		}
+	);
+	newColumnArray = Associative Array(dtName << Get Column Names(string));
+
+	Match(method,
+		"Sort",
+		currentKey = newColumnArray << First;
+		uniqueSortList = {};
+		uRunList = {};
+		uRunCols = {};
+		For(i=1,i<=nitems(newColumnArray),i++,
+			Try(
+				uniqueSortCol = sortIDarray[currentKey];
+				//show(uniqueSortCol);
+				uniqueSortColName = currentKey;
+				//show(uniqueRunColName);
+				If( uniqueSortColName == "DateTime" | uniqueSortColName == "Date" | uniqueSortColName == "Time",
+					If(Column(dtName,uniqueSortColName)<<get data type == "Numeric",
+						//If any of the dates are numeric, this will force a full 3 decimals in the overal time for proper sorting
+						insertinto(uniqueSortList,
+							Parse(
+								EvalInsert(
+									"If(
+								0 < Length( Word( 2, Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ), \!".\!" ) ) < 3,
+									zeros = Repeat(\!"0\!",	3 - Length( Word( 2, Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ), \!".\!" ) )	);
+									Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ) || zeros;
+									,
+								Length( Word( 2, Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ), \!".\!" ) ) == 0,
+									Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ) || \!".000\!",
+								Length( Word( 2, Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) ), \!".\!" ) ) == 3,
+									Char( Round( Num( :Name(\!"^uniqueSortColName^\!") ), 3 ) )
+									)"
+								)
+							)
+						)
+						,
+						insertinto(uniqueSortList,Parse(EvalInsert("Char(:Name(\!"^uniqueSortColName^\!"))")))
+					)
+					,
+					insertinto(uniqueSortList,Parse(EvalInsert("Char(:Name(\!"^uniqueSortColName^\!"))")))
+				)
+			);		
+			currentKey = newColumnArray << Next(currentKey);
+		);
+		For(i=1,i<=nitems(sortRunIDlist),i++,
+			//Try(
+			//	uniqueSortCol = sortIDarray[currentKey];
+			If(newColumnArray[sortRunIDlist[i]] == 1,
+				uniqueRunColName = sortRunIDlist[i];
+				//show(uniqueAssayColName);
+				If(Column(dtName,uniqueRunColName)<<get data type == "Numeric",
+					insertinto(uRunList,Parse(EvalInsert("Char(Round(:Name(\!"^uniqueRunColName^\!"),0))")));
+					insertinto(uRunCols,uniqueRunColName);
+					,
+					insertinto(uRunList,Parse(EvalInsert("Char(:Name(\!"^uniqueRunColName^\!"))")));
+					insertinto(uRunCols,uniqueRunColName);
+				)
+			);		
+			//currentKey = newColumnArray << Next(currentKey);
+		);
+		Try(
+			Summarize(dtName, uRunValues = By(uRunCols[1]));
+			,
+			uRunValues = {}
+		);
+		//show(uniqueSortList,uRunList,uRunCols,a);
+		Try(
+			IsScriptable(Column(dtName,"uniqueSort"))
+			,
+			If(nitems(uniqueSortList) == 0,
+				Print("No columns for sorting");
+				dtName << New Column("uniqueSort",Character(10),
+					<< set each value("1")
+				);
+				,
+				If(Contains(uniqueSortList, Expr(Char(:Wavelength))),
+					pos = contains(uniqueSortList,Expr(Char(:Wavelength)));
+					removefrom(uniqueSortList,pos);
+					insertinto(uniqueSortList,Expr(Char(:Wavelength)),1);
+					dtName << New Column("uniqueSort",Character(10),
+						Formula( 
+							ConcatItems(uniqueSortList,"_")
+						)
+					);
+					,
+					dtName << New Column("uniqueSort",Character(10),
+						Formula( 
+							ConcatItems(uniqueSortList,"_")
+						)
+					);
+				)
+			);
+			If(nitems(uRunList)>1,
+				dtName << New Column("uniqueRun",Character(10),
+					Formula( 
+						ConcatItems(uRunList,"_")
+					)
+				);
+				,
+				nitems(uRunList) == 1 & nitems(uRunValues) > 1,
+				dtName << New Column("uniqueRun",Character(10),
+					Formula( 
+						ConcatItems(uRunList,"_")
+					)
+				);
+				,
+				dtName << New Column("uniqueRun",Character(10),
+					<< Set Each Value("1")
+				);
+			);
+			Try(Column(dtName,"uniqueSort") << Delete Formula);
+			Try(Column(dtName,"uniqueRun") << Delete Formula);
+		)
+		,
+		"IDs",
+		currentKey = newColumnArray << First;
+		uniqueRunList = {};
+		For(i=1,i<=nitems(newColumnArray),i++,
+			Try(
+				uniqueRunCol = runIDarray[currentKey];
+				uniqueRunColName = currentKey;
+				//show(uniqueRunColName);
+				insertinto(uniqueRunList,Parse(EvalInsert("Char(:Name(\!"^uniqueRunColName^\!"))")))
+			);		
+			currentKey = newColumnArray << Next(currentKey);
+		);
+		currentKey = newColumnArray << First;
+		uniqueAssayList = uniqueRunList;
+		For(i=1,i<=nitems(newColumnArray),i++,
+			Try(
+				uniqueAssayCol = assayIDarray[currentKey];
+				uniqueAssayColName = currentKey;
+				//show(uniqueAssayColName);
+				insertinto(uniqueAssayList,Parse(EvalInsert("Char(:Name(\!"^uniqueAssayColName^\!"))")))
+			);		
+			currentKey = newColumnArray << Next(currentKey);
+		);
+		currentKey = newColumnArray << First;
+		uniqueCurveList = uniqueAssayList;
+		For(i=1,i<=nitems(newColumnArray),i++,
+			Try(
+				uniqueCurveCol = curveIDarray[currentKey];
+				uniqueCurveColName = currentKey;
+				//show(uniqueAssayColName);
+				insertinto(uniqueCurveList,Parse(EvalInsert("Char(:Name(\!"^uniqueCurveColName^\!"))")))
+			);		
+			currentKey = newColumnArray << Next(currentKey);
+		);
+		//show(uniqueRunList, uniqueAssayList, uniqueCurveList);
+		Try(
+			IsScriptable(Column(dtName,"uniqueRunID"))
+			,
+			dtName << New Column("uniqueRunID",Character(10),
+				Formula(
+					ConcatItems(uniqueRunList,"_")
+				)
+			);
+			Try(Column(dtName,"uniqueRunID") << Delete Formula);
+		);
+		Try(
+			IsScriptable(Column(dtName,"uniqueAssayID"))
+			,
+			dtName << New Column("uniqueAssayID",Character(10),
+				Formula( 
+					ConcatItems(uniqueAssayList,"_")
+				)
+			);
+			Try(Column(dtName,"uniqueAssayID") << Delete Formula);
+		);
+		Try(
+			IsScriptable(Column(dtName,"uniqueCurveID"))
+			,
+			dtName << New Column("uniqueCurveID",Character(10),
+				Formula(
+					ConcatItems(uniqueCurveList,"_")
+				)
+			);
+			Try(Column(dtName,"uniqueCurveID") << Delete Formula);
+		);
+	);
+);
+
+lotExtractions = Function({dtName},{default local},
+	colList = dtName << get column names( string );
+	presenceList = {};
+	If(Contains(colList,"Barcode"), insertinto(presenceList,"1"),insertinto(presenceList,"0"));
+	If(Contains(colList,"Slide Lot"), insertinto(presenceList,"1"),insertinto(presenceList,"0"));
+	If(Contains(colList,"Slide Sublot"), insertinto(presenceList,"1"),insertinto(presenceList,"0"));
+	presenceChar = ConcatItems(presenceList,"");
+
+	// There are 8 ways to have 3 columns (Barcode, Slide Lot, Slide Sublot) present in a table
+	// This If statment covers each of them to "decide" what to do based on what is present
+	If(
+		presenceChar == "111",
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					Formula(
+						Num(Substr(Char(:"Barcode"n),5,2))
+					)
+				);
+				dtName:"Foil"n << delete formula;
+			);
+		,
+		presenceChar == "011",
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					<< set each value(-99)
+				);
+			);
+		,
+		presenceChar == "000",
+			dtName << New Column("Slide Lot", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+			dtName << New Column("Slide Sublot", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+			dtName << New Column("Foil", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+		,
+		presenceChar == "100",
+			dtName << New Column("Slide Lot", Numeric, Ordinal,
+				Formula(
+					Num(Left(Char(:"Barcode"n),4))
+				)
+			);
+			dtName << New Column("Slide Sublot", Numeric, Ordinal,
+				Formula(
+					Num(Substr(Char(:"Barcode"n),7,2))
+				)
+			);
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					Formula(
+						Num(Substr(Char(:"Barcode"n),5,2))
+					)
+				);
+				dtName:"Foil"n << delete formula;
+			);
+			dtName:"Slide Lot"n << delete formula;
+			dtName:"Slide Sublot"n << delete formula;
+		,
+		presenceChar == "010",
+			dtName << New Column("Slide Sublot", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					<< Set Each Value(-99)
+				);
+			);
+		,
+		presenceChar == "001",
+			dtName << New Column("Slide Lot", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+			dtName << New Column("Foil", Numeric, Ordinal,
+				<< Set Each Value(-99)
+			);
+		,
+		presenceChar == "110",
+			dtName << New Column("Slide Sublot", Numeric, Ordinal,
+				Formula(
+					Num(Substr(Char(:"Barcode"n),7,2))
+				)
+			);
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					Formula(
+						Num(Substr(Char(:"Barcode"n),5,2))
+					)
+				);
+				dtName:"Foil"n << delete formula;
+			);
+			dtName:"Slide Sublot"n << delete formula;
+		,
+		presenceChar == "101",
+			dtName << New Column("Slide Lot", Numeric, Ordinal,
+				Formula(
+					Num(Left(Char(:"Barcode"n),4))
+				)
+			);
+			Try(IsScriptable(dtName:"Foil"n)
+				,
+				dtName << New Column("Foil", Numeric, Ordinal,
+					Formula(
+						Num(Substr(Char(:"Barcode"n),5,2))
+					)
+				);
+				dtName:"Foil"n << delete formula;
+			);
+			dtName:"Slide Lot"n << delete formula;
+	);
+);
+
+dateTimeModification = Function({dtName,instMethod},{default local},
+
+	dt = dtName;
+	uniqueIDs(dt,"Sort"); // creates sorting column, uniqueSort
+	
+	//Creates Date and Time formula depending on data format
+	Match(instMethod,
+		"None", Empty()
+		,
+		"OPS", dt<<New Column("Date",Format("m/d/y"),
+			Formula(
+				If(
+					IsMissing(Lag( :Name( "TimeFromSampleDispense:sec" ), 1 )) | (:Name( "TimeFromSampleDispense:sec" ) <= 0 & Lag( :Name( "TimeFromSampleDispense:sec" ), 1 ) >= 0),
+						:Name("Date/time"),
+					Lag( :Date, 1 )
+				)
+			)
+		);
+		dt<<New Column("Time",Format("h:m:s"),
+			Formula(
+				If(
+					IsMissing(Lag( :Name( "TimeFromSampleDispense:sec" ), 1 )) | (:Name( "TimeFromSampleDispense:sec" ) <= 0 & Lag( :Name( "TimeFromSampleDispense:sec" ), 1 ) >= 0),
+						:Name("Date/time"),
+					Lag( :Time, 1 )
+				)
+			)
+		);
+		Column(dt,"Date") << deleteformula;
+		Column(dt,"Time") << deleteformula;
+		,
+		"ISL",
+		Try(
+			IsScriptable(Column(dt,"Date-orig"))
+			,
+			dt<<Sort(
+				//By( :Instrument ID, :Date, :Time, :Wavelength, :Chem Type, :Segment,:Name( "TimeFromSampleDispense:sec" ) ),
+				//Order( Ascending, Ascending, Ascending, Ascending, Ascending, Ascending, Ascending ),
+				By(:Name("uniqueRun"),:Name("uniqueSort"),:Name("TimeFromSampleDispense:sec")),
+				Order(Ascending,Ascending),
+				Replace Table
+			);
+			dt<<New Column("DateTime",Format("y/m/d h:m:s"),
+				Formula(
+					Date DMY(
+						Num( Word( 3, :Date ) ),
+						Match( Word( 2, :Date ),
+							"Jan", 1,
+							"Feb", 2,
+							"Mar", 3,
+							"Apr", 4,
+							"May", 5,
+							"Jun", 6,
+							"Jul", 7,
+							"Aug", 8,
+							"Sep", 9,
+							"Oct", 10,
+							"Nov", 11,
+							"Dec", 12
+						),
+						Num( Word( 4, :Date ) )
+					) + :Time
+				)
+			);
+			Column(dt,"DateTime")<<DeleteFormula();
+			Column(dt,"Date")<<SetName("Date-orig");
+			Column(dt,"Time")<<SetName("Time-orig");
+			dt<<New Column("Date",Format("m/d/y"),Formula(:Name("DateTime")));
+			dt<<New Column("Time",Format("h:m:s"),Formula(:Name("DateTime")));
+			Column(dt,"Date") << deleteformula;
+			Column(dt,"Time") << deleteformula;
+		);
+		,
+		"sysSW",
+		Try(
+			IsScriptable(Column(dt,"Date"))
+			,
+			Try(
+				IsScriptable(Column(dt,"TimeFromSampleDispense:sec"));
+				dt<<Sort(
+					//By( :Instrument ID, :Wavelength, :Chem Type, :Segment,:DateTime,:Name( "TimeFromSampleDispense:sec" ) ),
+					//Order( Ascending, Ascending, Ascending, Ascending, Ascending, Ascending, Ascending ),
+					By(:Name("uniqueRun"),:Name("uniqueSort"),:Name("TimeFromSampleDispense:sec")),
+					Order(Ascending,Ascending),
+					Replace Table
+				);
+				Try(Column(dt,"Time")<<SetName("GMTime"));
+				wait(0.1); //added 'cause was getting error in date formula below when testing for some reason
+
+				//update as now new parser for CDx will present a character column which will not work with the below if
+				//use num() of the 1st row of column to split into character that can be eaily changed to the one that needs
+				//more work
+				If(dt:"DateTime"n << get data type == "Character" & !ismissing(Num(dt:"DateTime"n[1])),
+					dt:"DateTime"n << set data type(numeric) << set modeling type(continuous) << format("ddMonyyyy h:m:s");
+					,
+					dt:"DateTime"n << get data type == "Character" & ismissing(Num(dt:"DateTime"n[1])),
+					dt:"DateTime"n << set name("DateTime-orig");
+					dt << New Column("DateTime",Format("ddMonyyyy h:m:s"),
+						Formula(
+							Num(Substitute( Word( 1, Substitute( :"DateTime-orig"n, Word( 2, :"DateTime-orig"n ), "" ), "T" ), ".", "-" ) || "T" ||
+							Word( 2, Substitute( :"DateTime-orig"n, Word( 2, :"DateTime-orig"n ), "" ), "T" ))
+						)
+					);
+					dt << New Column("Time Zone Adjustment(h)",Numeric,Ordinal,
+						Formula(
+							Num( Word( 2, :"DateTime-orig"n ) ) / 100
+						)
+					);
+					dt:"DateTime"n << delete formula;
+					dt:"Time Zone Adjustment(h)"n << delete formula;
+					,
+					Empty()
+				);
+				dt<<New Column("Date",Format("m/d/y"),
+					Formula(
+						If(
+							IsMissing(Lag( :Name( "uniqueRun" ), 1 )) | Lag( :Name( "uniqueRun" ), 1 ) != :Name( "uniqueRun" ),
+								:DateTime,
+							Lag( :Date, 1 )
+						)
+					)
+				);
+				dt<<New Column("Time",Format("h:m:s"),
+					Formula(
+						If(
+							IsMissing(Lag( :Name( "uniqueRun" ), 1 )) | Lag( :Name( "uniqueRun" ), 1 ) != :Name( "uniqueRun" ),
+								:DateTime,
+							Lag( :Time, 1 )
+						)
+					)
+				);
+				Column(dt,"Date") << deleteformula;
+				Column(dt,"Time") << deleteformula;
+				,
+				Try(Column(dt,"Time")<<SetName("GMTime"));
+				dt<<New Column("Date",Format("m/d/y"),
+					Formula(
+						:DateTime
+					)
+				);
+				dt<<New Column("Time",Format("h:m:s"),
+					Formula(
+						:DateTime
+					)
+				);
+				Column(dt,"Date") << deleteformula;
+				Column(dt,"Time") << deleteformula;
+			)
+		)
+	);
+		
+	//adds ordinal short date column
+	Try(
+		IsScriptable(Column(dt,"Date"));
+		Try(
+			IsScriptable(Column(dt,"Char_Date"));
+			Empty()
+			,
+			If(dt:Name("Date") << get data type() == "Numeric",
+				dt << New Column("Char_Date", Character(10),
+					Formula(
+						Short Date(:Name("Date"))
+					)
+				);
+				dt:Name("Char_Date") << delete formula
+			)
+		)
+	);
+
+	Try(dt << Delete Columns("uniqueSort")); //no longer needed
+	Try(dt << Delete Columns("uniqueRun")); //no longer needed
+
+);
+
+///////////////////////
+//                   //
+//  Main Function    //
+//                   //
+///////////////////////
+
+tablePrep = Function({dtname,knownChemType=.},{default local},
+	//dt = currentdatatable();
+	dt = dtname;
+	assayCodes = assayNums();
+	updateColNames(dt);
+
+	lotExtractions(dtName);
+
+	identList = rdwlIdent(dt);
+
+	checkPass = rdwlPairsCheck(identList[1],identList[2]);
+
+	if(checkPass == 1,
+		dt = wlStack(dt,identList[1],identList[2]) // since new dt made with the stack, reassigns 'new' datatable to original variable
+	);
+		
+	Try(
+		IsScriptable(Column(dt, "Inst Type"));
+		Summarize(dt,a=by(:Inst Type));
+		//show(a);
+		While(Contains(a,".")>0,removefrom(a,Contains(a,".")));
+		inst = Match(nitems(a),
+			1, a[1]
+			,
+			2, "Both"
+		);
+		,
+		Try(
+			IsScriptable(Column(dt,"Instrument ID"));
+			dt << New Column("Inst Type",
+				Formula(
+					If(Contains(:Instrument ID,"CTDX") > 0, "CatDx"
+					,
+						Contains(:Instrument ID, "CAT1") > 0, "CatOne"
+					)
+				)
+			);
+			Try(Column(dt, "Inst Type") << Delete formula);
+			Summarize(dt,a=by(:Inst Type));
+			//show(a);
+			While(Contains(a,".")>0,removefrom(a,Contains(a,".")));
+			inst = Match(nitems(a),
+				1, a[1]
+				,
+				2, "Both"
+			);
+			,
+			inst = "None"
+		)			
+	);	
+
+	instMethod = Try(
+		Is Scriptable( Column( dt, "Date/Time" ) );
+		"OPS";
+		,
+		If( inst == "CatDx",
+			Try(
+				Is Scriptable( Column( dt, "DateTime" ) );
+				"sysSW";
+				,
+				"ISL"
+			)
+			,
+			inst == "None", "None"
+			,
+			"sysSW"
+		)
+	);
+
+	If(instMethod == "None", Empty()
+		,
+		
+		/////DO I NEED SEGMENT??
+		//No longer needed to support further sorting/unique identifiers but included because it can help stratify data better
+	
+		Try(
+			IsScriptable(Column(dt,"Segment"));
+			,
+			Try(
+				IsScriptable(Column(dt,"Assay"));
+				Try(
+					IsScriptable(Column(dt,"IVLS Run ID"));
+					dt<<NewColumn("Segment",
+						Formula(
+							If( Is Missing( Lag( :IVLS Run ID, 1 ) ) | Lag( :IVLS Run ID, 1 ) != :IVLS Run ID,
+								100,
+								If( :Assay == Lag( :Assay, 1 ),
+									Lag( :Name( "Segment" ), 1 ),
+									Lag( :Name( "Segment" ), 1 ) + 1
+								)
+							)
+						)
+					);
+					Column(dt,"Segment")<<deleteformula;
+					,
+					Try(
+						IsScriptable(Column(dt,"Instrument Run ID"));
+						dt<<NewColumn("Segment",
+							Formula(
+								If( Is Missing( Lag( :Instrument Run ID, 1 ) ) | Lag( :Instrument Run ID, 1 ) != :Instrument Run ID,
+									100,
+									If( :Assay == Lag( :Assay, 1 ),
+										Lag( :Name( "Segment" ), 1 ),
+										Lag( :Name( "Segment" ), 1 ) + 1
+									)
+								)
+							)
+						);
+						Column(dt,"Segment")<<deleteformula;
+					)
+				)
+				,
+				dt << New Column("Segment",Character(10),
+					<< set each value("UNK")
+				);
+			)
+		);
+
+		//adding to support additional unique naming below
+		////DO I NEED LOAD ORDER????
+		//No longer needed to support further sorting/unique identifiers but included because it can help stratify data better
+		Try(
+			IsScriptable(Column(dt,"Slide Load Order"));
+			,
+			Try(
+				IsScriptable(Column(dt,"Assay"));
+				Try(
+					IsScriptable(Column(dt,"IVLS Run ID"));
+					dt<<NewColumn("Slide Load Order",
+						Formula(
+							If( Is Missing( Lag( :IVLS Run ID, 1 ) ) | Lag( :IVLS Run ID, 1 ) != :IVLS Run ID,
+								100,
+								If( :Assay == Lag( :Assay, 1 ),
+									Lag( :Name( "Slide Load Order" ), 1 ),
+									Lag( :Name( "Slide Load Order" ), 1 ) + 1
+								)
+							)
+						)
+					);
+					Column(dt,"Slide Load Order")<<deleteformula;
+					,
+					Try(
+						IsScriptable(Column(dt,"Instrument Run ID"));
+						dt<<NewColumn("Slide Load Order",
+							Formula(
+								If( Is Missing( Lag( :Instrument Run ID, 1 ) ) | Lag( :Instrument Run ID, 1 ) != :Instrument Run ID,
+									100,
+									If( :Assay == Lag( :Assay, 1 ),
+										Lag( :Name( "Slide Load Order" ), 1 ),
+										Lag( :Name( "Slide Load Order" ), 1 ) + 1
+									)
+								)
+							)
+						);
+						Column(dt,"Slide Load Order")<<deleteformula;
+					)
+				)
+				,
+				dt << New Column("Slide Load Order",Character(10),
+					<< set each value("UNK")
+				);
+			)
+		);
+	/*	////I DON'T NEED WAVELENGTH
+		Try(
+			IsScriptable(Column(dt,"Wavelength"));
+			,
+			dt << New Column("Wavelength",Character(10),
+				<< set each value("null")
+			);
+		);
+	*/
+		Try(
+			IsScriptable(Column(dt,"Chem Type"));
+			Summarize(dt,a=by(:Chem Type));
+			If(nitems(a) == 1 & Uppercase(a[1]) ==  "UNKNOWN",
+				Column(dt,"Chem Type")<<SetFormula(
+					If(IsMissing(knownChemType),"Unknown", knownChemType)
+				);
+				Column(dt,"Chem Type")<<evalformula;
+				Column(dt,"Chem Type")<<deleteformula;
+			)
+			,
+			Try(
+				IsScriptable(Column(dt,"Assay"));
+				dt << New Column("Chem Type",Character(10),
+					Formula(
+						assayCodes[:Assay]
+					)
+				);
+				Try(Column(dt,"Chem Type") << delete formula);
+				,
+				dt << New Column("Chem Type",Character(10),
+					<< set each value("Unknown")
+				);
+			)
+		);
+
+		Try(
+			IsScriptable(Column(dt,"Sample Type Orig"));
+			//If this is present, nothing happens. Assumes the process has already been done
+			,
+			Try(
+				IsScriptable(Column(dt,"Sample Cup Orig"));
+				//If this is present, nothing happens. Assumes the process has already been done
+				,
+				Try(
+					IsScriptable(Column(dt,"Sample Type"));
+					Try(
+						IsScriptable(Column(dt,"Sample Cup"));
+						Column(dt,"Sample Type") << Set Name("Sample Type Orig");
+						Column(dt,"Sample Cup") << Set Name("Sample Cup Orig");
+						dt << New Column("Sample Type",
+							Formula(
+								Match(:Inst Type,
+									"CatDx",
+									Match( :Sample Type Orig,
+										0, "Plasma",
+										1, "Serum",
+										2, "Wholeblood",
+										3, "Fecal",
+										4, "Urine",
+										6, "Other",
+										7, "Unknown",
+										8, "QC VetTrol",
+										9, "QC UPRO",
+										10, "QC PHRB",
+										11, "QC TT4",
+										"Not Listed"
+									)
+								,
+									"CatOne",
+									Match( :Sample Cup Orig,
+										"WBS", "Wholeblood",
+										"Sample Cup", "Unknown"
+									)
+								)
+							)
+						);
+						dt << New Column("Sample Cup",
+							Formula(
+								Match(:Inst Type,
+									"CatDx",
+									Match( :Sample Type Orig,
+										2, "WBS",
+										"Sample Cup"
+									)
+								,
+									"CatOne", :Sample Cup Orig
+								)
+							)
+						);
+						Try(Column(dt,"Sample Type") << Delete formula);
+						Try(Column(dt,"Sample Cup") << Delete formula);
+					,
+						Column(dt,"Sample Type") << Set Name("Sample Type Orig");
+						dt << New Column("Sample Type",
+							Formula(
+								Match( :Sample Type Orig,
+									0, "Plasma",
+									1, "Serum",
+									2, "Wholeblood",
+									3, "Fecal",
+									4, "Urine",
+									6, "Other",
+									7, "Unknown",
+									8, "QC VetTrol",
+									9, "QC UPRO",
+									10, "QC PHRB",
+									11, "QC TT4",
+									"Not Listed"
+								)
+							)
+						);
+						dt << New Column("Sample Cup",
+							Formula(
+								Match( :Sample Type Orig,
+									2, "WBS",
+									"Sample Cup"
+								)
+							)
+						);
+						Try(Column(dt,"Sample Type") << Delete formula);
+						Try(Column(dt,"Sample Cup") << Delete formula);
+					)
+					,
+					Try(
+						IsScriptable(Column(dt,"Sample Cup"));
+						Column(dt,"Sample Cup") << Set Name("Sample Cup Orig");
+						dt << New Column("Sample Type",
+							Formula(
+								Match( :Sample Cup Orig,
+									"WBS", "Wholeblood",
+									"Sample Cup", "Unknown"
+								)
+							)
+						);
+						dt << New Column("Sample Cup",
+							Formula(
+								:Sample Cup Orig
+							)
+						);
+						Try(Column(dt,"Sample Type") << Delete formula);
+						Try(Column(dt,"Sample Cup") << Delete formula);
+						,
+						Empty()
+					)
+				)
+			)
+		);
+	);
+	
+	dateTimeModification(dt,instMethod);
+
+	If(instMethod == "None", Empty()
+		,
+		//adding uniqueRunID and uniqueAssayID and uniqueCurveID to separate uniqueness from runs to slides
+		//removing commonRunID
+		uniqueIDs(dt,"IDs");
+	);
+		
+	//pulling information to determine if file is 'curves' file and Read Point column will be added
+	Try(
+		IsScriptable(Column(dt,"Read Point"));
+		,
+		Try(
+			IsScriptable(Column(dt,"TimeFromSampleDispense:sec"));
+			dt << Sort(By(:Name("uniqueCurveID"),:Name("TimeFromSampleDispense:sec")),Order(Ascending,Ascending),ReplaceTable);
+			Summarize(dt, nRows = count, byVar = by(:Name("uniqueCurveID")));
+			sortNROWS = nRows[Rank(nRows)];
+			roundMedianLocale = round(nitems(nRows)/2,0);
+			dtMedian = sortNROWS[roundMedianLocale];
+			If(dtMedian > 5, 
+				dt << New Column( "Read Point",
+					Formula(
+						If( Row() == 1 | Lag( :Name( "uniqueCurveID" ), 1 ) != :Name( "uniqueCurveID" ),
+								If(:Name("TimeFromSampleDispense:sec") < 0,
+									Index1 = -1;
+									While( Lag( :Name( "TimeFromSampleDispense:sec" ), Index1 ) < 0, Index1-- );
+									readPoint = 0 + index1
+									,
+									readPoint = 0
+								)
+							,
+							Lag( :Read Point, 1 ) + 1
+						)
+					)
+				);
+			);
+			Column(dt,"Read Point") << deleteformula;
+		);
+	);
+
+	/*
+	Add Jesse's function stuff??
+	and MOVE COlumns
+	*/
+	// Flag breakdown. Assumes that if either of the Decoded Flags are present, the functions don't need to run
+	Try(
+		IsScriptable(Column(dt,"CDx_Decoded Flags"))
+	,
+		Try(
+			IsScriptable(Column(dt,"C1_Decoded Flags"))
+		,
+			decode_flag_cols(dt,4);
+			decode_flag_cols(dt,5);
+
+			add_flag_cols(dt);
+			group_all_new_columns(dt);
+		)
+	);
+
+	colsToMove = topColumns();
+	columnArray = Associative Array(dt << Get Column Names(string));
+
+	columnList = {};
+	For(i = 1, i<=nitems(colsToMove),i++,
+
+		If(columnArray[colsToMove[i]] == 1,
+			InsertInto(columnList,colsToMove[i])
+		);
+		//show(colpresent);
+
+		//currentKey = testarray << Next(currentKey);
+	);
+	//show(colsToMove,columnArray,columnList);
+	Try(
+		Eval(
+			EvalExpr(
+				dt << Move Selected Columns(expr(columnList),To First)
+			)
+		)
+	);
+	Try(dt << move column group({"Flag Decoding"},After("Algorithm Status")));
+
+	Return(dt)
+);

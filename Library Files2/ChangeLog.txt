@@ -1,0 +1,218 @@
+// Addin Libraries2 Change log
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//------------------Revision History for script(s)---------------------
+//
+//  21.0.0.0 NClark 021022
+//      -> TablePreparation
+//	    3.7.7 NClark 021022
+//	    	-> added funct56 to handle all the slide_mfg node columns from slide manufacturing json sequence
+//	    	-> added funct57 for results_calculated.elapsed_time
+//  		-> updated poss columns for results_calculated.elapsed_time
+//	    	-> updated updateColNames() for funct57 within loop
+//	    	-> updated updatedColNames() to put funct56 outside loop as it's tied to no specific column name
+//  		-> updated lotExtractions() to accomodate the new way slide lot will come out (only 4 digits from a 10 digit barcode) so Foil can only be calculated from barcode, and will be -99 if it's not there
+//  	3.7.6 NClark 020222
+//	    	-> Updated func23 to work differently when the column is character but empty vs character with all the same value present
+//	    3.7.5 NClark 020222
+//	    	-> Updated func23 to work differently when the column is character but empty vs character with values present
+//	    3.7.4 NClark 020222
+//	    	-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//	    		-> IvlsRunId / 
+//	    	-> Updated the following functions to support the above
+//	    		->	funct23 IVLS Run ID
+//	    			-> force column to be numeric and ordinal as sometimes can come in blank in character form
+//  	3.7.3 NClark 013122
+//  		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//  			->  / Flag 1
+//  			->  / Flag 2
+//  			->  / Flag 3
+//  			-> container_location /
+//  			-> cadence_interrupted_wet / CadenceInterruptedWet
+//  			->  / SubLot
+//  		-> Added functions to rename to the following
+//  			-> funct49, Timeseries Pt 
+//  			-> funct50, False Light
+//  			-> funct51, Assay Gain
+//  			-> funct52, Assay Offset
+//  			-> funct53, Scalar
+//	    		-> funct54, Dry Read Start
+//	    		-> funct55, Dry Read End
+//	    	-> Updated the following functions to support the above
+//	    		->	funct32 DilutionParts (factor)
+//	    			-> works if parts comes in as character
+//	    		->	funct31 flagging
+//	    			-> handles new Flag 'x' parameters from KTS parser and defaults to type 4
+//	    		->	funct40 wet cadence interrupted
+//		    		-> changes the wet cadence column to Wet Candence Orig
+//	    		-> updateColNames()
+//	    			-> added the calls for functions 49-55
+//  	3.7.2 NClark 012022
+//	    	-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//	    		-> reads.rd / 
+//	    		-> species_id / 
+//	    		-> species / 
+//	    		-> reads.norm_refl / 
+//	    	-> Updated following possCols
+//	    		-> normalized reflectance, funct15 -- Changed to reference Name is Normal Reflectance
+//	    		-> species ID/species name, funct16 -- Changed to reference Name is Species ID
+//	    	-> added reversePosColNames() to create reverse poss column list
+//	    		-> Ex. ["Assay" -> {"Assay", "Assay :2".....}, "Species ID" -> ...]
+//	    	-> Updated the following functions to support the above
+//	    		->	funct2_7_15 ReflDens_avg / Normal Reflectance
+//	    			-> set up for RD and NR more cleaning and checks for if columns exist to create columns if needed
+//	    		->	funct16 Species ID / Species Name
+//	    			-> handles both numeric and char columns and if both are output from same source (KTS parsers)
+//	    	-> Moved species name stuff from tablePrep() into funct16
+//  	3.7.1 NClark 011421
+//  		-> deleted history pre 3.0
+//	    	-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//	    		-> at /
+//	    	-> shifted old datetime stuff into it's own function (dateTimeModification) 
+//	    	-> Updated the following functions to support the above
+//	    		-> funct11 -- trimmed down for improved / new datetime function
+//	    		-> uniqueIDs -- added check to do runID column if only one column BUT there are more than one value in it
+//	    		-> dateTimeFunction -- updated to handle new char date from newer parser and extract Time zone adjustment into its own column
+//	    	-> inserted datetime function into slot of tablePrep function
+//  	3.7.0.0 NClark 010721
+//  		-> Added names to possCols to expand name changing abilities and support for new parsers (C1 / CDx and some may have already been in lists)
+//  			-> results.alg_status / Algorithm Status
+//  			-> results.analyte_response / AR
+//	    		-> chem_code / Assay
+//	    		-> barcode / Barcode
+//	    		-> chem_type / Chem Type
+//	    		-> results.computed_conc / Concentration
+//	    		-> curve_version / Curve File Version
+//	    		-> dilution_factor /
+//	    		->  / Dilution Parts
+//	    		-> dilution_type / Dilution Type
+//	    		-> instrument_id / Instrument ID
+//	    		->  / RunID
+//	    		-> software_version / Cat Software Version
+//	    		-> ivls_run_id / 
+//	        	-> patient_name
+//	    		-> results.analyte_conc /
+//	    		->  / Sample id
+//	    		-> segment / Segment
+//	    		-> slide_load_order / Slide Load Order
+//	    		-> slide_lot / Lot
+//	    		-> sublot / Sublot
+//	    		-> reads.time / Timeseries time
+//	    		-> reads.wl / Wavelength
+//	    		->  / Wavelength2
+//	    		->  / Wavelength3
+//	    	-> Updated the following functions to support the above
+//	    		->	funct9_13 Assay
+//	    		->	funct12 Wavelength
+//	    		->	funct29 Algorith Status
+//	    		->	funct43 Wavelength_2
+//	    		->	funct44 Wavelength_3
+//	    		->	funct48 Slide Sublot
+//  20.0.0.0 NClark 060721
+//      -> FunctionLibrary
+//	        2.5.0.0 NClark 061821
+//		    -> Updated the genericInterpMetric to be able to correctly handle 0 as a real start time (from > 0 to >= 0)
+//  19.9.0.0 NClark 060721
+//      -> Utilities
+//	        2.5.0.0 NClark 060721
+//		    -> Updated addinInstallFIles for Catalyst Assay Codes 
+//  19.8.0.0 NClark 051121
+//      -> Flag Decoding
+//	        1.7 NClark 051121
+//		    -> Added flagDecoding namespace to use to ensure default path linked to stored location, not a specific folder
+//		    	which a user may not have
+//		    -> created var for default directory to ensure one is created AND it doesn't potentially collide with one created in tableprep script
+//		    -> updated flag_data_collection function to take a path parameter and updated open command to utilize it
+//		    -> updated decode_flag_cols function to add parameter to flag_collection when called
+//  19.7.0.0 NClark 041721
+//      -> Utilities
+//	        2.4.0.0 NClark 041721
+//		    -> Updated addinInstallFiles for QuantPL tools
+//  19.6.0.0 NClark 041221
+//      -> TablePreparation
+//	        3.6.0.0 NClark 041221
+//		    -> Updated Lot Extractions to work if Foil already exists in the data table
+//  19.5.0.0 NClark 032621
+//      -> Utilities
+//	        2.3.0.0 NClark 033021
+//		    -> Updated addinInstallFIles to fix typo on MPX tools
+//	        -> Updated addinInstallFiles for add Dairy Tools
+//  19.4.0.0 NClark 032621
+//      -> Utilities
+//	        2.2.0.0 NClark 032621
+//		    -> Updated addinInstallFiles for Tim's MPX Data Parser
+//      -> TablePreparation
+//	        3.5.0.0 NClark 032621
+//		    -> Updated sorting for Date/Time to sort by uniqueRun AND uniqueSort for both 'normal' and 'isl' based data
+//	19.3.0.0 NClark 030921
+//      -> FunctionLibrary
+//		    -> Updated chemCalcualtedConcentration to use Slide Lot, not Lot
+//	19.2.0.3 NClark 030821
+//      -> TablePreparation
+//		    -> Added Slide Sublot to allowable sublot names
+//		    -> Updated function 48 so all sublots are Numeric / Ordinal
+//	19.2.0.2 NClark 030821
+//      -> TablePreparation
+//		    -> Added "Sub Lot" to allowable sublot names
+//  19.2.0.1 NClark 030721
+//      -> TablePreparation
+//          -> Changed Lot to come out as Slide Lot in Function10 and where appropriate
+//		    -> Added Barcode to name changing system
+//		    -> Added Slide Sublot to name changing system
+//		    -> Added Sample id to name changing system
+//		    -> Updated uniqueIDs function to use Sample id for uniqueRun under "Sort" option
+//		    -> Added lotExtractions function which will use Barcode, Slide Sublot, and Slide lot to ensure every table has the following
+//		    	-> Slide Lot
+//		    	-> Slide Sublot
+//		    	-> Foil
+//  19.2.0.0 NClark 030521
+//      -> Utilities
+//		    -> Updated addinInstallFiles for QSDMA AR calculator
+//  19.1.0.0 NClark 021721
+//      -> TablePreparation
+//		    -> updated uniqueIDs function to force wavelength to fron of uniqueSort column
+//  19.0.0.2 NClark 021121
+//      -> FunctionLibrary
+//		    -> Updated the testing tables for ArrayConcCalc to pull from local testing D drive
+//  19.0.0.1 NClark 021121
+//      -> TablePreparation
+//		    -> added "Wavelength" to possColNames
+//  19.0.0.0 NClark 021021
+//      -> TablePreparation
+//          -> Updated funct 12, 43, and 44 to handle wavelengths that come in as chacter and not numeric
+//      -> FunctionLibrary
+//          -> Updated flagging function to use uniqueCurveID instead of uniqueAssayID to comply with updates to tableprep
+//	18.9.0.1 NClark 020521
+//      -> TablePreparation
+// 		    -> updatd wlrd function to handle mixed wl and rd cols BUT no data, and matching cols existing data (pull more data than need, example)
+// 		    -> integrate wl rd stuff INTO main function
+//		    -> added small wait in a date/time conversion as it was failing in testing
+//		    -> added 'uniqueCurveID' to 'top columns' to have it move with remaining columns
+//		    -> added 'Wavelength' to 'top columns' to have it move with remaining columns
+//		    -> made base wavelength function (12) so wavelength is ordinal
+//		    -> made funct45 for Dilution Factor
+//		    -> updated funct32 for Dilution Parts and will make Dilution Factor column if there is none
+//		    -> added additionional funct32 values
+//		    -> updated updatecolnames for funct45
+//		    -> updated funct33 for Dilution Type and will create Orig and new colume with Text values for types
+//	18.9.0.0 NClark 012621
+//      -> TablePreparation
+//		    -> Added renaming to add in additional wavelength and readings columns
+//		    -> Added functions 41-44 for renaming the above columns
+//		    -> Added functions to identify / pair / stack wavelength/reading information
+//		    -> moved the column remanming into it's own function for ease of testing
+//		    -> moved unique ID creation into its own function for ease of testing and usage
+//			-> Sort, uniqueRun and uniqueAssay all can be done by one function
+//		    -> Updated unique ID function to create a grouping: curve ID
+//			-> Sort, Run, Assay, Curve groupings
+//		    -> Updated table prep to use updated col naming function
+//		    -> Updated includes to be relative for testing
+//		    -> Removed commonRunID
+//      -> AssayCodes
+//          -> added qSDMA as code 04
+//  Previous to 18.9, changelogs are with individual files only
+//
+//----------------------------------------------------------------------ac

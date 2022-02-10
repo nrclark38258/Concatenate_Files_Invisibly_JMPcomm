@@ -1,0 +1,71 @@
+﻿//!
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	1.4 NClark 061919
+//		-> Updated to delete old concat directories and files for win and mac
+//		-> updated how folders are used for win and mac
+//	1.3 NClark 040819
+//		-> Updated pathes for new, single ID, addin
+//		-> updated to delete folder when unregistered
+//	1.2 NClark 080916
+//		-> Added installation of automatic updates
+//	1.1 NClark 062916
+//		-> Updated paths so they are denoted 'developers only'
+// 1.0 NClark 022916
+//		-> First Released Version
+//------------------------------------------------------------------
+Names Default to here(1);
+
+If(Num(Word(1,jmpversion(),"."))>=11,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		Font( "Arial" ),
+		Font Size( 16 ),
+		Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+,
+	newCap = Caption(
+		{500, 500},
+		"Please Wait: Your addins are installing",
+		//Font( "Arial" ),
+		//Font Size( 16 ),
+		//Text Color( “blue” ),
+		//Back Color( “yellow” ),
+		//Spoken( 1 ),
+		//Delayed( 1 )
+	);
+);
+
+//Unregisters the addins as they won't be necessary with only one addin now
+//NONE TO UNREGISTER
+
+//assigns username for installs and file deletion
+
+If(HostIs("MAC"),
+	If(IsDirectory("\Volumes/groups/"),
+		Empty()
+		,
+		web("smb://foghorn.namerica.idexxi.com/groups");
+		nw = New Window("Mounting drive",
+			<< modal,
+			Text Box("Please enter credentials for drive to mount and click ok when complete"),
+			ButtonBox("OK"),
+			Button Box("Cancel", Return(0))
+		);
+	);
+	Open(Convert File Path("\Volumes/groups/JMP User Group/JMP Addins/Production_Deployment\Compress_all_but_Formulas.jmpaddin", unix))
+	,
+	Open(Convert File Path("\\FOGHORN\Groups\JMP User Group\JMP Addins\Production_Deployment\Compress_all_but_Formulas.jmpaddin",windows));
+);
+
+Caption(remove);

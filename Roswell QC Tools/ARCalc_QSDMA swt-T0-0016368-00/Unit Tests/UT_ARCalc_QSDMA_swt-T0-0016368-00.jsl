@@ -1,0 +1,857 @@
+//////OPS QSDMA jslHamcrest Unit Tests//////
+
+//
+// NEED TO ADD ALL TABLE SAVING THINGS
+//
+
+qsdmaUT = New Namespace("QSDMAunitTest");
+qsdmaUT:saveFile = 0;
+qsdmaUT:savePath = "C:/Users/nclark/desktop/TestUnitFiles/";
+qsdmaUT:reportName = "testReport.txt";
+
+qsdmaUT:toolPath = "D:\JSL Development\Official JMP Addin Working\ARCalc_QSDMA swt-T0-0016368-00\CatalystQSDMAJMPScriptARCalculation.jsl";
+
+Match(qsdmaUT:saveFile,
+	1, ut global reporter = New Object("ut collecting reporter")
+);
+//use in setup / teardown or UT Tests
+
+qsdmaUT:saveTable = Function({tableName,savePath,fileName,testingBOOL = 0,journalSave = 0},{default Local},
+	If( testingBOOL == 1,
+		If(journalSave == 0,
+			tableName << SaveAs(savePath||fileName)
+			,
+			tableName << Save Journal(savePath||fileName)
+		)
+		,
+		Empty()
+	);
+	Return(1);
+);
+
+//High level note that how we test table compare varies between JMP 15 and 16
+//Unit tests could be updated to test differently based on version being tested...
+qsdmaUT:tableCompare = Function({actual, expected},{default local},
+	result = actual << Compare Data Tables(
+		Compare with( expected ),
+		Compare Table Properties,
+		Compare Column Attributes and Properties,
+		Compare Data,
+		Show Difference Summary,
+		Show Difference Plot
+	);
+	
+	r = result << report;
+	Return(r,result)
+);
+
+wait(3);	
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          TEST CASES                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+varCheckTC = ut test case("A_Variable Checks")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+	));
+	
+quickFunctionsTC = ut test case("B_Easy Function Tests")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+	));
+	
+ptpRiemannSlopeAUC = ut test case("C_Point to Point Riemann Slope")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+		
+		table = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\PtPRiemannSlopeTest.jmp",invisible);
+		
+	));
+
+arCalcFuncTC = ut test case("D_AR Calc Function")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+		
+		table = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\notTablePrepped_ProgressCurves.jmp",invisible);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\tablePrepped_ProgressCurves.jmp",invisible);
+		
+	));
+
+flaggingFuncTC = ut test case("E_Flagging Function")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+		
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\arCalcTable_progCurves.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\arCalcTable_progCurves_highLoAberrant.jmp",invisible);
+		
+	));
+	
+finishFuncTC = ut test case("F_Finishing Off Function")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+		
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\arCalcTable_progCurvesToFinishoff.jmp",invisible);
+		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\arCalcTable_ToFinishoff_progCurves.jmp",invisible);
+		
+	));
+	
+fullMonty = ut test case("Putting it all together")
+	<<Setup(Expr(
+		Include(qsdmaUT:toolPath);
+		
+		table = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\notTablePrepped_ProgressCurves.jmp",invisible);
+			
+	));
+
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          UNIT TESTS                                     //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+		/////////////////////////////////////////////////////////////
+		//          Variable Checking                              //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "A";
+qsdmaUT:utGroupTest = 0;
+	
+ut test(varCheckTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Starting Variables", 
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		uName = Get Environment Variable("username");
+
+		ut assert that(Expr(u), ut equal to(uName));
+		ut assert that(Expr(addinID), ut equal to("com.idexx.RoswellQCTools_QSDMA_AR"));
+		ut assert that(Expr(minJMPver), ut equal to("15.2"));
+		ut assert that(Expr(arCalcVer), ut equal to("v999"));//will grab what's loaded on machine, not what's being worked on for implementation
+		ut assert that(Expr(cannonTimes), ut equal to([6 => 100, 7 => 115, 8 => 130, 9 => 145, 10 => 160, 11 => 175, 12 => 190, 13 => 205]));
+		ut assert that(Expr(cannonMax), ut equal to(13));
+		ut assert that(Expr(cannonMin), ut equal to(6));
+		ut assert that(Expr(nestedLinear), ut equal to(["linear" => ["b" => 0.972954848151445, "m" => -0.00337932050468136], "quad" => ["a" => 0.368029064830265, "b" => -8.86898563719204, "c" => 56.0217911976737]]));
+		ut assert that(Expr(aberrantThresh), ut equal to([14, -14]));
+		ut assert that(Expr(SOPtimes), ut equal to([15 105 195 250]));
+		ut assert that(Expr(units), ut equal to("ug/dL"));
+		ut assert that(Expr(knownChemType), ut equal to("QSDMA"));
+		ut assert that(Expr(startTime), ut equal to(100));
+		ut assert that(Expr(endTime), ut equal to(205));
+	));
+	
+ut test(varCheckTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Moving Default Col names to vars from arCalc", 
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		ut assert that(Expr(respCol), ut equal to("ReflDens_avg"));
+		ut assert that(Expr(timeCol), ut equal to("TimeFromSampleDispense:sec"));
+		ut assert that(Expr(uniqueCol), ut equal to("uniqueCurveID"));
+
+	));
+
+		/////////////////////////////////////////////////////////////
+		//          Supporting Functions                           //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "B";
+qsdmaUT:utGroupTest = 0;
+
+ut test(quickFunctionsTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_JMP Version Check", 
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		//function pulls the version being executed on
+		ver = JMP Version();
+		currWords = words(ver,".");
+		backHalf = concatitems(currWords[2::nitems(currWords)],"");
+		newNumVer = Num(currWords[1]||"."||backHalf);
+
+		ut assert that(Expr(checkVersion(Char(newNumVer - 0.1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer - 1))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer))), ut equal to(1));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 0.1))), ut equal to(0));
+		ut assert that(Expr(checkVersion(Char(newNumVer + 1))), ut equal to(0));
+	));
+
+ut test(quickFunctionsTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_JMP Version Fail Window",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		closemodal = Function({timeout},
+			s = Schedule(
+				timeout,
+				If(current window() << get window title == "Requires JMP 15.2",
+					text = (current window() << xpath("//TextBox"));
+					If( text[1] << get text == "This addin requires the used of JMP 15.2+",
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Error Dialog Executed Correctly")
+						,
+						(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+						Print("Wrong text version, Error Dialog Executed")
+					)
+					,
+					(current window() << xpath("//ButtonBox[text()='OK']")) << click;
+					Print("Wrong title version, Error Dialog Executed")
+				)
+			)
+		);
+		//Failures for the above should be controled at the function level as these checks ensure function has the parameter used in both the title and the text box
+		closemodal(2);
+		wrongVer(15.2);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Error Dialog Executed Correctly\!""));
+		
+		closemodal(2);
+		wrongVer(17);
+		log = GetLog(-1);
+		ut assert that(Expr(log[1]), ut equal to("\!"Wrong title version, Error Dialog Executed\!""));
+	));
+
+		/////////////////////////////////////////////////////////////
+		//          Reiman Slope                                   //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "C";
+qsdmaUT:utGroupTest = 0;
+
+ut test(ptpRiemannSlopeAUC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_AUC Slope Calculations",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		qsdmaPtPriemannSlope(table, "uniqueCurveID", "TimeFromSampleDispense:sec", "ReflDens_avg", 100, 205, "Canon Time");
+		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\PtPRiemannSlopeTest_expected.jmp",invisible);
+		expCols = expected << get column names( string );
+		r = qsdmaUT:tableCompare(table,expected);
+		baseCols = table << get column names( string );
+		
+		/*ut assert that(Expr(r["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		//ut assert that(Expr(r["Table Properties"][textbox(1)] << get text), ut equal to("There is no difference in table variables or table scripts."));
+		ut assert that(Expr(r["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		
+		ut assert that(Expr(r["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(r["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(r["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(baseCols), ut equal to(expCols));*/
+		
+		ut assert that(Expr(r[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(r[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(r[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(r[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(r[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		ut assert that(Expr(table:"P2P Slope - Response"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"P2P Slope - Int"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"Canon Time Progress Curve"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"Slope Vals for AR"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"Rebuilt Curve"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"Canon Time P2P Slope Values"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table:"P2P Slope - Response"n << get hidden), ut equal to(1));
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          arCalc Function                                //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "D";
+qsdmaUT:utGroupTest = 0;
+
+ut test(arCalcFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_ARCalc_nonTablePrepped Table",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		//same code as in function to set up for renaming
+		todayDate=Short Date( Today() );
+		newTodayDate = Munger(todayDate,1,"/","");
+		nextTodayDate = Munger(newTodayDate,1,"/","");
+		tableNew = table<<GetName;
+		titleName = Word(1,tableNew,"-");
+		dateName = Substr(tableNew,Munger( tableNew, 1, "-" )+1,6);
+		//
+		
+		obTable = arCalc(table);
+		canonSum = obTable << Summary(
+			Group( :"Read Point"n, :"TimeFromSampleDispense:sec"n, :"Canon Time"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		canonSum << SelectWhere(IsMissing(:"Canon Time"n)) << delete rows;
+		canonSum << delete columns("N Rows");
+		canonMtrx = canonSum << get as matrix;
+		canonSum << close window;
+		
+		Summarize(obTable,meanList = By(AsColumn("Mean(Response, Dry)")));
+		Summarize(obTable,arCorrList = By(AsColumn("Corrected AR")));
+		
+		ut assert that(Expr(obTable << get name), ut equal to(titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_progCurves"));
+		ut assert that(Expr(ntable()), ut equal to(2));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time"n);1,0)), ut equal to(1));
+		ut assert that(Expr(obTable:"Canon Time"n << get formula), ut empty());
+		ut assert that(Expr(canonMtrx),
+			ut equal to(
+				[6 100.013706 100,
+				6 100.013744 100,
+				6 100.013789 100,
+				7 115.163645 115,
+				7 115.163654 115,
+				7 115.163715 115,
+				8 130.888769 130,
+				8 130.888819 130,
+				8 130.888836 130,
+				9 146.038645 145,
+				9 146.038684 145,
+				9 146.038689 145,
+				10 161.763747 160,
+				10 161.763765 160,
+				10 161.763798 160,
+				11 176.913648 175,
+				11 176.913722 175,
+				11 176.913855 175,
+				12 192.638756 190,
+				12 192.638793 190,
+				12 192.638887 190,
+				13 207.788605 205,
+				13 207.788643 205,
+				13 207.78876 205]
+			)
+		);
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Mean(Response, Dry)"n);1,0)), ut equal to(1));
+		ut assert that(Expr(meanList), ut equal to({"91113.75", "91882.4946", "92944.264"}));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Dry Normalized Response"n);1,0)), ut equal to(1));
+		ut assert that(Expr(obTable:"Dry Normalized Response"n << get formula), ut empty());
+		ut assert that(Expr(Round(obTable:"Dry Normalized Response"n << get as matrix,8)),
+			ut equal to(
+				[1.00084299, 0.99912316, 0.99956941, 0.99940896, 0.99983015, 0.99998057, 1.00030147,
+				1.00094328, 1.02715194, 1.03617731, 1.01047507, 0.97694583, 0.95219125, 0.93832227,
+				0.92779268, 0.9206476, 0.91623519, 0.91404905, 0.91236431, 0.91151693, 0.91050409,
+				0.90980211, 0.9112562, 0.91071468, 0.90984223, 1.00111092, 0.99875412, 1.00113578,
+				1.00056398, 0.99917178, 0.99937067, 0.99989274, 1.02685667, 1.03220172, 1.00041979,
+				0.96562971, 0.94100767, 0.92663818, 0.91595305, 0.90900696, 0.90455192, 0.90291112,
+				0.90117584, 0.89879916, 0.89855552, 0.89780473, 0.89784451, 0.89792903, 0.89790417,
+				1.00038012, 0.99914145, 1.00072419, 0.99931349, 1.00077826, 0.99966248, 1.02367392,
+				1.02960674, 0.99901857, 0.96821904, 0.94362267, 0.92913716, 0.91875596, 0.9119433,
+				0.90773576, 0.90541081, 0.90370027, 0.90314975, 0.90251567, 0.90276144, 0.90134582,
+				0.90183735, 0.9022994]
+			)
+		);
+		//Check for presence of hidden columns as quick check the function exectuted
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Response"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Int"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time Progress Curve"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Slope Vals for AR"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Rebuilt Curve"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time P2P Slope Values"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Response"n);1,0)), ut equal to(1));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Corrected AR"n);1,0)), ut equal to(1));
+		ut assert that(Expr(arCorrList), ut equal to({"-113.75507", "-111.83393", "-102.2495"}));
+		ut assert that(Expr(obTable:"Corrected AR"n << get formula), ut empty());
+		
+	)
+);
+
+ut test(arCalcFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_ARCalc_TablePrepped Table",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		//same code as in function to set up for renaming
+		todayDate=Short Date( Today() );
+		newTodayDate = Munger(todayDate,1,"/","");
+		nextTodayDate = Munger(newTodayDate,1,"/","");
+		tableNew = table1<<GetName;
+		titleName = Word(1,tableNew,"-");
+		dateName = Substr(tableNew,Munger( tableNew, 1, "-" )+1,6);
+		//
+		
+		obTable = arCalc(table1);
+		canonSum = obTable << Summary(
+			Group( :"Read Point"n, :"TimeFromSampleDispense:sec"n, :"Canon Time"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		canonSum << SelectWhere(IsMissing(:"Canon Time"n)) << delete rows;
+		canonSum << delete columns("N Rows");
+		canonMtrx = canonSum << get as matrix;
+		canonSum << close window;
+		
+		Summarize(obTable,meanList = By(AsColumn("Mean(Response, Dry)")));
+		Summarize(obTable,arCorrList = By(AsColumn("Corrected AR")));
+		
+		ut assert that(Expr(obTable << get name), ut equal to(titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_progCurves"));
+		ut assert that(Expr(ntable()), ut equal to(2));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time"n);1,0)), ut equal to(1));
+		ut assert that(Expr(obTable:"Canon Time"n << get formula), ut empty());
+		ut assert that(Expr(canonMtrx),
+			ut equal to(
+				[6 100.013706 100,
+				6 100.013744 100,
+				6 100.013789 100,
+				7 115.163645 115,
+				7 115.163654 115,
+				7 115.163715 115,
+				8 130.888769 130,
+				8 130.888819 130,
+				8 130.888836 130,
+				9 146.038645 145,
+				9 146.038684 145,
+				9 146.038689 145,
+				10 161.763747 160,
+				10 161.763765 160,
+				10 161.763798 160,
+				11 176.913648 175,
+				11 176.913722 175,
+				11 176.913855 175,
+				12 192.638756 190,
+				12 192.638793 190,
+				12 192.638887 190,
+				13 207.788605 205,
+				13 207.788643 205,
+				13 207.78876 205]
+			)
+		);
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Mean(Response, Dry)"n);1,0)), ut equal to(1));
+		ut assert that(Expr(meanList), ut equal to({"91113.75", "91882.4946", "92944.264"}));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Dry Normalized Response"n);1,0)), ut equal to(1));
+		ut assert that(Expr(obTable:"Dry Normalized Response"n << get formula), ut empty());
+		ut assert that(Expr(Round(obTable:"Dry Normalized Response"n << get as matrix,8)),
+			ut equal to(
+				[1.00084299, 0.99912316, 0.99956941, 0.99940896, 0.99983015, 0.99998057, 1.00030147,
+				1.00094328, 1.02715194, 1.03617731, 1.01047507, 0.97694583, 0.95219125, 0.93832227,
+				0.92779268, 0.9206476, 0.91623519, 0.91404905, 0.91236431, 0.91151693, 0.91050409,
+				0.90980211, 0.9112562, 0.91071468, 0.90984223, 1.00111092, 0.99875412, 1.00113578,
+				1.00056398, 0.99917178, 0.99937067, 0.99989274, 1.02685667, 1.03220172, 1.00041979,
+				0.96562971, 0.94100767, 0.92663818, 0.91595305, 0.90900696, 0.90455192, 0.90291112,
+				0.90117584, 0.89879916, 0.89855552, 0.89780473, 0.89784451, 0.89792903, 0.89790417,
+				1.00038012, 0.99914145, 1.00072419, 0.99931349, 1.00077826, 0.99966248, 1.02367392,
+				1.02960674, 0.99901857, 0.96821904, 0.94362267, 0.92913716, 0.91875596, 0.9119433,
+				0.90773576, 0.90541081, 0.90370027, 0.90314975, 0.90251567, 0.90276144, 0.90134582,
+				0.90183735, 0.9022994]
+			)
+		);
+		//Check for presence of hidden columns as quick check the function exectuted
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Response"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Int"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time Progress Curve"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Slope Vals for AR"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Rebuilt Curve"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"Canon Time P2P Slope Values"n);1,0)), ut equal to(1));
+		ut assert that(Expr(Try(IsScriptable(obTable:"P2P Slope - Response"n);1,0)), ut equal to(1));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Corrected AR"n);1,0)), ut equal to(1));
+		ut assert that(Expr(arCorrList), ut equal to({"-113.75507", "-111.83393", "-102.2495"}));
+		ut assert that(Expr(obTable:"Corrected AR"n << get formula), ut empty());
+		
+	)
+);
+
+ut test(arCalcFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_ARCalc_hiding canon time, mean(...dry), drynorm...",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = arCalc(table1);
+		
+		ut assert that(Expr(obTable:"Canon Time"n << get hidden), ut equal to(1));
+		ut assert that(Expr(obTable:"Mean(Response, Dry)"n << get hidden), ut equal to(1));
+		ut assert that(Expr(obTable:"Dry Normalized Response"n << get hidden), ut equal to(1));
+		
+	)
+);
+
+//needOne for proper tableprepsetup -- SampleID empty and Run not created/sorted right (need more than 1 run);
+//script will take Run Number and put in IVLS Run ID ... then will remove it post processing
+//so will need the unit test to check for right run IDs assay IDs curveIDs AND IVLS Run ID is empty post running
+
+		/////////////////////////////////////////////////////////////
+		//          flagging Function                              //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "E";
+qsdmaUT:utGroupTest = 0;
+		
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_PredictedFormulaColumns",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table2);
+		
+		sumTbl = table2 << Summary(
+			Group( :"Read Point"n, :"Predicted Progress Curve Point from Previous"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		sumTbl << SelectWhere(IsMissing(:"Predicted Progress Curve Point from Previous"n)) << delete rows;
+		sumTbl << delete columns("N Rows");
+		crvPtMtrx = sumTbl << get as matrix;
+		sumTbl << close window;
+		sumTbl = table2 << Summary(
+			Group( :"Read Point"n, :"Progress Curve Predicted Bias to Measured"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		sumTbl << SelectWhere(IsMissing(:"Progress Curve Predicted Bias to Measured"n)) << delete rows;
+		sumTbl << Sort(
+			By( :"Read Point"n, :"Progress Curve Predicted Bias to Measured"n ),
+			Order( Ascending, Ascending ),
+			replace table
+		);
+		predBiasMtrx = sumTbl << get as matrix;
+		sumTbl << close window;
+		
+		ut assert that(Expr(ntable()), ut equal to(2));
+		
+		ut assert that(Expr(Try(IsScriptable(table2:"Predicted Progress Curve Point from Previous"n);1,0)), ut equal to(1));
+		ut assert that(Expr(table2:"Predicted Progress Curve Point from Previous"n << get formula), ut empty());
+		ut assert that(Expr(crvPtMtrx),
+			ut approx(
+				[8 -28.8206878810538, 8 -28.0190459974223, 8 -27.7038705863614, 9 -16.1654792135152,
+				9 -15.7392892219949, 9 -15.075050624799, 10 -8.02496809182158, 10 -7.07467324983209,
+				10 -4.26633183754785, 11 -5.63043641327267, 11 -5.37538447731932, 11
+				-5.25311072827965, 12 -10.0238165491483, 12 -2.28788757958675, 12 -0.906863929028942
+				]
+			)
+		);
+		
+		ut assert that(Expr(Try(IsScriptable(table2:"Progress Curve Predicted Bias to Measured"n);1,0)), ut equal to(1));
+		ut assert that(Expr(table2:"Progress Curve Predicted Bias to Measured"n << get formula), ut empty());
+		ut assert that(Expr(predBiasMtrx), 
+			ut approx(
+				[7 0 3,
+				8 1.81256128712911 1,
+				8 2.65015594245661 1,
+				8 3.06475909886349 1,
+				9 0.18313255657122 1,
+				9 1.85559772288139 1,
+				9 5.26133080134633 1,
+				10 -5.85996096404135 1,
+				10 -2.92142497882348 1,
+				10 -2.37289876501781 1,
+				11 -8.53627239818355 1,
+				11 -0.391742230615456 1,
+				11 1.46137928552856 1,
+				12 -3.48218413273094 1,
+				12 -2.79365859558037 1,
+				12 6.94293089142975 1];
+			)
+		);
+		
+	)
+);
+
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_noAberrantPoint_AberrantPointColumn",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table2);
+		
+		sumTbl = table2 << Summary(
+			Group( :"Read Point"n, :"Aberrant Point"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		sumTbl << SelectWhere(IsMissing(:"Aberrant Point"n)) << delete rows;
+		aberrantMtrx = sumTbl << get as matrix;
+		sumTbl << close window;
+		
+		ut assert that(Expr(ntable()), ut equal to(2));
+			
+		ut assert that(Expr(Try(IsScriptable(table2:"Aberrant Point"n);1,0)), ut equal to(1));
+		ut assert that(Expr(table2:"Aberrant Point"n << get formula), ut empty());
+		ut assert that(Expr(aberrantMtrx),
+			ut approx(
+				[7 0 3,
+				8 0 3,
+				9 0 3,
+				10 0 3,
+				11 0 3,
+				12 0 3]
+			)
+		);
+		
+	)
+);
+
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_highLowAberrantPoint_AberrantPointColumn",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table3);
+		
+		sumTbl = table3 << Summary(
+			Group( :"Read Point"n, :"Aberrant Point"n ),
+			Freq( "None" ),
+			Weight( "None" ),
+			invisible
+		);
+		sumTbl << SelectWhere(IsMissing(:"Aberrant Point"n)) << delete rows;
+		aberrantMtrx = sumTbl << get as matrix;
+		sumTbl << close window;
+		
+		ut assert that(Expr(ntable()), ut equal to(2));
+		
+		ut assert that(Expr(Try(IsScriptable(table3:"Aberrant Point"n);1,0)), ut equal to(1));
+		ut assert that(Expr(table3:"Aberrant Point"n << get formula), ut empty());
+		ut assert that(Expr(aberrantMtrx),
+			ut approx(
+				[7	0	3,
+				8	0	2,
+				8	1	1,
+				9	0	3,
+				10	0	3,
+				11	-1	1,
+				11	0	2,
+				12	0	3]
+			)
+		);
+		
+	)
+);
+
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_SlopeColumns",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table2);
+		
+		slopeList = {};
+		For(i=1,i<ncol(SOPTimes),i++,
+			Summarize(table2,slopeList[i] = By(AsColumn("Slope(" || Char( SOPTimes[i] ) || "-" || Char( SOPTimes[i + 1] ) || ")")));
+		);
+		expectedSlopeList = {
+			{"-129.67638", "-124.86446", "-119.96006"},
+			{"-13.987553", "-13.390822", "-12.771389"},
+			{"-1.1849646", "-0.5956099", "0.28061339"}
+		};
+		
+		ut assert that(Expr(ntable()), ut equal to(2));
+		
+		For(i=1,i < ncol(SOPTimes),i++,
+			colName = "Slope(" || Char( SOPTimes[i] ) || "-" || Char( SOPTimes[i + 1] ) || ")";
+			ut assert that(Expr(Try(IsScriptable(Column(table2, colName));1,0)), ut equal to(1));
+		);
+		//the below will fail if updates made or additional soptimes added to ensure unit test updated
+		For(i=1,i < ncol(SOPTimes),i++,
+			ut assert that(Expr(slopeList[i]), ut equal to(expectedSlopeList[i]));
+		);
+		
+	)
+);
+
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_AR-SciptColumn",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table2);
+		
+		Summarize(table2,arCorrList = By(AsColumn("AR-Script")));
+		
+		ut assert that(Expr(Try(IsScriptable(table2:"AR-Script"n);1,0)), ut equal to(1));
+		ut assert that(Expr(arCorrList), ut equal to({"-113.75507", "-111.83393", "-102.2495"}));
+		ut assert that(Expr(table2:"AR-Script"n << get formula), ut empty());
+		
+	)
+);
+
+ut test(flaggingFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Flagging_hiding all but AR-Script",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		flagging(table2);
+		
+		ut assert that(Expr(table2:"Predicted Progress Curve Point from Previous"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table2:"Progress Curve Predicted Bias to Measured"n << get hidden), ut equal to(1));
+		ut assert that(Expr(table2:"Aberrant Point"n << get hidden), ut equal to(1));
+		For(i=1,i < ncol(SOPTimes),i++,
+			colName = "Slope(" || Char( SOPTimes[i] ) || "-" || Char( SOPTimes[i + 1] ) || ")";
+			ut assert that(Expr(Column(table2, colName) << get hidden), ut equal to(1));
+		);
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          finishingOff Function                          //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "F";
+qsdmaUT:utGroupTest = 0;
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_non-'_progCurves' Table",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table4);
+		idMtrx = obTable:"uniqueCurveID"n << get as matrix;
+	
+		ut assert that(Expr(obTable << get name), ut equal to("arCalcTable_progCurvesToFinishoff_justResults"));
+		ut assert that(Expr(ntable()), ut equal to(3));
+		ut assert that(Expr(nrow(obTable)), ut equal to(3));
+		ut assert that(Expr(nitems(table4 << get selected columns)), ut equal to(0));
+		ut assert that(Expr(Char(table4 << get selected rows())), ut equal to("[](0, 1)"));
+		ut assert that(Expr(idMtrx), ut equal to({"CAT1003449_01AN15R_3695714361.492_SDMA_1_1_0",
+"CAT1003449_01AN15R_3695714361.492_SDMA_2_10_0",
+"CAT1003449_01AN15R_3695714361.492_SDMA_3_2_0"}));
+
+	)
+);
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_'_progCurves' Table",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table5);
+		
+		//only need name confirmation as the table is identicalto previous test
+		//as a note, i also could have opened table4 and just changed the start name
+		ut assert that(Expr(obTable << get name), ut equal to("arCalcTable_ToFinishoff_justResults"));
+
+	)
+);
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_adding version column",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table4);
+		Summarize(obTable,verList = By(AsColumn("Roswell AR Calc Version")));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Roswell AR Calc Version"n);1,0)), ut equal to(1));
+		ut assert that(Expr(verList), ut equal to({"v999"}));
+		ut assert that(Expr(obTable:"Roswell AR Calc Version"n << get formula), ut empty());
+		
+	)
+);
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_adding units column",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table4);
+		Summarize(obTable,verList = By(AsColumn("Units_Script")));
+		
+		ut assert that(Expr(Try(IsScriptable(obTable:"Units_Script"n);1,0)), ut equal to(1));
+		ut assert that(Expr(verList), ut equal to({"ug/dL"}));
+		ut assert that(Expr(obTable:"Roswell AR Calc Version"n << get formula), ut empty());
+		
+	)
+);
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_move important columns to first",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table4);
+		colList = obTable << get column names(string);
+		
+		ut assert that(Expr(colList[1::9]), 
+			ut equal to(
+				{
+					"AR-Script",
+					"Corrected AR",
+					//"Units_Script",
+					"uniqueCurveID",
+					"Roswell AR Calc Version",
+					"Chem Type",
+					"Inst Type",
+					"TimeFromSampleDispense:sec",
+					"ReflDens_avg",
+					"Instrument ID"
+				}
+			)
+		);
+		
+	)
+);
+
+ut test(finishFuncTC, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_FinishingOff_combine hidden cols in group at end",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		obTable = finishingOff(table4);
+		
+		desiredHidden = hideCols = {
+			//specific to QSDMA
+			"P2P Slope - Response", "P2P Slope - Int", "Canon Time", "Canon Time Progress Curve", "Canon Time P2P Slope Values",
+			"Slope Vals for AR", "Predicted Progress Curve Point from Previous", "Progress Curve Predicted Bias to Measured",
+			"Aberrant Point", "Rebuilt Curve", "Mean(Response, Dry)", "Dry Normalized Response", "Date and Time Script Run",
+			//
+			"Alg Calc Ar Error Status :4", "Algorithm Conc Error Flags", "Algorithm IM Error Flags", "Algorithm Status", "AR Qualifer",
+			"AR Qualifier", "AR2", "AR2 Qualifer", "AR2 Qualifier", "Concentration units", "Curve Area", "Curve Cubic", "Curve Fifth", "Curve File Version",
+			"Curve Intercept", "Curve Linear", "Curve Quad", "Curves Version :5", "Date", "Date-orig", "Dilution Parts", "Dilution Type", "Discrepant Type",
+			"Dry Read Finish", "Dry Read Start", "DryReadingMean", "Final Scalar", "Flag :3", "Flag1 :4", "Flag2 :4", "Flag3 :4", "From Optics Module",
+			"Gain Applied", "Gain Applied :4", "Gain Applied 2", "GMTime", "ID Source :2", "Log Entry Timestamp :3", "Normalized RD", "Num Dry Reads :2",
+			"Num Of Assays", "Num Of Points :2", "Num Of Readings :2", "Num Wavelengths Used :4", "Offset Applied", "Offset Applied :4",
+			"Offset Applied Type", "Paired Results Flag :4", "Point :3", "Post Analysis Notes", "Progress Curve Analysis", "Qual :4", "Qualifier",
+			"RD Normalization Reading", "Read Point", "Reading Time", "Reading2 :3", "Reflective :2", "Re-Review of Consumable/Slide", "Run Done Timestamp",
+			"Run Fault", "Sample Container", "Sample_conjugate_alq2", "Scalar", "Scalar Adjustment", "Segment", "Slide Load Position :4", "Spot Time",
+			"Stored Wet Offset", "Stored WLC Offset", "Substrate_alq1", "Time", "Time Offset :2", "Time-orig", "Timeseries pt", "Timeseries RD2",
+			"TS Read Flag", "uldry Intensity", "ulfalse light Molded", "ulfalselight", "ulfalselight Laminate", "ulwet Intensity", "Units :4", "Units :5",
+			"Wash 1 End", "Wash 2 End", "Wash1_alq3", "Wavelength", "Wavelength2", "Wavelength3", "Wavelengths Used", "X Intersect", "Y Intersect"
+		};
+		desiredArray = Associative Array(desiredHidden);
+		
+		obsHidden = obTable << get hidden columns;
+		obsGrouped = obTable << get column group("Hidden Columns");
+		
+		ut assert that(Expr(obsHidden), ut equal to(obsGrouped));
+		For(i=1,i<=nitems(obsHidden),i++,
+
+			ut assert that(Expr(desiredArray[Char(obsHidden[i])]), ut equal to(1));
+		);
+		
+	)
+);
+
+		/////////////////////////////////////////////////////////////
+		//          Full Monty                                     //
+		/////////////////////////////////////////////////////////////
+qsdmaUT:utGroup = "G";
+qsdmaUT:utGroupTest = 0;
+
+ut test(fullMonty, qsdmaUT:utGroup||Char(qsdmaUT:utGroupTest+1)||"_Standard Table",
+	Expr(
+		qsdmaUT:utGroupTest = qsdmaUT:utGroupTest + 1;
+		//same code as in function to set up for renaming
+		todayDate=Short Date( Today() );
+		newTodayDate = Munger(todayDate,1,"/","");
+		nextTodayDate = Munger(newTodayDate,1,"/","");
+		tableNew = table<<GetName;
+		titleName = Word(1,tableNew,"-");
+		dateName = Substr(tableNew,Munger( tableNew, 1, "-" )+1,6);
+		//
+		
+		dt_start = table;
+
+		flagTable = arCalc( dt_start );
+		finishTable = flagging( flagTable );
+		finalTable = finishingOff( finishTable );
+		
+		ut assert that(Expr(ntable()), ut equal to(2));
+		ut assert that(Expr(flagTable << get name), ut equal to(titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_progCurves"));
+		ut assert that(Expr(finalTable << get name), ut equal to(titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_justResults"));
+		finalTable << save("C:/users/nclark/desktop/UTTESTobsFile.jmp");
+		progCexpected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\stdTableProgCurve_expected.jmp",invisible);
+		jstRexpected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\ARCalc_QSDMA swt-T0-0016368-00_UT\Files\stdTableJustResult_expected.jmp",invisible);
+		
+		PCexpCols = progCexpected << get column names( string );
+		JRexpCols = jstRexpected << get column names( string );
+		pcCompare = qsdmaUT:tableCompare(flagTable,progCexpected);
+		jrCompare = qsdmaUT:tableCompare(finalTable,jstRexpected);
+		PCbaseCols = flagTable << get column names( string );
+		JRbaseCols = finalTable << get column names( string );
+
+		ut assert that(Expr(PCbaseCols), ut equal to(PCexpCOls)); //done when order of columns matters
+		ut assert that(Expr(JRbaseCols), ut equal to(JRexpCols)); //done when order of columns matters
+		
+		ut assert that(Expr(pcCompare[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(pcCompare[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(pcCompare[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(pcCompare[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(pcCompare[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		ut assert that(Expr(jrCompare[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(jrCompare[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(jrCompare[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(jrCompare[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(jrCompare[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+	)
+);
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//          Finishing Off                                  //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+Match(qsdmaUT:saveFile,
+	0, qsdmaUT << delete,
+	1, ut global reporter:save report(qsdmaUT:savePath||qsdmaUT:reportName); qsdmaUT << delete;
+);

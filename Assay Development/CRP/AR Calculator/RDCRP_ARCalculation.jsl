@@ -1,0 +1,1208 @@
+﻿//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//------------------Revision History for both script and Help File--
+//
+//	5.5.0.1 NClark 021121
+//		-> updated two tableprep calls to reset table variable so not lost if tableprep makes new table
+//	5.5.0.0 NClark 021021
+//		-> updated to user uniqueCurveID over uniqueAssayID
+//	5.4.0.0 NClark 020419
+//		-> Script version based on addin version from addin.def file
+//	5.3.0.0 NClark 012918
+//		-> Fixed bug that didn't allow correct iaCode to be selected
+//		-> Fixed bug that didn't bring in all necessary coefficients for flagging parameters in table vars
+//	5.2.0.0 NClark 012819
+//		-> Added try() around calc dose column so failure doesn't stop multiassay from working
+//	5.1.0.0 NClark 012819
+//		-> Added code to allow for error in iaCodes when no Assay Column is present after TablePrep
+//			-> Can't check for correct assay(s) so user takes full responsiblity if things don't work quite right
+//		-> Added TimeFromSampleDispsense:sec and ReflDens_avg to possTimecol and PossRespCol variables
+//	5.0 NClark 010519
+//		-> Now matched other IAs
+//		-> Uses event times for flagging
+//		-> converted all to functions and basd on slope/ep generic tool
+//		-> uses new tableprep/function libraries (assay dev libraries2)
+//	4.2 NClark 071717
+//		-> Updated dry read threshold (lower) to 0.04 to match field released SW
+//	4.1 NClark 031817
+//		-> Updated upper thresholds for 78 and 91 flag (both to 5 to effectively remove from flagging)
+//		-> Updated R&D AR Calc Version to be generic with no 'CRP'
+//		-> Updated initial Open() command so it won't use new table if dt_start is already pouplated with a table
+//			-> Done to support work to allow multiple non-OCD chemsitries in a single run
+//		-> Updated final cleanup at end to support non-OCD chems in run
+//		-> Removed units from calc dose column and moved to own column
+//		-> Added code to hide specific columns, place in group, and move that group to end of table
+//	4.0 NClark 010217
+//		-> Updated AR to EndPoint @ 40s
+//		-> Updated colName to reflect change of AR to endpoint
+//		-> Updated Dry Read and Sammple Mix to use new function and better match final SW
+//		-> Updated flag threshold for 79 flag
+//		-> Updated flag metrics to use AR instead of RespAvg
+//		-> Updated row selection for justResults to be commonRunID based rather than Time based
+// remaining revision history with v4.2 archive
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+If( !Namespace Exists( "crpAR" ), New Namespace( "crpAR" ) );
+cAR = Namespace("crpAR");
+
+If( !Namespace Exists( "crpFunctions" ), New Namespace( "crpFunctions" ) );
+cFunct = Namespace("crpFunctions");
+
+//-----------Variable Declarations (above Main for easy access)--
+	
+	minJMPver = "14";
+
+	listOfIAs = {28,23,18,17,30};
+	
+	//Script Version
+	toolName = "Slope/Endpoint Calculation";
+	//arCalcVer = "v5.4";
+
+	//version now tied to currently installed addin version
+	//MAY NOT BE CORRECT WHEN TESTING
+	Try(
+		arCalcVer = Char(GetAddin("com.idexx.RnD_CRP")<<version);
+			,
+		Print("Addin not installed yet");
+		arCalcVer = "v999"
+	);
+	//Known Chemistry to be used if assay info not available.
+	knownChemType = "CRP";
+	targetCode = {17};
+	
+	title1 = "Select Values for 'Time' and Response";
+	
+	//Define the table variables for use in formulas
+	SOPstartTime = "e";
+	SOPendTime = 40;
+	
+	//Variables starting as empty lists
+	startTime1 = {};
+	endTime1 = {};
+	
+	assayFlags = {
+		{dryReadFlag, 0.04, 0.13, "Dry[77]"}, //8095
+		{sampMixMinusDry, 0.871, 5, "sMix-Dry[78]"}, //8096
+		{sampMixMinusRespAvg, 0.0, 0.95, "sMix-AR[79]"}, //8097 in as wash minus SC	(postWashAll-rename and fix)
+		//{responseSlope, -5, 5, "Resp Slope[82]"},// not used
+		
+		//{sampMix, -5, 5, "Sample Mix[90]"}, // unused, revert to large limit//8099	
+		{responseRange, -5, 5, "Resp Range[91]"}//, //8100	CONVERT TO ABS VALUE DIFFERENCE??? Neg should not be possible
+		//{respAvgMinusDry, -5, 5, "AR-Dry[92]"} //unused 8101 postwashAll - dry
+	};
+	
+	//extreme high dose flag values per species.
+	//species must be all uppercase
+	extremeHighDose = Associative Array(
+		{
+			{"None",1}
+		}
+	);
+	
+	units = "mg/dL";
+	
+	//globals for 'get text'
+	globalListParam = {cAR:ba1ListParam, cAR:ba2ListParam};
+	lbListParam = {startTime1, endTime1};
+
+	//globals for 'get items'
+	globalList = {cAR:ba1List, cAR:ba2List, cAR:ba3List}; //global list for column lists
+	lbList = {colListY, colListX, colListT};
+	globalVarParam = {cAR:ba1VarParam};
+	lbVarParam = {numParam};
+
+	//globals for 'get checkbox'
+	globalDefault = {cAR:checkbox,cAR:radioBox};
+	lbDefault = {chooseDefBox, tblPrp};
+
+//-----------/Variable Declarations-----------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_FunctionLibrary2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_TablePreparation2.jsl");
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+//----Dialog functions/////////////////////
+exprCancel = Function( {},
+	diagWindow << close window;
+);
+
+recallItems = Function( {dtName}, {dtName},
+
+	//recall for checkbox
+	Try(
+		If(cAR:checkbox == 1,
+			chooseDefBox<<set(1);
+			ob << Close( 1 );
+			ob << visibility( 2 );
+			ob << set title( title2 );
+		)
+	);
+	
+	tblPrp << set(cAR:radioBox);
+
+	//from generic ar tool
+	numParam = If( Is Missing( cAR:ba1VarParam ),
+		1,
+		cAR:ba1VarParam
+	);
+	Try(
+		For( j = 1, j <= 4, j++,
+			hb1[j] << Delete;
+			hb2[j] << Delete;
+			//hb3[j] << Delete;
+			//hb4[j] << Delete;
+			j = j - 1;
+		)
+	);
+	For( i = 1, i <= numParam, i++,
+		hb1 << Append( startTime1[i] = Text Edit Box( cAR:ba1ListParam[i] ) );
+		hb1 << Append( Text Box( "   " ) );
+		hb2 << Append( endTime1[i] = Text Edit Box( cAR:ba2ListParam[i] ) );
+		hb2 << Append( Text Box( "   " ) );
+		//hb3 << Append( threshArea1[i] = Text Edit Box( cAR:ba3ListParam[i] ) );
+		//hb3 << Append( Text Box( "   " ) );
+		//hb4 << Append( numRegressPoints1[i] = Text Edit Box( cAR:ba4ListParam[i] ) );
+		//hb4 << Append( Text Box( "   " ) );
+	);
+//from sdma cal tool for doing columns
+	//Is List will produce error if ba1List is not declared
+	//If error, declare vars, otherwise get vars
+	colList = dtName << Get Column Names( String );
+	Try(
+		For( i = 1, i <= N Items( globalList ), i++,
+			nextList = globalList[i];
+			For( j = 1, j <= N Items( nextList ), j++,
+				If( N Row( Loc( colList, nextList[j] ) ) > 0,
+					Eval( 
+						Substitute( 
+							Expr( lb << Append( item ) ), Expr( lb ), lbList[i], Expr( item ), nextList[j] 
+						) 
+					)
+				)
+			);
+		)
+	,
+		Print( "No columns to recall." )
+	);
+);
+
+///// Three functions for populating globals of differing variable types///////
+//get items like Col List boxes and num edit boxes
+populateGetItems = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						Try( glVar = lb << Get Items
+						, 
+							Try( glVar = lb << get
+							, 
+								glVar = lb ) ;
+						);
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+
+	//Show( globalList, localList );
+	//Try(Show( cAR:ba1List, cAR:ba2List, cAR:ba3List ));
+	//Show( cAR:ba1VarParam, cAR:ba1ListParam, cAR:ba2ListParam );
+	//Try(Show( cAR:ba1VarParam ));
+	Return( 1 );
+);
+// for text edit boxes
+populateGetText = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						glVar = lb << Get Text;
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+	
+	//Show( globalList, localList );
+	//Show( cAR:ba1List, cAR:ba2List, cAR:ba3List );
+	//Try(Show( cAR:ba1VarParam, cAR:ba1ListParam, cAR:ba2ListParam ));
+	//Show( cAR:numParam );
+	Return( 1 );
+);
+// for check boxes
+populateChkBx = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						glVar = lb << Get;
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+	
+	//Show( globalList, localList );
+	//Show( cAR:ba1List, cAR:ba2List, cAR:ba3List );
+	//Show( cAR:ba1VarParam, cAR:ba1ListParam, cAR:ba2ListParam, cAR:ba3ListParam, cAR:ba4ListParam );
+	//Show( cAR:numParam );
+	//Try(Show(cAR:checkbox,cAR:radioBox));
+	Return( 1 );
+);
+///////////////////////////////////////////////////////////////////////////////
+
+about = Function({tool,version},{default local},
+	New Window( tool,
+		<<Modal,
+		Text Box( tool ||" "||version, <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Nathan Clark\!nIDEXX Laboratories, Inc.\!nWestbrook, ME 04092\!nnathan-clark@idexx.com"),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)	
+);
+
+notImplemented = Function({},{},
+	New Window("Feature Not Available",<<Modal,TextBox("This feature has not been implemented yet."),ButtonBox("OK"))
+);
+
+help = Function({addin,filename},{},
+	Open( "$ADDIN_HOME("||addin||")\"||filename )
+);
+
+//----End Dialog Functions///////////////////
+
+checkVersion = Function({minVer},{default local},
+	version = Num(substitute(minVer,".",""));
+	If(Num(Word(1,jmpversion(),".")) < version, a = 0, a = 1);
+	Return(a)
+);
+
+wrongVer = Function({maxVer},{Default Local},
+	New Window( "Requires JMP "||char(maxVer), <<Modal, Text Box( "This addin requires the used of JMP "||char(maxVer)||"+" ), Button Box( "OK" ));
+);
+
+missingDefaults = Function({},
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Chose to use defaults, but one or more default columns missing", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+tooManyIAs = Function({},
+	New Window( "More than 1 IA present",
+		<<Modal,
+		Text Box( "More than the desired IA is present", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please subset each IA separately and run correct script" ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+noIAs = Function({},
+	New Window( "No IAs present",
+		<<Modal,
+		Text Box( "There are no IAs present in the table", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please consider just running the Table Preparation Script" ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+wrongIA = Function({},
+	New Window( "IA not supported",
+		<<Modal,
+		Text Box( "The IA in the table is not supported by this script", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please try again" ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+scriptJustResults = Function({tableName,uniqueCol},{default Local},
+	dt_algorithm = tableName;
+	parseUnique = EvalInsert(":Name(\!"^uniqueCol^\!")");
+	Eval(
+		EvalExpr(
+			dt_algorithm << New Script("Make justResults",
+				tblName = currentdatatable()<<Getname;
+				datatable(tblName) << select all rows;
+				datatable(tblName) << invert row selection;
+				Try(newName = Munger(tblName,1,"_progCurves",""),newName = tblName);
+				datatable(tblName) << SelectWhere(Expr(Parse(parseUnique)) != Lag(Expr(parse(parseUnique)),-1));
+				datatable(tblName) << Subset(
+					output table name( newName|| "_justResults" )
+				);
+				datatable(tblName) << select all rows;
+				datatable(tblName) << invert row selection;
+			)
+		)
+	);
+);
+
+cannotReplace = Function({},
+	New Window( "Unable to Sort Data",
+		<<Modal,
+		Text Box( "JMP is unable to sort data table because existing reports are linked to this table. Please close those reports and try again.", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+incompleteCols = Function({},
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Please make sure 'Time', Resp and Unique ID columns are cast or", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "check box to use default columns", <<setfontstyle( "bold underline"), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+cleanup = Function({},{},
+	cAR << delete namespace;
+	cFunct << delete namespace;
+	Throw();
+);
+
+cFunct:arCalc = Function({tableName,knownChemtype,targetCode,fullDefaults=0},{},
+	
+	tblGetName = tableName << GetName;
+	
+	Try(tblPrp = tblPrp << get,
+		tblPrp = 1
+	);
+	
+	//determines if any AR tool has been run before
+	//makes new table if first time use
+	If(
+		Contains(tblGetName,"_progCurves") > 0,
+		newTable = 0;
+		dt_algorithm = tableName;
+	,	
+		newTable = 1;
+		//Creates working copy of data table so original data is never 'touched'
+		dt_algorithm = tableName << Subset(Output Table( tblGetName ), All Rows,Selected columns only( 0 ),invisible);
+	);
+		
+	colList1 = dt_algorithm << get column names (string);	
+	//discovers presence of any column that would become default
+	//assigns cols or throws error dialog
+	foundTimeCol = 0;
+	foundRespCol = 0;
+	foundUniqueCol = 0;
+	If(
+		Contains(colList1,"TimeFromSampleDispense:sec")>0,
+		foundTimeCol = 1;
+	);
+	If(
+		Contains(colList1,"ReflDens_avg")>0,
+		foundRespCol = 1;
+	);
+	If(
+		Contains(colList1,"uniqueCurveID")>0,
+		foundUniqueCol = 1;
+	);
+	If(fullDefaults == 0,
+		useDefaultCols = chooseDefBox<<get;
+	,
+		useDefaultCols = 1		
+	);
+
+	Match(useDefaultCols,
+		0,
+		Try(
+			respCol = (colListY << Get items)[1];
+			timeCol = (colListX << Get items)[1];
+			uniqueCol = (colListT << Get items)[1];
+		,
+			incompleteCols();
+			If(newTable==1,Close(dt_algorithm,nosave));
+			Return(0);
+		)
+	,
+		1,
+		If( foundTimeCol == 1 & foundRespCol == 1 & foundUniqueCol == 1,
+			respCol = "ReflDens_avg";
+			timeCol = "TimeFromSampleDispense:sec";
+			uniqueCol = "uniqueCurveID";
+		,
+			Match(tblPrp,
+				1,
+				possTimeCol = {"Timeseries time","Time :3","Readings: Time Between Read and Dispense","TYP3_TIME","TIME_BTWN_READ_DISPENSE","TimeFromSampleDispense:sec"};
+				possRespCol = {"Timeseries RD","Reading :3","TYP3_READING","ReflDens_avg"};
+				For(i=1,i<=nitems(possTimeCol),i++,
+					If(contains(colList1,possTimeCol[i]) == 0,
+						If(i == nitems(possTimeCol),
+							missingDefaults();
+							If(newTable==1,Close(dt_algorithm,nosave));
+							Return(0);
+							,
+							Continue()
+						)
+						,
+						timeCol = "TimeFromSampleDispense:sec";Break()
+					)
+				);
+				For(i=1,i<=nitems(possRespCol),i++,
+					If(contains(colList1,possRespCol[i]) == 0,
+						If(i == nitems(possRespCol),
+							missingDefaults();
+							If(newTable==1,Close(dt_algorithm,nosave));
+							Return(0);
+							,
+							Continue()
+						)
+						,
+						respCol = "ReflDens_avg";Break()
+					)
+				);
+				uniqueCol = "uniqueCurveID";
+				//show(respCol,timeCol,uniqueCol);
+				,
+				2,
+				missingDefaults();
+				If(newTable==1,Close(dt_algorithm,nosave));
+				Return(0);
+			);
+		);
+	);
+	//show(respCol,timeCol,uniqueCol);
+	
+	//If user does table prep tries to ensure chosen columns are corrected if they'll be renamed
+	Match(tblPrp,
+		1,
+		dt_algorithm = tablePrep(dt_algorithm,knownChemType)
+		,
+		2,
+		//show(respCol,timeCol,uniqueCol);
+		Empty()
+	);
+	
+	iaCodes = {};
+	Try(
+		IsScriptable(Column(dt_algorithm,"Assay"));
+		Summarize(dt_algorithm,a=by(:Assay));
+		For(i=1,i<=nitems(listOfIAs),i++,
+			If(Contains(a,Char(listOfIAs[i])) > 0, InsertInto(iaCodes,listOfIAs[i]))
+		);
+		,
+		InsertInto(iaCodes,999);
+	);
+
+	Match(newTable,
+		0, Match(nitems(iaCodes),
+			0, noIAs();
+			Return(0);
+			,
+			1, If(iaCodes[1] == 999, Empty()
+				,
+				Contains(targetCode,iaCodes[1]) == 0, wrongIA();Return(0);
+			)
+			,
+			tooManyIAs();
+			Return(0);
+		)
+		,
+		1, Match(nitems(iaCodes),
+			0, Close(dt_algorithm,nosave);
+			noIAs();
+			Return(0);
+			,
+			1, If(iaCodes[1] == 999, Empty()
+				,
+				Contains(targetCode,iaCodes[1]) == 0, Close(dt_algorithm,nosave);wrongIA();Return(0);
+			)
+			,
+			Close(dt_algorithm,nosave);
+			tooManyIAs();
+			Return(0);
+		)
+	);
+	
+	Try(diagwindow << close window());
+	dt_algorithm << show window();		
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	dt_name = tblGetName;
+	titleName = Word(1,dt_name,"-");
+	dateName = Substr(dt_name,Munger( dt_name, 1, "-" )+1,6);
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+	
+	If(fullDefaults != 0,
+		insertInto(startTime1,char(SOPstartTime));
+		insertInto(endTime1,char(SOPendTime));
+		startTime = startTime1;
+		endTime = endTime1;
+	,
+		startTime = startTime1 << get text;
+		endTime = endTime1 << get text;
+	);
+	//Show(startTime,endhTimes);
+	
+	Try(
+		IsScriptable(Column(dt_algorithm,"R&D AR Calc Version"));
+	,
+		dt_algorithm << New Column("R&D AR Calc Version",Character(10),
+			Formula(Eval(arCalcVer))
+		);
+		Column(dt_algorithm,"R&D AR Calc Version") << delete formula;
+	);
+	
+	Try(
+		dt_algorithm << Sort(
+			By(Column(dt_algorithm,uniqueCol),Column(dt_algorithm,timeCol)),
+			Order(Ascending,Ascending),
+			ReplaceTable(1)
+		);
+		,
+		cannotReplace();
+		Return(0)
+	);
+	
+	//genericInterpMetric{tableName,yColumn,xColumn,byColumn,columnName,startingTime,endingTime,metric}
+	For( j = 1, j <= N Items( startTime ), j++, 
+		//sets up dynamic naming of columns
+		If(
+			//Is Missing( Num( Substr( startTime[j],2,3) ) ),
+			Is Missing( Num( startTime[j] ) ) & IsMissing(Num(substr(startTime[j],2,Length(startTime[j])-1))), //Only Endpoint
+				colName = "EndPoint(" || Char( endTime[j] ) || ")";
+		,	
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "a", //Must be Average EndPoint after above evaluated
+				colName = "AvgEP(" || Char(Num(Substr( startTime[j],2,Length(startTime[j])-1))) || "-" || Char( endTime[j] ) || ")";
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "r", //Must be Range after above evaluated
+				colName = "Range(" || Char(Num(Substr( startTime[j],2,Length(startTime[j])-1))) || "-" || Char( endTime[j] ) || ")";
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ), //Defaults to slope with 0 starting time
+				colName = "Slope(" || Char(0) || "-" || Char( endTime[j] ) || ")";
+		,
+				colName = "Slope(" || Char(Num( startTime[j] )) || "-" || Char( endTime[j] ) || ")";
+		);
+
+		If( Is Missing( Num( startTime[j] ) ) & IsMissing(Num(substr(startTime[j],2,Length(startTime[j])-1))), /*If it's missing, it's an end point AR*/
+			//Function for EndPoint Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(endTime[j]) - 1,Num(endTime[j]),"EP");
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "a",
+			//Function for Average EndPoint Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(Substr(startTime[j],2,Length(startTime[j])-1)),Num(endTime[j]),"AvgEP");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "r",
+			//Function for Range Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(Substr(startTime[j],2,Length(startTime[j])-1)),Num(endTime[j]),"Range");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ),
+			//Function for Default to slope Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,0,Num(endTime[j]),"Slope");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			//Function for Slope Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(startTime[j]),Num(endTime[j]),"Slope");
+		);
+	);
+	
+	If(newTable == 1,
+		dt_algorithm << SetName(
+			titleName||"-"||dateName||"_"||knownChemType||" AR_"||nextTodayDate|| "_progCurves" 
+		);
+		scriptJustResults(dt_algorithm,uniqueCol);
+	,
+		Empty()
+	);
+	currentdatatable(dt_algorithm);
+	Return(dt_algorithm,iaCodes,colName);
+);
+
+cFunct:flagging = Function({tableName,flagParams,colName}, {default local},
+	
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	///////LOOK AT FUNCTIONS TO SEE IF TRY WILL DO CHECK FOR COLUMS EXISTING
+	//Try() covers for if errors from column not existing
+	//If Try built into function, may not need them here
+	faults = {};
+	faults[1] = preDevelopmentMetric(tableName,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","Dry Read","sp","dry","IA SampMix Event","null","last");
+
+	faults[2] = preDevelopmentMetric(tableName,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","Sample Mix","sp","wet","IA SampMix Event");
+	
+	faults[3] = genericInterpMetric(tableName,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","Response Slope",11,45,"Slope");
+	
+	faults[4] = genericInterpMetric(tableName,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","Response Range",11,45,"Range");
+	
+	faults[5] = genericInterpMetric(tableName,"ReflDens_avg","TimeFromSampleDispense:sec","uniqueCurveID","Response Avg",11,45,"AvgEP");
+	//show(faults);
+	
+	//Adding 6 columns (one per flag that require math and 2 for the linBound comparision) with the ending trigger value for easier troubleshooting/run comparisions
+	Try(
+		IsScriptable(Column(tableName,"Sample Mix"));
+		IsScriptable(Column(tableName, "Dry Read"));
+		tableName << New Column("SampMix - Dry",
+			Formula(:Name( "Sample Mix" ) - :Dry Read)
+		);
+		Column(tableName,"SampMix - Dry") << Delete formula;
+	);
+	Try(
+		IsScriptable(Column(tableName,"Sample Mix"));
+		IsScriptable(Column(tableName, colName));
+		tableName << New Column( "SampMix - AR",
+			Formula(:Name("Sample Mix") - parseColName)
+		);
+		Column(tableName,"SampMix - AR") << Delete formula;
+	);
+	Try(
+		IsScriptable(Column(tableName,"Sample Mix"));
+		IsScriptable(Column(tableName, "Response Avg"));
+		tableName << New Column( "SampMix - RespAvg",
+			Formula(:Name("Sample Mix") - :Name("Response Avg"))
+		);
+		Column(tableName,"SampMix - RespAvg") << Delete formula;
+	);
+	Try(
+		IsScriptable(Column(tableName, colName));
+		IsScriptable(Column(tableName, "Dry Read"));
+		tableName << New Column( "AR - Dry",
+			Formula(parseColName - :Dry Read)
+		);
+		Column(tableName,"AR - Dry") << Delete formula;
+	);
+	
+	//adds table variable to show the flag parameter limits
+	flagString = {};
+	For(k=1,k<=nitems(flagParams),k++,
+		Match(nitems(flagParams[k]),
+			4,
+			flagString[k] = Concat(Char(flagParams[k][1])," = ",Char(flagParams[k][2]),", ",Char(flagParams[k][3]),"\!n")
+			,
+			6,
+			flagString[k] = Concat(Char(flagParams[k][1])," = ",Char(flagParams[k][2]),", ",Char(flagParams[k][3]),", ",Char(flagParams[k][4]),", ",Char(flagParams[k][5]),"\!n")
+		)
+	);
+	finalFlagString = ConcatItems(flagString,"");
+	
+	tableName << New Table Variable("Flag Parameters",
+		finalFlagString
+	);
+	
+	assayDevFlagging(tableName,flagParams,knownChemType);
+	
+	tableName << New Column( "AR-Script",
+		Formula(
+			If(
+				parseColName == -999, -2
+			, 
+				:Flag_nums != "85" & :Flag_nums != "None" & :Flag_nums != "Cannot Calculate", -1
+			,
+				parseColName
+			)
+		);
+	);
+	Column(tableName, "AR-Script")<<deleteformula;
+);
+
+cFunct:finishingOff = Function({tableName,iaCode,units,colName},{default local},
+	//tableName = currentdatatable();
+	
+	//Calculates concentrations based on available curves
+	chemCalculatedConcentration(iaCode,"calCurve",tableName,"Calc_Dose_All","stdCharCubic",colName);
+	
+	Try(
+		tableName << New Column("Calc Dose", numeric,
+			Formula(
+				If(:Name("AR-Script") == -1 | :Name("AR-Script") == -2,
+					:Name("AR-Script")
+				,
+					//Try included if species isn't in array, will default to displaying the calc dose all value
+					Try(
+						If(:Name("Calc_Dose_All") > extremeHighDose[Uppercase(:Name("Species Name"))], -3, :Name("Calc_Dose_All"))
+						,
+						:Name("Calc_Dose_All")
+					)
+				)
+			)
+		);
+		Column(tableName,"Calc Dose")<<DeleteFormula;
+	);
+	tableName << New Column("Units_script",character(10),
+		<< Set Each Value(units)
+	);
+	
+	//Moves most important columns within table
+	//Try() functions move columns not in common beteween table origins
+	tableName << MoveSelectedColumns(
+		{
+			"AR-Script",
+			Eval(colName), //replace with AR metric for specific Assays
+			"Calc Dose",
+			"Units_script",
+			"Flag",
+			"Flag_nums",
+			"uniqueCurveID",
+			"R&D AR Calc Version",
+			"Chem Type",
+			"Inst Type",
+			"TimeFromSampleDispense:sec",
+			"ReflDens_avg",
+			"Instrument ID"
+		},
+		To First
+	);
+
+	//Try() statments cover a number of columns that may be present but may not depending on data source
+	//Column movement Try() commands done in reverse order as JMP doesn't allow a move 'before' only 'after'
+	//So to maintain correct order in case some of colums are there but others aren't, reverse ensures correct ordering 'after' a given column
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Flags"
+			},
+			After("Flag_nums")
+		);
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"CDx Conc Error Flags"
+			},
+			After("Flag_nums")
+		);
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"CDx IM Error Flags"
+			},
+			After("Flag_nums")
+		);
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"condition 4"
+			},
+			To First
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"condition 3"		
+			},
+			To First
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"condition 2"		
+			},
+			To First
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"condition 1"		
+			},
+			To First
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Configuration"		
+			},
+			After("uniqueCurveID")
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Script Version"		
+			},
+			After("uniqueCurveID")
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Foil Found"		
+			},
+			After("uniqueCurveID")
+		)
+
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Barcode"		
+			},
+			After("uniqueCurveID")
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Metering Firmware"		
+			},
+			After("R&D AR Calc Version")
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Species Name"		
+			},
+			After("Inst Type")
+		)
+	);
+	Try(
+		tableName << MoveSelectedColumns(
+			{
+				"Species"		
+			},
+			After("Inst Type")
+		)
+	);
+	
+	//Hides and groups all columns that are listed in 'hidecols'
+	//Default is for any column to be unhidden unless added to this list
+	hideCols = {"Alg Calc Ar Error Status :4", "Algorithm Conc Error Flags", "Algorithm IM Error Flags", "Algorithm Status",
+	"AR Qualifer", "AR Qualifier", "AR2", "AR2 Qualifer", "AR2 Qualifier", "Concentration units", "Curve Area",
+	"Curve Cubic", "Curve Fifth", "Curve File Version", "Curve Intercept", "Curve Linear", "Curve Quad",
+	"Curves Version :5", "Date", "Date-orig", "Dilution Parts", "Dilution Type", "Discrepant Type",
+	"Dry Read Finish", "Dry Read Start", "DryReadingMean", "Final Scalar", "Flag :3", "Flag1 :4", "Flag2 :4",
+	"Flag3 :4", "From Optics Module", "Gain Applied", "Gain Applied :4", "Gain Applied 2", "GMTime",
+	"ID Source :2", "Log Entry Timestamp :3", "Normalized RD", "Num Dry Reads :2", "Num Of Assays",
+	"Num Of Points :2", "Num Of Readings :2", "Num Wavelengths Used :4", "Offset Applied", "Offset Applied :4",
+	"Offset Applied Type", "Paired Results Flag :4", "Point :3", "Post Analysis Notes", "Progress Curve Analysis",
+	"Qual :4", "Qualifier", "RD Normalization Reading", "Read Point", "Reading Time", "Reading2 :3",
+	"Reflective :2", "Re-Review of Consumable/Slide", "Run Done Timestamp", "Run Fault", "Sample Container",
+	"Sample_conjugate_alq2", "Scalar", "Scalar Adjustment", "Segment", "Slide Load Position :4", "Spot Time",
+	"Stored Wet Offset", "Stored WLC Offset", "Substrate_alq1", "Time", "Time Offset :2", "Time-orig",
+	"Timeseries pt", "Timeseries RD2", "TS Read Flag", "uldry Intensity", "ulfalse light Molded", "ulfalselight",
+	"ulfalselight Laminate", "ulwet Intensity", "Units :4", "Units :5", "Wash 1 End", "Wash 2 End", "Wash1_alq3",
+	"Wavelength", "Wavelength2", "Wavelength3", "Wavelengths Used", "X Intersect", "Y Intersect"};
+	
+	hideGroupCols = {};
+	For(i = 1, i<=ncols(tableName),i++,
+		a = column(tableName,i)<<getname;
+		If(Contains(hideCols,a) > 0,
+			Column(tableName,i)<<hide(1);
+			InsertInto(hideGroupCols,a)
+		)
+	);
+	tableName<<groupcolumns("Hidden Columns",hideGroupCols);
+	tableName<<MoveColumnGroup(To Last, "Hidden Columns");
+	
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	dt_name = tableName << get name;
+	titleName = Word(1,dt_name,"-");
+	dateName = Substr(dt_name,Munger( dt_name, 1, "-" )+1,6);
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+
+	//Selects one read from each curve to subset into table with only 1 Angle result per run
+	tableName << Select Where( :uniqueCurveID != Lag(:uniqueCurveID,-1) | Row() == NRow());
+	
+	//Get subset with just the results
+	dt_justResult = tableName << Subset(
+		output table name( titleName||"-"||dateName||"_"||knownChemType||" AR_"||nextTodayDate|| "_justResults" )
+	);
+	tableName << SelectAllRows;
+	tableName << InvertRowSelection;
+	
+	dt_justResult << Delete Table Property("Make justResults");
+	Return(dt_justResult);
+);
+
+cFunct:startDialog = Function( {datatable},
+	here:dt_new = datatable;
+	nc = N Col( datatable );
+	lbWidth = 130;
+	numParam = 1;
+	diagWindow = New Window( "Slope_EndPoint Calculation",
+		Border Box( Left( 3 ), top( 2 ),
+			V List Box(
+				H List Box(
+					chooseDefbox = Check Box(
+						{""},
+						<<setFunction(
+							Function( {this, button},
+								If( (this << get( 1 )) == 1,
+									//ob << Close( 1 );
+									ob << visibility( 2 );
+									colListY << RemoveAll;
+									//colListBsdmaCal << RemoveAll;
+									colListX << RemoveAll;
+									colListT << RemoveAll;
+								,
+									//ob << Close( 0 );
+									ob << visibility( 0 );
+								)
+							)
+						)
+					),
+					tb = Text Box( "Check this box to use default columns", <<setwrap( 500 ), <<setfontsize( 12 ), <<setfontstyle( "Bold" ) )
+				),
+				H List Box(
+					V List Box(
+						Panel Box( "Input Parameters Combinations",
+							V List Box(
+								V List Box(
+									H List Box(
+										Text Box( "How many parameter sets?  " ),
+										Number Edit Box(
+											numParam,
+											5,
+											<<Set Function(
+												Function( {this},
+													numParam = this << Get;
+													Try(
+														For( j = 2, j <= 4, j++,
+															hb1[j] << Delete;
+															hb2[j] << Delete;
+															//hb3[j] << Delete;
+															//hb4[j] << Delete;
+															j = j - 1;
+														)
+													);
+													For( i = 1, i <= numParam - 1, i++,
+														hb1 << Append( Text Box( "   " ) );
+														hb1 << Append( startTime1[i + 1] = Text Edit Box( "" ) );
+														hb2 << Append( Text Box( "   " ) );
+														hb2 << Append( endTime1[i + 1] = Text Edit Box( "" ) );
+														//hb3 << Append( Text Box( "   " ) );
+														//hb3 << Append( threshArea1[i + 1] = Text Edit Box( "" ) );
+														//hb4 << Append( Text Box( "   " ) );
+														//hb4 << Append( numRegressPoints1[i + 1] = Text Edit Box( "" ) );
+													);
+												)
+											)
+										)
+									)
+								),
+								Text Box( "Each Vertical Set of Values = 1 Algorithm AR ", <<SetFontStyle( "Bold" ) ),
+								Text Box( "" ),
+								/*V List Box(
+									Text Box( "Normalization Time" ),
+									hb1 = H List Box( normTime1[1] = Text Edit Box( Char( SOPnormTime ) ) ),
+									Text Box( "Time Threshold" ),
+									hb2 = H List Box( threshTime1[1] = Text Edit Box( Char( SOPthreshTime ) ) ),
+									Text Box( "Area Threshold" ),
+									hb3 = H List Box( threshArea1[1] = Text Edit Box( Char( SOPthreshArea ) ) ),
+									Text Box( "Regression Points" ),
+									hb4 = H List Box( numRegressPoints1[1] = Text Edit Box( Char( SOPnumRegressPoints ) ) ),
+
+								)*/
+								H List Box(
+									V List Box( 
+										Text Box( "Start Time",<<setfontsize(10),<<setfontstyle("bold"),<<fontcolor("Red") ), 
+										hb1 = V List Box( startTime1[1] = Text Edit Box( Char( SOPstartTime ) ) ) 
+									),
+									Text Box( "" ),
+									V List Box( 
+										Text Box( "End Time",<<setfontsize(10),<<setfontstyle("bold"),<<fontcolor("Red") ), 
+										hb2 = V List Box( endTime1[1] = Text Edit Box( Char( SOPendTime ) ) ) 
+									), 
+								)
+							)
+						)
+						,
+						Panel Box("Table Preparation",
+							tblPrp = Radio Box({"Perform table prep","Don't perform table prep"},<< set(1))
+						)
+					)
+					,
+					Panel Box( "Default Columns",
+						H List Box(
+							Panel Box( "", Text Box( "Y, Resp", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "ReflDens_avg", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+						H List Box(
+							Panel Box( "", Text Box( "X, 'Time'", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "TimeFromSampleDispense:sec", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+						H List Box(
+							Panel Box( "", Text Box( "Unique ID", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "uniqueCurveID", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+
+					),
+					Panel Box( "Action",
+						Lineup Box( N Col( 1 ),
+							Button Box( "OK",
+								Batch Interactive( 1 );
+								populateGetItems( globalList, lbList, cAR );
+								populateGetItems( globalVarParam, lbVarParam, cAR );
+								populateGetText( globalListParam, lbListParam, cAR );
+								populateChkBx( globalDefault, lbDefault, cAR );
+
+								cFunct:arCalc(here:dt_new,knownChemtype,targetCode);
+								Batch Interactive( 0 );
+							),
+							Button Box( "Cancel", exprCancel() ),
+							Text Box( " " ),
+							Button Box( "Remove",
+								colListY << RemoveSelected;
+								colListX << RemoveSelected;
+								colListT << RemoveSelected;
+							),
+							Button Box( "Recall",
+								recallItems(here:dt_new)
+							), 
+							Button Box( "Help",
+								help("com.idexx.genericAssayDev","GenSlopeEndpoint_Help.pdf")
+							),
+							Button Box( "About",
+								about(toolName,arCalcVer)
+							),
+						)
+					)
+				),
+				ob = Panel Box( title1,
+					Border Box( Left( 3 ), top( 2 ),
+						V List Box(
+							Text Box( "Choose Columns for Response, 'Time', and Unique ID", <<setfontstyle( "Bold" ) ),
+							H List Box(
+								V List Box(
+									Panel Box( "Select Columns",
+										colListData = Col List Box(here:dt_new, All, width( lbWidth ), nLines( Min( nc, 10 ) ), Grouped )
+									), 
+
+								),
+								Panel Box( "Cast Selected Columns into Roles",
+									Lineup Box( N Col( 2 ), Spacing( 3 ),
+										Button Box( "Y, Resp", colListY << Append( colListData << GetSelected ) ),
+										colListY = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 3 ), numeric ),
+										Button Box( "X, 'Time'", colListX << Append( colListData << GetSelected ) ),
+										colListX = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ), numeric ),
+										Button Box( "Unique ID", colListT << Append( colListData << GetSelected ) ),
+										colListT = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ) ), 
+										//Button Box( "By", colListBsdmaCal << Append( colListData << GetSelected ) ),
+										//colListBsdmaCal = Col List Box( width( lbWidth ), nLines( 1 ), maxitems( 1 ), character )
+									)
+								)
+							)
+						)
+					)
+				)
+			)
+		)
+	);
+	Return(1);
+);
+
+
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If(Length(Include File List()) == 1,
+	If(checkVersion(minJMPver) == 1,	
+		defaultsNoDialog = 1; //change to 0 to use dialog (will perform different than standard generic)
+
+		//Gets data table if non opened
+		If(Ntable()==0,
+			dt_start = Open()
+			, 
+			dt_start = currentdatatable()
+		); 
+
+		If(defaultsNoDialog == 0,
+			cFunct:startdialog(dt_start);
+			,
+			flagTable = cFunct:arCalc(dt_start,knownChemtype,targetCode,defaultsNoDialog);
+			If(flagTable == 0, cleanup());
+			cFunct:flagging(flagTable[1],assayFlags,flagTable[3]);
+			cFunct:finishingOff(flagTable[1],flagTable[2][1],units,flagTable[3]);
+			
+			cAR << delete namespace;
+		);
+		cFunct << delete namespace;
+		,
+		wrongVer(minJMPver);
+		cleanup();
+	)
+	,
+	print(knownChemType||" AR script was included from another source");
+	//build within try() command
+	//dt_start = mf:subsetDT;
+);

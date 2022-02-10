@@ -1,0 +1,17 @@
+R Init();
+dt = Open("CRP panel data_no30.jmp", invisible);
+R Send( dt ); // Sends the opened data table represented by dt to R;
+//R Submit( "print(dt)" );
+
+R submit("CRP <- dt");
+R submit("X = CRP[,1]");
+R submit("Y = CRP[,2]");
+
+R submit("print (Y)");
+
+R submit ("cubefit = lm(Y ~ X + I(X^2) + I(X^3))");
+//R submit ("print(summary(cubefit))");
+R submit ("vals = summary(cubefit)$coefficients[,1]");
+R submit ("print(vals)");
+
+R Term();

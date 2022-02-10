@@ -1,0 +1,1007 @@
+//Author(s)
+//NClark, ZHelm
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates AR for the QUEST SDMA Assay
+
+//------------------Revision History for both script and Help File--
+//
+//	3.3.0 NClark 112121
+//		-> Updated the Try() in offsetCalPrep to be 'local' instead of 'remote' in the first failure of the try to load the files
+//	3.2.0 NClark 040321
+//		-> Updates from ZHelm on the Calc Dose and CalcDose Remote equations in Finishingoff()
+//	3.1.0 NClark 032621
+//		-> Updated the network path to full server address for those without mapped R drives
+//	3.0.2 NClark 030821
+//		-> Updated the cal prep function to better handled necessary columns vs what comes out of tableprep
+//	3.0.1 NClark 030521
+//		-> deleted commented SOP start and end time lines
+//	3.0.0 NClark 030521
+//		-> 1st version based on v2.0 of Zac Helm's qsdma AR Calculator
+//
+// Nameing "Rules" if users want to use them
+// File name: [anything you want1]-[six digit date][anything you want2]
+//	The tool will take [anything you want1] and the 6 characters after the - and use them in the new file name
+//		[anything you want1] should not contain any dashes
+//		EX: NRC_0025-022320_this ismyfirst file.jmp
+//		-> NRC_0025-022320_QSDMA AR_[todays date]_progCurves
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+/*Dont think i need these namespaces if not basing off of generic tool(s)*/
+/*may need for solid multi-assay performance*/
+If( !Namespace Exists( "qSDMAfunctions" ),
+	New Namespace(
+		"qSDMAfunctions"
+	)
+);
+qFunct = Namespace( "qSDMAfunctions" );
+
+//-----------Variable Declarations (above Main for easy access)--
+	
+	u = Get Environment Variable("username");
+	addinID = "com.idexx.RnD_QSDMA";
+	//addinLib = "com.idexx.assayDevLibraries2";
+
+	updateIDs = {"com.idexx.assayDevLibraries2","com.idexx.RnD_QSDMA"};
+
+	minJMPver = "15.2";
+
+	listOfIDXassays = {28, 23, 18, 17, 30, 21, 4};
+	
+	//version now tied to currently installed addin version
+	//MAY NOT BE CORRECT WHEN TESTING
+	Try(
+		arCalcVer = Char( Get Addin( "com.idexx.RnD_QSDMA" ) << version )
+		,
+		Print( "Addin not installed yet" );
+		arCalcVer = "v999";
+	);
+	//Known Chemistry to be used if assay info not available.
+	knownChemType = "QSDMA";
+	targetCode = {4};
+	
+	remotePath = "\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\QSDMA CalOffsets\";
+	localPath = "$ADDIN_HOME(com.idexx.RnD_QSDMA)\";
+	
+	offsetFile = "Instrument Scalar and Offset Database.jmp";
+	calFile = "Cal Parameter Database.jmp";
+	
+	cannonTimes = AssociativeArray(
+		{
+			{6, 100}, 
+			{7, 115}, 
+			{8, 130}, 
+			{9, 145}, 
+			{10, 160}, 
+			{11, 175}, 
+			{12, 190}, 
+			{13, 205}
+		}
+	);
+	cannonMax = Max(cannonTimes << get keys);
+	cannonMin = Min(cannonTimes << get keys);
+	
+	nestedLinear = AssociativeArray(
+		{
+			{"linear",
+				Associative Array(
+					{
+						{"m",-0.00337932050468136},
+						{"b",0.972954848151445}
+					}
+				)
+			},
+			{"quad",
+				Associative Array(
+					{
+						{"a",0.368029064830265},
+						{"b",-8.86898563719204},
+						{"c",56.0217911976737}
+					}
+				)
+			}
+		}
+	);
+	
+	aberrantThresh = [14, -14];
+	
+	//Define the table variables for use in formulas
+	SOPtimes = [15 105 195 250];
+	
+	assayFlags = {};
+
+	//extreme high dose flag values per species.
+	//species must be all uppercase
+	extremeHighDose = Associative Array( 
+		{
+			{"None", .}
+		}
+	);
+	
+	units = "ug/dL";// update for QSDMA
+
+//-----------/Variable Declarations-----------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_FunctionLibrary2.jsl");
+Include( "$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_TablePreparation2.jsl" );
+Include( "$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl" );
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+checkVersion = Function( {minVer},
+	{default local},
+	currVer = JMP Version();
+	minWords = words(minVer,".");
+	currWords = words(currVer,".");
+	For(i=1,i<=nitems(minWords),i++, 
+		If( Num(minWords[i]) < Num( currWords[i] ),
+			Return(1)
+			,
+			Num(minWords[i]) == Num( currWords[i] ),
+			Continue()
+			,
+			Num(minWords[i]) > Num( currWords[i] ),
+			Return(0)
+		)
+	);
+	Return(1);
+);
+
+wrongVer = Function( {maxVer},
+	{Default Local},
+	New Window( "Requires JMP " || Char( maxVer ),
+		<<Modal,
+		Text Box( "This addin requires the used of JMP " || Char( maxVer ) || "+" ),
+		Button Box( "OK" )
+	)
+);
+
+missingCols = Function( {},
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Defaults chosen, but one or more default columns missing", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ),
+		Button Box( "OK" ),
+
+	)
+);
+
+tooManyNwAssays = Function( {},
+	New Window( "More than 1 Assay present",
+		<<Modal,
+		Text Box( "More than the desired new Assays are present", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please subset each New IDEXX assay separately and run correct script" ),
+		Text Box( "" ),
+		Button Box( "OK" ),
+
+	)
+);
+
+noNwAssays = Function( {},
+	New Window( "No New Assays present",
+		<<Modal,
+		Text Box( "There are no new assays present in the table", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please consider just running the Table Preparation Script" ),
+		Text Box( "" ),
+		Button Box( "OK" ),
+
+	)
+);
+
+wrongNwAssay = Function( {},
+	New Window( "Assay not supported",
+		<<Modal,
+		Text Box( "The Assay in the table is not supported by this script", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please try again" ),
+		Text Box( "" ),
+		Button Box( "OK" ),
+
+	)
+);
+
+scriptJustResults = Function( {tableName, uniqueCol},
+	{default Local},
+	dt_algorithm = tableName;
+	parseUnique = Eval Insert( ":Name(\!"^uniqueCol^\!")" );
+	Eval(
+		Eval Expr(
+			dt_algorithm << New Script(
+				"Make justResults",
+				tblName = Current Data Table() << Getname;
+				Data Table( tblName ) << select all rows;
+				Data Table( tblName ) << invert row selection;
+				Try( newName = Munger( tblName, 1, "_progCurves", "" ), newName = tblName );
+				Data Table( tblName ) << SelectWhere( Expr( Parse( parseUnique ) ) != Lag( Expr( Parse( parseUnique ) ), -1 ) );
+				Data Table( tblName ) << Subset( output table name( newName || "_justResults" ) );
+				Data Table( tblName ) << select all rows;
+				Data Table( tblName ) << invert row selection;
+			)
+		)
+	);
+);
+
+cannotReplace = Function( {},
+	New Window( "Unable to Sort Data",
+		<<Modal,
+		Text Box(
+			"JMP is unable to sort data table because existing reports are linked to this table. Please close those reports and try again.",
+			<<setfontstyle( "bold" ),
+			<<setfontsize( 12 )
+		),
+		Text Box( "" ),
+		Button Box( "OK" ),
+
+	)
+);
+
+cleanup = Function( {namespaceList},
+	{},
+	For(i=1,i<=nitems(namespaceList),i++,
+		namespaceList[i] << delete namespace;
+	);
+	Throw();
+);
+
+offsetCalFail = Function( {},
+	New Window( "Offset / Cal Tables missing",
+		<<Modal,
+		Text Box( "Cannot access Offset / Cal Tables", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Please try again, or contact tool author(s)" ),
+		Text Box( "" ),
+		Button Box( "OK" ),
+	)
+);
+
+offsetCalPrep = Function({dtName, remote, local, offset, cal},{default local},
+	
+	//dtName = dt_algorithm;
+	//remote = remotePath;
+	//local = localPath;
+	//offset = offsetFile;
+	//cal = calFile;
+	Try(
+		offsets = Open(remote || offset, private);
+		offsets << save(local || offset);
+		cals = Open(remote || cal, private);
+		cals << save(local || cal);
+		dtName << Update( With( offsets ), Match Columns( :Instrument ID = :Instrument ID ), Add Columns from Update Table( All ) );
+		offsets << Close Window;
+		dtName << New Column( "Slide Lot_Script", Numeric, Ordinal, Set Formula( Num(Left( Char( :Slide Lot ), 4 ) )) );
+		dtName:"Slide Lot_Script"n << Delete Formula;
+
+		cals:"Coating"n << set data type("numeric");
+		cals:"X Position"n << set data type("numeric");
+		cals:"Coating"n << set modeling type("ordinal");
+		cals:"X Position"n << set modeling type("ordinal");
+		dtName << Update(
+			With( cals ),
+			Match Columns( :Slide Lot_Script = :Coating, :Slide Sublot = :X Position ),
+			Add Columns from Update Table( All )
+		);
+		cals << Close Window;
+		,
+		Try(
+			Print("Using local offset and cal files");
+			offsets = Open(local || offset, private);
+			cals = Open(local || cal, private);
+			dtName << Update( With( offsets ), Match Columns( :Instrument ID = :Instrument ID ), Add Columns from Update Table( All ) );
+			offsets << Close Window;
+			dtName << New Column( "Slide Lot_Script", Numeric, Ordinal, Set Formula( Num(Left( Char( :Slide Lot ), 4 ) )) );
+			dtName:"Slide Lot_Script"n << Delete Formula;
+
+			cals:"Coating"n << set data type("numeric");
+			cals:"X Position"n << set data type("numeric");
+			cals:"Coating"n << set modeling type("ordinal");
+			cals:"X Position"n << set modeling type("ordinal");
+			dtName << Update(
+				With( cals ),
+				Match Columns( :Slide Lot_Script = :Coating, :Slide Sublot = :X Position ),
+				Add Columns from Update Table( All )
+			);
+			cals << Close Window;
+			,
+			Print("Something wrong with Cal and Offset Files");
+			offsetCalFail();
+			cleanup({qFunct});
+			Throw()
+		)
+	);
+	
+	Return(dtName);
+);
+
+qFunct:arCalc = Function( {tableName, knownChemtype, targetCode, fullDefaults = 0},
+	{}, 
+	//tableName = dt_start;
+	//knownChemType = "QSDMA";
+	//targetCode = {4};
+	//fullDefaults = 1;
+	
+	tblGetName = tableName << GetName;
+	
+	//determines if any other paramSets are present and find the next paramSet
+	tableVars = tableName << get table variable names;
+	
+	//determines if any AR tool has been run before
+	//makes new table if first time use
+	//does tableprep no matter what
+	If( Contains( tblGetName, "_progCurves" ) > 0,
+		newTable = 0;
+		dt_algorithm = tableName;
+		dt_algorithm = tablePrep( dt_algorithm, knownChemType );
+	,
+		newTable = 1;
+		//Creates working copy of data table so original data is never 'touched'
+		dt_algorithm = tableName << Subset( Output Table( tblGetName ), All Rows, Selected columns only( 0 ), invisible );
+		dt_algorithm = tablePrep( dt_algorithm, knownChemType );
+	);
+	
+	dt_algorithm = offsetCalPrep(dt_algorithm, remotePath, localPath, offsetFile, calFile); //uses outside table(s) to update important offset and curve informtion based on instrument and lot information
+		
+	nwAssayCodes = {};
+	Try(
+		Is Scriptable( Column( dt_algorithm, "Assay" ) );
+		Summarize( dt_algorithm, a = by( :Name("Assay") ) );
+		For( i = 1, i <= N Items( listOfIDXassays ), i++,
+			If( Contains( a, Char( listOfIDXassays[i] ) ) > 0,
+				Insert Into( nwAssayCodes, listOfIDXassays[i] )
+			)
+		);
+	,
+		Insert Into( nwAssayCodes, 999 )
+	);
+
+	Match( newTable,
+		0,
+			Match( N Items( nwAssayCodes ),
+				0,
+					noNwAssays();
+					Throw();,
+				1,
+					If(
+						nwAssayCodes[1] == 999, Empty(),
+						Contains( targetCode, nwAssayCodes[1] ) == 0,
+							wrongNwAssay();
+							Return( 0 );
+					),
+				tooManyNwAssays();
+				Return( 0 );
+			),
+		1,
+			Match( N Items( nwAssayCodes ),
+				0,
+					Close( dt_algorithm, nosave );
+					noNwAssays();
+					Return( 0 );,
+				1,
+					If(
+						nwAssayCodes[1] == 999, Empty(),
+						Contains( targetCode, nwAssayCodes[1] ) == 0,
+							Close( dt_algorithm, nosave );
+							wrongNwAssay();
+							Return( 0 );
+					),
+				Close( dt_algorithm, nosave );
+				tooManyNwAssays();
+				Return( 0 );
+			)
+	);
+	
+	colList1 = dt_algorithm << get column names( string );
+	//discovers presence of any column that would become default
+	//assigns cols or throws error dialog
+	foundTimeCol = 0;
+	foundRespCol = 0;
+	foundUniqueCol = 0;
+	If( Contains( colList1, "TimeFromSampleDispense:sec" ) > 0,
+		foundTimeCol = 1
+	);
+	If( Contains( colList1, "ReflDens_avg" ) > 0,
+		foundRespCol = 1
+	);
+	If( Contains( colList1, "uniqueCurveID" ) > 0,
+		foundUniqueCol = 1
+	);
+	If( fullDefaults == 0,
+		useDefaultCols = chooseDefBox << get,
+		useDefaultCols = 1
+	);
+	//Hold over from old code where a dialog box could be present to input columns
+	Match( useDefaultCols,
+		0,
+			Try(
+				respCol = (colListY << Get items)[1];
+				timeCol = (colListX << Get items)[1];
+				uniqueCol = (colListT << Get items)[1];
+			,
+				If( foundTimeCol == 1 & foundRespCol == 1 & foundUniqueCol == 1,
+					respCol = "ReflDens_avg";
+					timeCol = "TimeFromSampleDispense:sec";
+					uniqueCol = "uniqueCurveID";
+				,
+					missingCols();
+					If( newTable = 1,
+						Close( dt_algorithm, nosave )
+					);
+					Throw();
+				)
+			),
+		1,
+			If( foundTimeCol == 1 & foundRespCol == 1 & foundUniqueCol == 1,
+				respCol = "ReflDens_avg";
+				timeCol = "TimeFromSampleDispense:sec";
+				uniqueCol = "uniqueCurveID";
+			,
+				missingCols();
+				If( newTable == 1,
+					Close( dt_algorithm, nosave )
+				);
+				Throw();
+			)
+	);
+	//show(respCol,timeCol,uniqueCol);
+	
+	Try( diagwindow << close window() );//holdover from dialog days
+	dt_algorithm << show window();
+	
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	dt_name = tblGetName;
+	titleName = Word( 1, dt_name, "-" );
+	dateName = Substr( dt_name, Munger( dt_name, 1, "-" ) + 1, 6 );
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate = Short Date( Today() );
+	newTodayDate = Munger( todayDate, 1, "/", "" );
+	nextTodayDate = Munger( newTodayDate, 1, "/", "" );
+	
+	dt_algorithm << New Column( "P2P Slope - Response",
+		Numeric,
+		Continuous,
+		Set Formula( If( AsColumn(uniqueCol) == Lag( AsColumn(uniqueCol) ), ( AsColumn(respCol) - Lag( AsColumn(respCol) )) / (AsColumn(timeCol) - Lag( AsColumn(timeCol) )) ) )
+	);
+
+	dt_algorithm << New Column( "P2P Slope - Int",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			AsColumn(respCol)  - AsColumn(timeCol) * :Name( "P2P Slope - Response" ) 
+		)
+	);
+	
+	dt_algorithm << New Column( "Canon Time",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			cannonTimes[:"Read Point"n]
+		)
+	);
+	
+	dt_algorithm << New Column( "Canon Time Progress Curve",
+		Numeric,
+		Continuous,
+		Set Formula( :Canon Time * :Name( "P2P Slope - Response" ) + :Name( "P2P Slope - Int" ) )
+	);
+	
+	dt_algorithm << New Column( "Canon Time P2P Slope Values",
+		Numeric,
+		Continuous,
+		Set Formula( If( Lag( AsColumn(uniqueCol) ) == AsColumn(uniqueCol), (:Canon Time Progress Curve - Lag( :Canon Time Progress Curve )) / 15 ) )
+	);
+
+	dt_algorithm << New Column( "Slope Vals for AR",
+		Numeric,
+		Continuous,
+		Set Formula( If( :"Read Point"n == 7, :Name( "P2P Slope - Response" ), :Canon Time P2P Slope Values ) )
+	);
+	
+	dt_algorithm << New Column( "Predicted Progress Curve Point from Previous",
+		Numeric,
+		Continuous,
+		Set Formula(
+			If( AsColumn(uniqueCol) == Lag( AsColumn(uniqueCol) ) & cannonMin < :"Read Point"n < cannonMax,
+				(nestedLinear["linear"]["b"] + nestedLinear["linear"]["m"] * (:"Read Point"n - 1)) * Lag( :Slope Vals for AR ) + (nestedLinear["quad"]["c"] +
+				nestedLinear["quad"]["b"] * (:"Read Point"n - 1) + nestedLinear["quad"]["a"] * (:"Read Point"n - 1) ^ 2)
+			)
+		)
+	);
+	
+	dt_algorithm << New Column( "Progress Curve Predicted Bias to Measured",
+		Numeric,
+		Continuous,
+		Set Formula( If( :"Read Point"n == (cannonMin + 1), 0, :Slope Vals for AR - :Predicted Progress Curve Point from Previous ) )
+	);
+	
+	dt_algorithm << New Column( "Aberrant Point",
+		Numeric,
+		Continuous,
+		Set Formula( If( :Progress Curve Predicted Bias to Measured > aberrantThresh[1], 1, :Progress Curve Predicted Bias to Measured < aberrantThresh[2], -1, 0 ) )
+	);
+		
+	dt_algorithm:"Progress Curve Predicted Bias to Measured"n << Delete Formula;
+	dt_algorithm:"Predicted Progress Curve Point from Previous"n << Delete Formula;
+	dt_algorithm:"Aberrant Point"n << Delete Formula;
+	dt_algorithm:"P2P Slope - Response"n << Delete Formula;
+	dt_algorithm:"P2P Slope - Int"n << Delete Formula;
+	dt_algorithm:"Canon Time"n << Delete Formula;
+	dt_algorithm:"Canon Time Progress Curve"n << Delete Formula;
+	dt_algorithm:"Canon Time P2P Slope Values"n << Delete Formula;
+	dt_algorithm:"Slope Vals for AR"n << Delete Formula;
+
+	dt_algorithm:"Progress Curve Predicted Bias to Measured"n << Hide( 1 );
+	dt_algorithm:"Predicted Progress Curve Point from Previous"n << Hide( 1 );
+	dt_algorithm:"Aberrant Point"n << Hide( 1 );
+	dt_algorithm:"P2P Slope - Response"n << Hide( 1 );
+	dt_algorithm:"P2P Slope - Int"n << Hide( 1 );
+	dt_algorithm:"Canon Time"n << Hide( 1 );
+	dt_algorithm:"Canon Time Progress Curve"n << Hide( 1 );
+	dt_algorithm:"Canon Time P2P Slope Values"n << Hide( 1 );
+	dt_algorithm:"Slope Vals for AR"n << Hide( 1 );
+
+	dt_algorithm << New Column( "Rebuilt Curve",
+		Numeric,
+		Continuous,
+		Set Formula(
+			If( AsColumn(uniqueCol) == Lag( AsColumn(uniqueCol) ) & :"Read Point"n > cannonMin,
+				:"Slope Vals for AR"n + Lag( :Rebuilt Curve ),
+				0
+			)
+		)
+	);
+	dt_algorithm:"Rebuilt Curve"n << Delete Formula;
+	dt_algorithm:"Rebuilt Curve"n << Hide( 1 );
+		
+	dt_algorithm << Delete Columns( "Canon Read Number" );
+	
+	dt_algorithm << New Column( "R&D AR Calc Version", Character( 10 ), Formula( Eval( arCalcVer ) ) );
+	dt_algorithm:"R&D AR Calc Version"n << delete formula;
+	
+	Try(
+		dt_algorithm << Sort(
+			By( Column( dt_algorithm, uniqueCol ), Column( dt_algorithm, timeCol ) ),
+			Order( Ascending, Ascending ),
+			ReplaceTable( 1 )
+		),
+		cannotReplace();
+		Return( 0 );
+	);
+	
+	//preDevelopmentMetric{tableName,yColumn,xColumn,byColumn,columnName,metric="sp",direction="Dry",eventOneTime="NULL",eventTwoTime="NULL",singlePoint=1};
+	preDevelopmentMetric( dt_algorithm, respCol, timeCol, uniqueCol, "Mean(Response, Dry)", "avg", "Dry", "NULL", "NULL", 1 );
+
+	dt_algorithm << New Column( "Dry Normalized Response", Numeric, Continuous, Set Formula( AsColumn(respCol) / :"Mean(Response, Dry)"n ) );
+	
+	dt_algorithm:"Dry Normalized Response"n << Delete Formula;
+	dt_algorithm:"Dry Normalized Response"n << Hide( 1 );
+	dt_algorithm:"Mean(Response, Dry)"n << Hide( 1 );
+		
+	For( i = 1, i < N Col( SOPTimes ), i++,
+		colNametemp1 = "Slope(" || Char( SOPTimes[i] ) || "-" || Char( SOPTimes[i + 1] ) || ")";
+		genericInterpMetric( dt_algorithm, respCol, timeCol, uniqueCol, colNametemp1, SOPTimes[i], SOPTimes[i+1], "Slope" );
+	);
+		
+	dt_algorithm << New Column( "Date and Time Script Run",
+		Numeric,
+		Continuous,
+		Format( "m/d/y" ),
+		Input Format( "d/m/y h:m:s" ),
+		Set Formula( As Date( Today() ) )
+	);
+	dt_algorithm:"Date and Time Script Run"n << Delete Formula;
+
+	dt_algorithm:"Date and Time Script Run"n << Hide( 1 );
+		
+	dt_algorithm << Select Where( :"Read Point"n == cannonMax );
+	Column(dt_algorithm,uniqueCol) << set selected;
+	dt_algorithm:"Rebuilt Curve"n << set selected;
+	
+	dt_Datasub = dt_algorithm << Subset( Selected Rows( 1 ), Selected Columns( 1 ) );
+	
+	dt_Datasub:"Rebuilt Curve"n << Set Name( "AUC AR-Read Window "||Char(cannonMin + 1)||" - "||Char(cannonMax) );
+	parseUnique = EvalInsert(":\!"^uniqueCol^\!"n");
+	dt_algorithm << Update( With( dt_Datasub ), Match Columns( Parse(parseUnique) = Parse(parseUnique) ), All );
+	dt_Datasub << close window;
+	
+	dt_algorithm << New Column( "Corrected AR",
+		Numeric,
+		Continuous,
+		Set Formula( :Name( "AUC AR-Read Window 7-13" ) * :Wet QGain AUC713 + :Wet QOffset AUC713 )
+	);
+	
+	dt_algorithm << New Column( "Remote Corrected AR",
+		Numeric,
+		Continuous,
+		Set Formula( :Name( "AUC AR-Read Window 7-13" ) * :Remote QGain AUC713 + :Remote QOffset AUC713_Model1 )
+	);
+	dt_algorithm:"Corrected AR"n << delete formula;
+	dt_algorithm:"Remote Corrected AR"n << delete formula;
+		
+	If( newTable == 1,
+		dt_algorithm << SetName( titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_progCurves" );
+		scriptJustResults( dt_algorithm, uniqueCol );
+	,
+		Empty()
+	);
+	Current Data Table( dt_algorithm );
+	dt_algorithm << Clear Column Selection;
+	dt_algorithm << SelectAllRows;
+	dt_algorithm << InvertRowSelection;
+	
+	colName = "Remote Corrected AR";//this should be dynamically made, perhaps output from the dynamicFunction?
+	Return( dt_algorithm, nwAssayCodes, colName, uniqueCol );
+);
+
+qFunct:flagging = Function( {tableName, flagParams, arCol},
+	{default local}, 
+/*	//tableName = flagTable[1];
+	//flagParams = assayFlags;
+	//arCol = "DryNorm_Slope(35-90)";
+	
+	parseARcol = Parse( Eval Insert( ":name(\!"^arCol^\!" )" ) );
+	
+	/*
+	//adds table variable to show the flag parameter limits
+	flagString = {};
+	For( k = 1, k <= N Items( flagParams ), k++,
+		Match( N Items( flagParams[k] ),
+			4, flagString[k] = Concat( Char( flagParams[k][1] ), " = ", Char( flagParams[k][2] ), ", ", Char( flagParams[k][3] ), "\!n" ),
+			6,
+				flagString[k] = Concat(
+					Char( flagParams[k][1] ),
+					" = ",
+					Char( flagParams[k][2] ),
+					", ",
+					Char( flagParams[k][3] ),
+					", ",
+					Char( flagParams[k][4] ),
+					", ",
+					Char( flagParams[k][5] ),
+					"\!n"
+				)
+		)
+	);
+	finalFlagString = Concat Items( flagString, "" );
+	
+	tableName << New Table Variable( "Flag Parameters", finalFlagString );
+	*/
+	/// THE BELOW WILL BE MOVED INTO assayDevFlagging function
+	tableName << New Column("Flag",Character,
+		Formula(
+			If(Row() == 1 | :Name( "uniqueCurveID" ) != Lag(:Name( "uniqueCurveID" ),1),
+				flagList = {};
+				For(i=1,i<=nitems(flagParams),i++,
+					Match(i,
+						1,
+							If(
+								:Name("Total Glitch Count") != flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						2,
+							If(
+								:Name("Total Glitch Count") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						4,
+							If(
+								:Name("AvgDry") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+						,
+						3,
+							If(
+								flagParams[i][2] <= :Name("B Term") <= flagParams[i][3],
+								flagList[i] = "NF("||flagParams[i][4]||")"
+								,
+								flagList[i] = flagParams[i][4]
+							);
+						,
+						6,
+							If(
+								flagParams[i][2] <= :Name("Dynamic Region AR") <= flagParams[i][3],
+								flagList[i] = "NF("||flagParams[i][4]||")"
+								,
+								flagList[i] = flagParams[i][4]
+							);
+						,
+						5,
+							If(
+								Round(flagParams[i][4] * :Name("B Term") + flagParams[i][5], 10) <= :Name("A Term") <= Round(flagParams[i][2] * :Name("B Term") + flagParams[i][3], 10),
+								flagList[i] = "NF("||flagParams[i][6]||")",
+								flagList[i] = flagParams[i][6];
+							)
+							,
+						7,
+							If(
+								:Name("ResidualVariance") < flagParams[i][2],
+								flagList[i] = "NF("||flagParams[i][3]||")"
+								,
+								flagList[i] = flagParams[i][3]
+							);
+					);
+				);
+				
+				flagList1="";
+				For(j=1,j<=nitems(flagList),j++,
+					flagList1 = flagList1 || " " || flagList[j]
+				);
+				Trim(flagList1);
+				,
+				Lag(:Flag,1)
+			)
+		)
+	);
+	
+	tableName<<New Column("Flag_nums",Character(20),
+		Formula(
+			//If(:Chem Type == assay_Name,
+				flagNumList = Words(:Flag,"[");
+				flagNumList1 = "";
+				For(k=1,k<=nitems(flagNumList)-1,k++,
+					If(Contains(flagNumList[k],"NF") == 0,
+						flagNumList1 = flagNumList1 || " " || Word(1,flagNumList[k+1],"]")
+					)
+				);
+				If(flagNumList1 == "",
+					"None"
+					,
+					Trim(flagNumList1);
+				)
+			//);
+		)
+	);
+	Column(tableName,"Flag_Nums") << Eval Formula;
+
+	tableName:Flag << delete formula;
+	tableName:Flag_nums << delete formula;
+	////////
+	/*
+	//update to handle the nwAssayCodes like finishingOff()
+	assayDevFlagging( tableName, flagParams, knownChemType );
+	*/
+	
+*/
+	//
+	tableName << New Column( "AR-Script",
+		Formula(AsColumn(arCol))
+		/*Formula(
+			If(
+				AsColumn(arCol) == -999, -2
+			,
+				Contains(:Name("Flag_nums"),"*") > 0, -1 // only takes 1 * fail to cause suppression
+			,
+				AsColumn(arCol)
+			)
+		)*/
+	);
+	tableName:"AR-Script"n << deleteformula;
+	
+);
+
+qFunct:finishingOff = Function( {tableName, iaCode, units, colName, uniqueCol},
+	{default local}, 
+	//tableName = currentdatatable();
+	//iaCode = 4;
+	//units = units;
+	//colName = "Remote Corrected AR";
+	//uniqueCol = "uniqueCurveID";
+	
+	//parseUniquecol = Parse( Eval Insert( ":\!"^uniqueCol^\!"n" ) );
+		
+	tableName << New Column( "Calc Dose",
+		Numeric,
+		Continuous,
+		Set Formula(
+			Match( :Inst Type,
+				"CatDx",
+					If( :Species Name == "Feline",
+						:CatDx Cal Offset + :Feline Cal Offset + Log( (As Column( colName ) - :Asymptote) / :Scale ) / :Growth Rate,
+						:CatDx Cal Offset + :Canine Cal Offset + Log( (As Column( colName ) - :Asymptote) / :Scale ) / :Growth Rate
+					),
+				"CatOne",
+					If( :Species Name == "Feline",
+						:Feline Cal Offset + Log( (As Column( colName ) - :Asymptote) / :Scale ) / :Growth Rate,
+						:Canine Cal Offset + Log( (As Column( colName ) - :Asymptote) / :Scale ) / :Growth Rate
+					),
+				Empty()
+			)
+		)
+	);
+	addtlColName = Substitute( colName, "Remote ", "" );
+	tableName << New Column( "Calc Dose_Local",
+		Numeric,
+		Continuous,
+		Set Formula(
+			Match( :Inst Type,
+				"CatDx",
+					If( :Species Name == "Feline",
+						:CatDx Cal Offset + :Feline Cal Offset + Log( (As Column( addtlColName ) - :Asymptote) / :Scale ) / :Growth Rate,
+						:CatDx Cal Offset + :Canine Cal Offset + Log( (As Column( addtlColName ) - :Asymptote) / :Scale ) / :Growth Rate
+					),
+				"CatOne",
+					If( :Species Name == "Feline",
+						:Feline Cal Offset + Log( (As Column( addtlColName ) - :Asymptote) / :Scale ) / :Growth Rate,
+						:Canine Cal Offset + Log( (As Column( addtlColName ) - :Asymptote) / :Scale ) / :Growth Rate
+					),
+				Empty()
+			)
+		)
+	);
+	
+	tableName:"Calc Dose"n << delete formula;
+	tableName:"Calc Dose_Local"n << delete formula;
+	
+	// THIS WILL GET UPDATED LATER AS WE SHIFT TO FULL CURVE STUFF
+	/*
+	//Calculates concentrations based on available curves
+	tableConcCalc("uniqueCurveID","AR-Script","Species Name","Lot","Assay",tableName);
+	
+	Try(
+		tableName << New Column( "Calc Dose",
+			numeric,
+			Formula(
+				If( :Name( "AR-Script" ) == -1 | :Name( "AR-Script" ) == -2,
+					:Name( "AR-Script" ), 
+					//Try included if species isn't in array, will default to displaying the calc dose all value
+					Try(
+						If( :Name( "Calc_Dose_All" ) > extremeHighDose[Uppercase( :Name( "Species Name" ) )],
+							-3,
+							:Name( "Calc_Dose_All" )
+						),
+						:Name( "Calc_Dose_All" )
+					)
+				)
+			)
+		);
+		Column( tableName, "Calc Dose" ) << DeleteFormula;
+	);
+	*/
+	tableName << New Column( "Units_script", character( 10 ), <<Set Each Value( units ) );
+	
+	//Moves most important columns within table
+	//Try() functions move columns not in common beteween table origins
+	tableName << MoveSelectedColumns(
+		{
+			"AR-Script",
+			Eval(colName),
+			"Calc Dose",
+			"Units_script",
+			//"Flag",
+			//"Flag_nums", 
+			"uniqueCurveID",
+			"R&D AR Calc Version",
+			"Chem Type",
+			"Inst Type",
+			"TimeFromSampleDispense:sec",
+			"ReflDens_avg",
+			"Instrument ID"
+		},
+		To First
+	);
+
+	//Try() statments cover a number of columns that may be present but may not depending on data source
+	//Column movement Try() commands done in reverse order as JMP doesn't allow a move 'before' only 'after'
+	//So to maintain correct order in case some of colums are there but others aren't, reverse ensures correct ordering 'after' a given column
+	//IsScriptable added to induce failure if "after" column not present. Otherwise user just prompted with 'move column' dialog
+	Try( IsScriptable(Column(tableName,"Flag_nums")); tableName << MoveSelectedColumns( {"Flags"}, After( "Flag_nums" ) ) );
+	Try( IsScriptable(Column(tableName,"Flag_nums")); tableName << MoveSelectedColumns( {"CDx Conc Error Flags"}, After( "Flag_nums" ) ) );
+	Try( IsScriptable(Column(tableName,"Flag_nums")); tableName << MoveSelectedColumns( {"CDx IM Error Flags"}, After( "Flag_nums" ) ) );
+	Try( tableName << MoveSelectedColumns( {"condition 4"}, To First ) );
+	Try( tableName << MoveSelectedColumns( {"condition 3"}, To First ) );
+	Try( tableName << MoveSelectedColumns( {"condition 2"}, To First ) );
+	Try( tableName << MoveSelectedColumns( {"condition 1"}, To First ) );
+	Try( IsScriptable(Column(tableName,"uniqueCurveID")); tableName << MoveSelectedColumns( {"Configuration"}, After( "uniqueCurveID" ) ) );
+	Try( IsScriptable(Column(tableName,"uniqueCurveID")); tableName << MoveSelectedColumns( {"Script Version"}, After( "uniqueCurveID" ) ) );
+	Try( IsScriptable(Column(tableName,"uniqueCurveID")); tableName << MoveSelectedColumns( {"Foil Found"}, After( "uniqueCurveID" ) ) );
+	Try( IsScriptable(Column(tableName,"uniqueCurveID")); tableName << MoveSelectedColumns( {"Barcode"}, After( "uniqueCurveID" ) ) );
+	Try( IsScriptable(Column(tableName,"R&D AR Calc Version")); tableName << MoveSelectedColumns( {"Metering Firmware"}, After( "R&D AR Calc Version" ) ) );
+	Try( IsScriptable(Column(tableName,"Inst Type")); tableName << MoveSelectedColumns( {"Species Name"}, After( "Inst Type" ) ) );
+	Try( IsScriptable(Column(tableName,"Inst Type")); tableName << MoveSelectedColumns( {"Species"}, After( "Inst Type" ) ) );
+	
+	//Hides and groups all columns that are listed in 'hidecols'
+	//Default is for any column to be unhidden unless added to this list
+	hideCols = {
+	//specific to QSDMA
+	"P2P Slope - Response", "P2P Slope - Int", "Canon Time", "Canon Time Progress Curve", "Canon Time P2P Slope Values",
+	"Slope Vals for AR", "Predicted Progress Curve Point from Previous", "Progress Curve Predicted Bias to Measured",
+	"Aberrant Point", "Rebuilt Curve", "Mean(Response, Dry)", "Dry Normalized Response", "Date and Time Script Run",
+	//
+	"Alg Calc Ar Error Status :4", "Algorithm Conc Error Flags", "Algorithm IM Error Flags", "Algorithm Status", "AR Qualifer",
+	"AR Qualifier", "AR2", "AR2 Qualifer", "AR2 Qualifier", "Concentration units", "Curve Area", "Curve Cubic", "Curve Fifth", "Curve File Version",
+	"Curve Intercept", "Curve Linear", "Curve Quad", "Curves Version :5", "Date", "Date-orig", "Dilution Parts", "Dilution Type", "Discrepant Type",
+	"Dry Read Finish", "Dry Read Start", "DryReadingMean", "Final Scalar", "Flag :3", "Flag1 :4", "Flag2 :4", "Flag3 :4", "From Optics Module",
+	"Gain Applied", "Gain Applied :4", "Gain Applied 2", "GMTime", "ID Source :2", "Log Entry Timestamp :3", "Normalized RD", "Num Dry Reads :2",
+	"Num Of Assays", "Num Of Points :2", "Num Of Readings :2", "Num Wavelengths Used :4", "Offset Applied", "Offset Applied :4",
+	"Offset Applied Type", "Paired Results Flag :4", "Point :3", "Post Analysis Notes", "Progress Curve Analysis", "Qual :4", "Qualifier",
+	"RD Normalization Reading", "Read Point", "Reading Time", "Reading2 :3", "Reflective :2", "Re-Review of Consumable/Slide", "Run Done Timestamp",
+	"Run Fault", "Sample Container", "Sample_conjugate_alq2", "Scalar", "Scalar Adjustment", "Segment", "Slide Load Position :4", "Spot Time",
+	"Stored Wet Offset", "Stored WLC Offset", "Substrate_alq1", "Time", "Time Offset :2", "Time-orig", "Timeseries pt", "Timeseries RD2",
+	"TS Read Flag", "uldry Intensity", "ulfalse light Molded", "ulfalselight", "ulfalselight Laminate", "ulwet Intensity", "Units :4", "Units :5",
+	"Wash 1 End", "Wash 2 End", "Wash1_alq3", "Wavelength", "Wavelength2", "Wavelength3", "Wavelengths Used", "X Intersect", "Y Intersect"};
+	
+	hideGroupCols = {};
+	For( i = 1, i <= N Cols( tableName ), i++,
+		a = Column( tableName, i ) << getname;
+		If( Contains( hideCols, a ) > 0,
+			Column( tableName, i ) << hide( 1 );
+			Insert Into( hideGroupCols, a );
+		);
+	);
+	tableName << groupcolumns( "Hidden Columns", hideGroupCols );
+	tableName << MoveColumnGroup( To Last, "Hidden Columns" );
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	dt_name = tableName << get name;
+	titleName = Word( 1, dt_name, "-" );
+	dateName = Substr( dt_name, Munger( dt_name, 1, "-" ) + 1, 6 );
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate = Short Date( Today() );
+	newTodayDate = Munger( todayDate, 1, "/", "" );
+	nextTodayDate = Munger( newTodayDate, 1, "/", "" );
+
+	//Selects one read from each curve to subset into table with only 1 Angle result per run
+	//updated to use uniqueCurveID instead of uniqueAssayID
+	tableName << Select Where( AsColumn(uniqueCol) != Lag( AsColumn(uniqueCol), -1 ) | Row() == N Row() );
+	
+	//Get subset with just the results
+	dt_justResult = tableName << Subset(
+		output table name( titleName || "-" || dateName || "_" || knownChemType || " AR_" || nextTodayDate || "_justResults" )
+	);
+	tableName << SelectAllRows;
+	tableName << InvertRowSelection;
+	
+	dt_justResult << Delete Table Property( "Make justResults" );
+	Return( dt_justResult );
+);
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+
+If( Length( Include File List() ) == 1,
+	defaultsNoDialog = 1;
+	batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+	If( checkVersion( minJMPver ) == 1,
+		//defaultsNoDialog = 1;
+
+		//Gets data table if non opened
+		If( N Table() == 0,
+			dt_start = Open(),
+			dt_start = Current Data Table()
+		); 
+
+		flagTable = qFunct:arCalc( dt_start, knownChemtype, targetCode, defaultsNoDialog );
+		If( flagTable == 0,
+			cleanup({qFunct})
+		);
+		qFunct:flagging( flagTable[1], assayFlags, flagTable[3] );
+		qFunct:finishingOff( flagTable[1], flagTable[2][1], units, flagTable[3], flagTable[4] );
+		
+		qFunct << delete namespace;
+	,
+		wrongVer( minJMPver );
+		cleanup({qFunct});
+	)
+	,
+	Print( knownChemType || " AR script was included from another source" );
+);
+
+

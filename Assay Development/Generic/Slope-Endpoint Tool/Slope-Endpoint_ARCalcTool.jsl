@@ -1,0 +1,860 @@
+﻿//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool Calculates ARs for progress curves with Slope, EndPoint or Average EndPoint
+
+//------------------Revision History for both script and Help File--
+//
+//	5.0.0.1 NClark 021121
+//		-> updated two tableprep calls to reset table variable so not lost if tableprep makes new table
+//	5.0.0.0 NClark 021021
+//		-> Updated to use uniqueCurveID over uniqueAssayID
+//	4.9.0.0 NClark 032619
+//		-> Updated check for default cols to also work if some default cols already in table (since they aren't in the tablePrep colList)
+//	4.8.0.0 NClark 030819
+//		-> Updated default column section
+//			-> uses column array from tablePrep to dynamically assign possTimeCol and possRespCol if new ones added over time
+//			-> will change the default column names should TablePrep be involked AND the original col name will change (based on column array from tableprep)
+//		-> Added ProTip next to column selection to - hopefully - make it easier for users
+//	4.7.0.0 NClark 022819
+//		-> Fixed while() so it will stop running if window is closes with X not Cancel
+//	4.6.0.0 NClark 022719
+//		-> Changed wait() to 2s over 0.1 so While() process didn't keep user from entering time data
+//	4.5.0.0 NClark 022119
+//		-> Added Timeseries Time to list of cols to check to see if defaults will be created
+//	4.4.0.1 NClark 021419
+//		-> updated to check lib files if no script update
+//	4.4.0.0 NClark 021319
+//		-> updated wait() to 0.1s and removed print("hi") command
+//		-> encased _main_ within include file If()
+//		-> included utilties library
+//		-> added variables to support new utilities
+//		-> updated version to grab official addin version
+//		-> deleted revision history before v4.0
+//	4.3.0.0 NClark 013119
+//		-> bug fixes with tblprp and default cols
+//		-> controled for a bug in JMP15 EAs
+//			-> "OK" button explicitly links to function to close dialog
+//			-> While loop looks for change in var state (closing of window)
+//			-> Based on teh var when the window closes triggers analysis
+//			-> Updated a number of variables to their global counterpart because they were 'lost' when the dialog closes
+//	4.2.0.0 NClark 010519
+//		-> removed duplicate functions
+//		-> deleted some commented materials
+//		-> fixed bug that wouldn't correctly assign time, resp, and unique cols if they weren't obvious
+//	4.1.0.2 NClark 110118
+//		-> added function with dialog when 'replacetable' can't be run
+//		-> called above function from added try() around the sort command in question
+//	4.1.0.1 NClark 103118
+//		-> Update to help file
+//	4.1 NClark 102118
+//		-> Changed to version 4.1 to match align versions
+//		-> Added radio button for choice of tablePrep
+//			-> added new global and local variables for proper populate and recall
+//		-> Cleaned up look of dialog some
+//		-> Checkbox for defaults must be checked to use defaults
+//		-> Added incompleteCols function
+//		-> All three columns must be cast to use them (or check defaults)
+//		-> Changed colName for slope metrics to just be "Slope" and not "AR Slope" & Removed default time units of 's'
+//		-> added help button (and associated function) with linked document
+//			-> removed instructions for use?
+//		-> removed description of math
+//		-> Added 'About' button (and associated function)
+//		-> Added 'notImplemented' function for items not yet implemented
+//------------------------------------------------------------------
+
+Names Default To Here( 1 );
+
+If( !Namespace Exists( "slopeEP" ), New Namespace( "slopeEP" ) );
+slp = Namespace("slopeEP");
+
+//-----------Variable Declarations (above Main for easy access)--
+	
+	u = Get Environment Variable("username");
+	addinID = "com.idexx.genericAssayDev";
+	addinLib = "com.idexx.assayDevLibraries2";
+
+	Try(
+		slopeEPCalcVer = Char(GetAddin(addinID)<<version);
+		,
+		Print("Addin not installed yet");
+		slopeEPCalcVer = "v999"
+	);
+	//Script Version
+	toolName = "Slope/Endpoint Calculation";
+	//slopeEPCalcVer = "v4.2";
+	
+	title1 = "Select Values for 'Time' and Response";
+	
+	//Define the table variables for use in formulas
+	SOPstartTime = 10;
+	SOPendTime = 60;
+	
+	//Variables starting as empty lists
+	startTime1 = {};
+	endTime1 = {};
+	
+	//globals for 'get text'
+	globalListParam = {slp:ba1ListParam, slp:ba2ListParam};
+	lbListParam = {startTime1, endTime1};
+
+	//globals for 'get items'
+	globalList = {slp:ba1List, slp:ba2List, slp:ba3List}; //global list for column lists
+	lbList = {colListY, colListX, colListT};
+	globalVarParam = {slp:ba1VarParam};
+	lbVarParam = {numParam};
+
+	//globals for 'get checkbox'
+	globalDefault = {slp:checkbox,slp:radioBox};
+	lbDefault = {chooseDefBox, tblPrp};
+
+//-----------/Variable Declarations-----------------------
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_FunctionLibrary2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_TablePreparation2.jsl");
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+//include("R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Library Files2\AssayDev_TablePreparation2.jsl");
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+exprCancel = Function( {source},{default local},
+	diagWindow << close window;
+	//sdmaCal << delete // deletes sdmacal namespace
+	source1 = Match(uppercase(source),
+		"OK", 1
+		,
+		"CANCEL", 2
+	);
+	Return(source1)
+);
+
+recallItems = Function( {dtName}, {dtName},
+
+	//recall for checkbox
+	Try(
+		If(slp:checkbox == 1,
+			chooseDefBox<<set(1);
+			ob << Close( 1 );
+			ob << visibility( 2 );
+			ob << set title( title2 );
+		)
+	);
+	
+	tblPrp << set(slp:radioBox);
+
+	//from generic ar tool
+	numParam = If( Is Missing( slp:ba1VarParam ),
+		1,
+		slp:ba1VarParam
+	);
+	Try(
+		For( j = 1, j <= 4, j++,
+			hb1[j] << Delete;
+			hb2[j] << Delete;
+			//hb3[j] << Delete;
+			//hb4[j] << Delete;
+			j = j - 1;
+		)
+	);
+	For( i = 1, i <= numParam, i++,
+		hb1 << Append( startTime1[i] = Text Edit Box( slp:ba1ListParam[i] ) );
+		hb1 << Append( Text Box( "   " ) );
+		hb2 << Append( endTime1[i] = Text Edit Box( slp:ba2ListParam[i] ) );
+		hb2 << Append( Text Box( "   " ) );
+		//hb3 << Append( threshArea1[i] = Text Edit Box( slp:ba3ListParam[i] ) );
+		//hb3 << Append( Text Box( "   " ) );
+		//hb4 << Append( numRegressPoints1[i] = Text Edit Box( slp:ba4ListParam[i] ) );
+		//hb4 << Append( Text Box( "   " ) );
+	);
+//from sdma cal tool for doing columns
+	//Is List will produce error if ba1List is not declared
+	//If error, declare vars, otherwise get vars
+	colList = dtName << Get Column Names( String );
+	Try(
+		For( i = 1, i <= N Items( globalList ), i++,
+			nextList = globalList[i];
+			For( j = 1, j <= N Items( nextList ), j++,
+				If( N Row( Loc( colList, nextList[j] ) ) > 0,
+					Eval( 
+						Substitute( 
+							Expr( lb << Append( item ) ), Expr( lb ), lbList[i], Expr( item ), nextList[j] 
+						) 
+					)
+				)
+			);
+		)
+	,
+		Print( "No columns to recall." )
+	);
+);
+
+missingDefaults = Function({},
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Chose to use defaults, but one or more default columns missing", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+cannotReplace = Function({},
+	New Window( "Unable to Sort Data",
+		<<Modal,
+		Text Box( "JMP is unable to sort data table because existing reports are linked to this table. Please close those reports and try again.", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+incompleteCols = Function({},
+	New Window( "Default Columns Not Present",
+		<<Modal,
+		Text Box( "Please make sure 'Time', Resp and Unique ID columns are cast or", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "check box to use default columns", <<setfontstyle( "bold underline"), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)
+);
+
+about = Function({tool,version},{default local},
+	New Window( tool,
+		<<Modal,
+		Text Box( tool ||" "||version, <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "Nathan Clark\!nIDEXX Laboratories, Inc.\!nWestbrook, ME 04092\!nnathan-clark@idexx.com"),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	)	
+);
+
+notImplemented = Function({},{},
+	New Window("Feature Not Available",<<Modal,TextBox("This feature has not been implemented yet."),ButtonBox("OK"))
+);
+
+help = Function({addin,filename},{},
+	Open( "$ADDIN_HOME("||addin||")\"||filename )
+);
+
+///// Three functions for populating globals of differing variable types///////
+//get items like Col List boxes and num edit boxes
+populateGetItems = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						Try( glVar = lb << Get Items
+						, 
+							Try( glVar = lb << get
+							, 
+								glVar = lb ) ;
+						);
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+
+	//Show( globalList, localList );
+	//Try(Show( slp:ba1List, slp:ba2List, slp:ba3List ));
+	//Show( slp:ba1VarParam, slp:ba1ListParam, slp:ba2ListParam );
+	//Try(Show( slp:ba1VarParam ));
+	Return( 1 );
+);
+// for text edit boxes
+populateGetText = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						glVar = lb << Get Text;
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+	
+	//Show( globalList, localList );
+	//Show( slp:ba1List, slp:ba2List, slp:ba3List );
+	//Try(Show( slp:ba1VarParam, slp:ba1ListParam, slp:ba2ListParam ));
+	//Show( slp:numParam );
+	Return( 1 );
+);
+// for check boxes
+populateChkBx = Function( {globalList, localList, namespace=.}, 
+
+	For( i = 1, i <= N Items( globalList ), i++, 
+	//show(nitems(globalList));
+		Eval(
+			Substitute(
+					Expr(
+						If(IsEmpty(ns),
+							Unlock Globals( glVar )
+						,
+							ns << unlock;
+						);
+						glVar = lb << Get;
+						If(IsEmpty(ns),
+							Lock Globals( glVar )
+						,
+							ns << lock;
+						);
+					),
+				Expr( lb ), Name Expr( localList[i] ),
+				Expr( glVar ), Name Expr( globalList[i] ),
+				Expr( ns ), Name Expr(namespace)
+			)
+		)
+	);
+	
+	//Show( globalList, localList );
+	//Show( slp:ba1List, slp:ba2List, slp:ba3List );
+	//Show( slp:ba1VarParam, slp:ba1ListParam, slp:ba2ListParam, slp:ba3ListParam, slp:ba4ListParam );
+	//Show( slp:numParam );
+	//Try(Show(slp:checkbox,slp:radioBox));
+	Return( 1 );
+);
+///////////////////////////////////////////////////////////////////////////////
+
+arCalc = Function({tableName,fullDefaults = 0},{},
+	
+	tblGetName = tableName << GetName;
+	
+	//determines if any AR tool has been run before
+	//makes new table if first time use
+	If(
+		Contains(tblGetName,"_progCurves") > 0,
+		newTable = 0;
+		dt_algorithm = tableName;
+	,	
+		newTable = 1;
+		//Creates working copy of data table so original data is never 'touched'
+		dt_algorithm = tableName << Subset(Output Table( tblGetName ), All Rows,Selected columns only( 0 ),invisible);
+	);
+		
+	colList1 = dt_algorithm << get column names (string);	
+	//discovers presence of any column that would become default
+	//assigns cols or throws error dialog
+	foundTimeCol = 0;
+	foundRespCol = 0;
+	foundUniqueCol = 0;
+	If(
+		Contains(colList1,"TimeFromSampleDispense:sec")>0,
+		foundTimeCol = 1;
+	);
+	If(
+		Contains(colList1,"ReflDens_avg")>0,
+		foundRespCol = 1;
+	);
+	If(
+		Contains(colList1,"uniqueCurveID")>0,
+		foundUniqueCol = 1;
+	);
+	If(fullDefaults == 0,
+		useDefaultCols = slp:checkbox;//chooseDefBox<<get;
+	,
+		useDefaultCols = 1		
+	);
+	colNameArray = possColNames();
+	possTimeCol = {};
+	possRespCol = {};
+
+	currentKey = colNameArray << first;
+	For(i=1,i<=nitems(colNameArray),i++,
+		If(colNameArray[currentKey][2] == "TimeFromSampleDispense:sec",
+			insertinto(possTimeCol,currentKey)
+		);
+		If(colNameArray[currentKey][2] == "ReflDens_avg",
+			insertinto(possRespCol,currentKey)
+		);
+		currentKey = colNameArray << Next(currentKey);
+	);
+	
+	Match(useDefaultCols,
+		0,
+		Try(
+			respCol = slp:ba1List[1];//(colListY << Get items)[1];
+			timeCol = slp:ba2List[1];//(colListX << Get items)[1];
+			uniqueCol = slp:ba3List[1];//(colListT << Get items)[1];
+		,
+			incompleteCols();
+			If(newTable==1,Close(dt_algorithm,nosave));
+			Return(0);
+		);
+	,
+		1,
+		If( foundTimeCol == 1 & foundRespCol == 1 & foundUniqueCol == 1,
+			respCol = "ReflDens_avg";
+			timeCol = "TimeFromSampleDispense:sec";
+			uniqueCol = "uniqueCurveID";
+		,
+			Match(slp:radioBox,//tblPrp<<get,
+				1,
+				For(i=1,i<=nitems(possTimeCol),i++,
+					If(contains(colList1,possTimeCol[i]) == 0 & contains(colList1,"TimeFromSampleDispense:sec") == 0,
+						If(i == nitems(possTimeCol),
+							missingDefaults();
+							If(newTable==1,Close(dt_algorithm,nosave));
+							Return(0);
+							,
+							Continue()
+						)
+						,
+						timeCol = "TimeFromSampleDispense:sec";Break()
+					)
+				);
+				For(i=1,i<=nitems(possRespCol),i++,
+					If(contains(colList1,possRespCol[i]) == 0 & contains(colList1,"ReflDens_avg") == 0,
+						If(i == nitems(possRespCol),
+							missingDefaults();
+							If(newTable==1,Close(dt_algorithm,nosave));
+							Return(0);
+							,
+							Continue()
+						)
+						,
+						respCol = "ReflDens_avg";Break()
+					)
+				);
+				uniqueCol = "uniqueCurveID";
+				//show(respCol,timeCol,uniqueCol);
+				,
+				2,
+				missingDefaults();
+				If(newTable==1,Close(dt_algorithm,nosave));
+				Return(0);
+			);
+		);
+	);
+	//show(respCol,timeCol,uniqueCol);
+	
+	//If user does table prep tries to ensure chosen columns are corrected if they'll be renamed
+	Match(slp:radioBox,//tblPrp<<get,
+		1,
+		//ADD STUFF TO RECOGNIZE IF 'NON DEFAULT' WILL HAVE NAME CHANGED' - ONLY IF TABLE PREP CHOSEN
+		Try(respCol = colNameArray[respCol][2]);
+		Try(timeCol = colNameArray[timeCol][2]);
+		Try(uniqueCol = colNameArray[uniqueCol][2]);
+		
+		dt_algorithm = tablePrep(dt_algorithm)
+		,
+		2,
+		//show(respCol,timeCol,uniqueCol);
+		Empty()
+	);
+	
+	//Try(diagwindow << close window());
+	dt_algorithm << show window();		
+
+	//Sets up Variables for new naming nomenclature (rules in revision history)
+	dt_name = tblGetName;
+	titleName = Word(1,dt_name,"-");
+	dateName = Substr(dt_name,Munger( dt_name, 1, "-" )+1,6);
+	
+	//Sets up MMDDYYYY date for Table Naming
+	todayDate=Short Date( Today() );
+	newTodayDate = Munger(todayDate,1,"/","");
+	nextTodayDate = Munger(newTodayDate,1,"/","");
+	
+	If(fullDefaults != 0,
+		insertInto(startTime1,char(SOPstartTime));
+		insertInto(endTime1,char(SOPendTime));
+		startTime = startTime1;
+		endTime = endTime1;
+	,
+		startTime = slp:ba1ListParam;//startTime1 << get text;
+		endTime = slp:ba2ListParam;//endTime1 << get text;
+	);
+	//Show(startTime,endhTimes);
+	
+	Try(
+		IsScriptable(Column(dt_algorithm,"SlopeEP AR Tool Version"));
+	,
+		dt_algorithm << New Column("SlopeEP AR Tool Version",Characterr(10),
+			Formula(Eval(slopeEPCalcVer))
+		);
+		Column(dt_algorithm,"SlopeEP AR Tool Version") << delete formula;
+	);
+	
+	Try(
+		dt_algorithm << Sort(
+			By(Column(dt_algorithm,uniqueCol),Column(dt_algorithm,timeCol)),
+			Order(Ascending,Ascending),
+			ReplaceTable(1)
+		);
+		,
+		cannotReplace();
+		Throw()
+	);
+	
+	//genericInterpMetric{tableName,yColumn,xColumn,byColumn,columnName,startingTime,endingTime,metric}
+	For( j = 1, j <= N Items( startTime ), j++, 
+		//sets up dynamic naming of columns
+		If(
+			//Is Missing( Num( Substr( startTime[j],2,3) ) ),
+			Is Missing( Num( startTime[j] ) ) & IsMissing(Num(substr(startTime[j],2,Length(startTime[j])-1))), //Only Endpoint
+				colName = "EndPoint(" || Char( endTime[j] ) || ")";
+		,	
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "a", //Must be Average EndPoint after above evaluated
+				colName = "AvgEP(" || Char(Num(Substr( startTime[j],2,Length(startTime[j])-1))) || "-" || Char( endTime[j] ) || ")";
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "r", //Must be Range after above evaluated
+				colName = "Range(" || Char(Num(Substr( startTime[j],2,Length(startTime[j])-1))) || "-" || Char( endTime[j] ) || ")";
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ), //Defaults to slope with 0 starting time
+				colName = "Slope(" || Char(0) || "-" || Char( endTime[j] ) || ")";
+		,
+				colName = "Slope(" || Char(Num( startTime[j] )) || "-" || Char( endTime[j] ) || ")";
+		);
+
+		If( Is Missing( Num( startTime[j] ) ) & IsMissing(Num(substr(startTime[j],2,Length(startTime[j])-1))), /*If it's missing, it's an end point AR*/
+			//Function for EndPoint Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(endTime[j]) - 1,Num(endTime[j]),"EP");
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "a",
+			//Function for Average EndPoint Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(Substr(startTime[j],2,Length(startTime[j])-1)),Num(endTime[j]),"AvgEP");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ) & Substr( startTime[j],1,1) == "r",
+			//Function for Range Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(Substr(startTime[j],2,Length(startTime[j])-1)),Num(endTime[j]),"Range");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			Is Missing( Num( Substr( startTime[j],1,1) ) ),
+			//Function for Default to slope Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,0,Num(endTime[j]),"Slope");
+			//show(dt_algorithm,startTime[j],Num(Substr(startTime[j],2,Length(startTime[j])-1)),endTime[j]);
+		,
+			//Function for Slope Analysis
+			genericInterpMetric(dt_algorithm,respCol,timeCol,uniqueCol,colName,Num(startTime[j]),Num(endTime[j]),"Slope");
+		);
+	);
+	
+	If(newTable == 1,
+		dt_algorithm << SetName(
+			titleName||"-"||dateName||"_"||"genericARtools_"||nextTodayDate|| "_progCurves" 
+		);
+		parseUnique = EvalInsert(":Name(\!"^uniqueCol^\!")");
+		Eval(
+			EvalExpr(
+				dt_algorithm << New Script("Make justResults",
+					tblName = currentdatatable()<<Getname;
+					Try(newName = Munger(tblName,1,"_progCurves",""),newName = tblName);
+					datatable(tblName) << SelectWhere(Expr(Parse(parseUnique)) != Lag(Expr(Parse(parseUnique)),1));
+					datatable(tblName) << Subset(
+						output table name( newName|| "_justResults" )
+					);
+					datatable(tblName) << select all rows;
+					datatable(tblName) << invert row selection;
+				)
+			)
+		);
+	,
+		Empty()
+	);
+	currentdatatable(dt_algorithm);
+	
+);
+
+startDialog = Function( {datatable},
+	here:dt_new = datatable;
+	here:close = 0;
+	nc = N Col( datatable );
+	lbWidth = 130;
+	numParam = 1;
+	diagWindow = New Window( "Slope_EndPoint Calculation",
+		Border Box( Left( 3 ), top( 2 ),
+			V List Box(
+				H List Box(
+					chooseDefbox = Check Box(
+						{""},
+						<<setFunction(
+							Function( {this, button},
+								If( (this << get( 1 )) == 1,
+									//ob << Close( 1 );
+									ob << visibility( 2 );
+									colListY << RemoveAll;
+									//colListBsdmaCal << RemoveAll;
+									colListX << RemoveAll;
+									colListT << RemoveAll;
+								,
+									//ob << Close( 0 );
+									ob << visibility( 0 );
+								)
+							)
+						)
+					),
+					tb = Text Box( "Check this box to use default columns", <<setwrap( 500 ), <<setfontsize( 12 ), <<setfontstyle( "Bold" ) )
+				),
+				H List Box(
+					V List Box(
+						Panel Box( "Input Parameters Combinations",
+							V List Box(
+								V List Box(
+									H List Box(
+										Text Box( "How many parameter sets?  " ),
+										Number Edit Box(
+											numParam,
+											5,
+											<<Set Function(
+												Function( {this},
+													numParam = this << Get;
+													Try(
+														For( j = 2, j <= 4, j++,
+															hb1[j] << Delete;
+															hb2[j] << Delete;
+															//hb3[j] << Delete;
+															//hb4[j] << Delete;
+															j = j - 1;
+														)
+													);
+													For( i = 1, i <= numParam - 1, i++,
+														hb1 << Append( Text Box( "   " ) );
+														hb1 << Append( startTime1[i + 1] = Text Edit Box( "" ) );
+														hb2 << Append( Text Box( "   " ) );
+														hb2 << Append( endTime1[i + 1] = Text Edit Box( "" ) );
+														//hb3 << Append( Text Box( "   " ) );
+														//hb3 << Append( threshArea1[i + 1] = Text Edit Box( "" ) );
+														//hb4 << Append( Text Box( "   " ) );
+														//hb4 << Append( numRegressPoints1[i + 1] = Text Edit Box( "" ) );
+													);
+												)
+											)
+										)
+									)
+								),
+								Text Box( "Each Vertical Set of Values = 1 Algorithm AR ", <<SetFontStyle( "Bold" ) ),
+								Text Box( "" ),
+								/*V List Box(
+									Text Box( "Normalization Time" ),
+									hb1 = H List Box( normTime1[1] = Text Edit Box( Char( SOPnormTime ) ) ),
+									Text Box( "Time Threshold" ),
+									hb2 = H List Box( threshTime1[1] = Text Edit Box( Char( SOPthreshTime ) ) ),
+									Text Box( "Area Threshold" ),
+									hb3 = H List Box( threshArea1[1] = Text Edit Box( Char( SOPthreshArea ) ) ),
+									Text Box( "Regression Points" ),
+									hb4 = H List Box( numRegressPoints1[1] = Text Edit Box( Char( SOPnumRegressPoints ) ) ),
+
+								)*/
+								H List Box(
+									V List Box( 
+										Text Box( "Start Time",<<setfontsize(10),<<setfontstyle("bold"),<<fontcolor("Red") ), 
+										hb1 = V List Box( startTime1[1] = Text Edit Box( Char( SOPstartTime ) ) ) 
+									),
+									Text Box( "" ),
+									V List Box( 
+										Text Box( "End Time",<<setfontsize(10),<<setfontstyle("bold"),<<fontcolor("Red") ), 
+										hb2 = V List Box( endTime1[1] = Text Edit Box( Char( SOPendTime ) ) ) 
+									), 
+								)
+							)
+						)
+						,
+						Panel Box("Table Preparation",
+							tblPrp = Radio Box({"Perform table prep","Don't perform table prep"},<< set(1))
+						)
+					)
+					,
+					Panel Box( "Default Columns",
+						H List Box(
+							Panel Box( "", Text Box( "Y, Resp", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "ReflDens_avg", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+						H List Box(
+							Panel Box( "", Text Box( "X, 'Time'", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "TimeFromSampleDispense:sec", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+						H List Box(
+							Panel Box( "", Text Box( "Unique ID", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ) ),
+							V List Box(
+								Text Box( "", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) ),
+								Text Box( "uniqueCurveID", <<setfontsize( 10 ), <<setfontstyle( "Bold" ) )
+							),
+
+						),
+
+					),
+					Panel Box( "Action",
+						Lineup Box( N Col( 1 ),
+							Button Box( "OK",
+								//Batch Interactive( 1 );
+								populateGetItems( globalList, lbList, slp );
+								populateGetItems( globalVarParam, lbVarParam, slp );
+								populateGetText( globalListParam, lbListParam, slp );
+								populateChkBx( globalDefault, lbDefault, slp );
+
+								//arCalc(here:dt_new);
+								here:close = exprCancel("ok");
+								//Batch Interactive( 0 );
+							),
+							Button Box( "Cancel", here:close = exprCancel("cancel") ),
+							Text Box( " " ),
+							Button Box( "Remove",
+								colListY << RemoveSelected;
+								colListX << RemoveSelected;
+								colListT << RemoveSelected;
+							),
+							Button Box( "Recall",
+								recallItems(here:dt_new)
+							), 
+							Button Box( "Help",
+								help("com.idexx.genericAssayDev","GenSlopeEndpoint_Help.pdf")
+							),
+							Button Box( "About",
+								about(toolName,slopeEPCalcver)
+							),
+						)
+					)
+				),
+				ob = HListBox(
+					Panel Box( title1,
+						Border Box( Left( 3 ), top( 2 ),
+							V List Box(
+								Text Box( "Choose Columns for Response, 'Time', and Unique ID", <<setfontstyle( "Bold" ) ),
+								H List Box(
+									V List Box(
+										Panel Box( "Select Columns",
+											colListData = Col List Box(here:dt_new, All, width( lbWidth ), nLines( Min( nc, 10 ) ), Grouped )
+										), 
+
+									),
+									Panel Box( "Cast Selected Columns into Roles",
+										Lineup Box( N Col( 2 ), Spacing( 3 ),
+											Button Box( "Y, Resp", colListY << Append( colListData << GetSelected ) ),
+											colListY = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 3 ), numeric ),
+											Button Box( "X, 'Time'", colListX << Append( colListData << GetSelected ) ),
+											colListX = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ), numeric ),
+											Button Box( "Unique ID", colListT << Append( colListData << GetSelected ) ),
+											colListT = Col List Box(here:dt_new, width( lbWidth ), minitems( 1 ), maxitems( 1 ), nLines( 1 ) ), 
+											//Button Box( "By", colListBsdmaCal << Append( colListData << GetSelected ) ),
+											//colListBsdmaCal = Col List Box( width( lbWidth ), nLines( 1 ), maxitems( 1 ), character )
+										)
+									)
+								)
+							)
+						)
+					)
+					,
+					Panel Box( "ProTip",
+						Border Box( Left( 3 ), top( 2 ),
+							VListBox(
+								TextBox("If you are unsure, always start with the checking the 'default' columns box.",<< setwrap(200),<< set font style("Bold")),
+								TextBox("The script will notify you if there are clear problems and then you can select your specific columns.",<< setwrap(200),<< set font style("Bold"))
+							)
+						)
+					)
+					
+				),
+				/*Outline Box( "Instructions for Use",<<close(1),<<setfontsize(12),
+					Text Box( "**Runs must be sorted in ascending Time order so all reads for one run are in order", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(1000) ),
+					Text Box( "   -Runs with multiple wavelentghs should be sorted by wavelength additionally", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "**Table must contain 'TimeFromSampleDispense:sec' and 'Refldens_avg'", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "   as Time and RD readings, resp.", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "" ),
+					Text Box( "**EndPoints must have non-numeric text in 'Start Time' box", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "    -EndPoints ARs not currently dry read corrected", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "" ),
+					Text Box( "**Average EndPoints must have a single letter preceeding the start time in the 'Start Time' box", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "" ),
+					Text Box( "**Start Times before 1st wet read will extrapolate backwards,", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "   but it is not recommended. Please choose Start Time afer 1st wet read", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+				),
+				Outline Box( "How calculations work",<<close(1),<<setfontsize(12),
+					Text Box( "**ARs calculated to exat times chosen", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(1000) ),
+					Text Box( "**Read Points numbered assuming 1st positive read is Read Point 0", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "" ),
+					Text Box( "**For Slopes", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "    -Least Squares slope calculated for all points in time range along with two", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "     interpolated points for the exact start and end time", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "**For EndPoints", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "    -AR is interpolted to exact end point from previous and next reading", <<SetFontStyle( "Bold" ),<<SetFontSize(12),<<setwrap(700) ),
+					Text Box( "Slope Example", <<SetFontStyle( "Italic" ),<<SetFontSize(12),<<setwrap(800) ),
+					Text Box( "     If there are reads at 1, 2, 3, 4, and 5 seconds and you want an AR based on values from 1.3 seconds to 4.2 seconds the macro will use the 1 and 2 second reads to linearly interpolate to a 1.3 second value along with the 4 and 5 second reads to interpolate to a 4.2 second read. Then, the macro will use the 1.3, 2, 3, 4, and 4.2 second read and perform a slope regression to obtain the final AR value.
+		", <<SetFontStyle( "Italic" ),<<SetFontSize(12),<<setwrap(700) ),
+				)*/
+			)
+		)
+	);
+	Return(1);
+);
+
+
+
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If(Length(Include File List()) == 1,
+	if(isMissing(checkForUpdate(addinID)),
+		checkForUpdate(addinLib)
+	);
+	trackUsage(u,addinID);
+
+	defaultsNoDialog = 0;
+
+	//Gets data table if non opened
+	If(Ntable()==0,
+		dt_start = Open(),
+		dt_start = currentdatatable()
+	);
+
+	If(defaultsNoDialog == 0,
+		startdialog(dt_start);
+		show(here:close);
+		While(
+			here:close == 0 & !IsEmpty(diagWindow), wait(2.0);
+		);
+		Match(here:close,
+			1, arCalc(here:dt_new);
+			,
+			2, Throw()
+		)
+	,
+		arCalc(dt_start,defaultsNoDialog)
+	);
+	,
+	print("script was included from another source");
+);

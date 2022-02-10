@@ -1,0 +1,568 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+
+//Tool to help decide correct titer for PROG Assay
+
+//------------------Revision History -------------------------------
+//
+//	1.2 NClark 032119
+//		-> added variables to send to new functions for auto update and tracking
+//		-> added included to utilities.jsl
+//		-> added check functions in main function of script
+//	1.1 NClark 080718
+//		-> Updated missingColumns dialog to say Assigned Conc. instaed of SDMA Conc
+//	1.0 NClark 092717
+//		-> Base from v2.4 SDMA Titer tool
+//		-> Changed LCMS to Assigned Conc.
+//		-> Updated range for PROG (to 30, not 100)
+//		-> Titer range for model increased to 2.0 from 0.6
+//		-> Update missing Cols function to allow for specificity in which table is missing information
+//		-> updated Try() to properly identify which table is missing information
+//------------------------------------------------------------------
+Clear Globals();
+Names Default To Here( 1 );
+
+include("$ADDIN_HOME(com.idexx.assayDevLibraries2)\AssayDev_Utilities.jsl");
+
+u = Get Environment Variable("username");
+addinID = "com.idexx.RnD_PROGtiter";
+addinLib = "com.idexx.assayDevLibraries2";
+
+if(isMissing(checkForUpdate(addinID)),
+	checkForUpdate(addinLib)
+);
+trackUsage(u,addinID);
+
+//named because JMP has a built in Sequence function
+nrcSequence = Function({startValue,endValue,increment},{default Local},
+	seqList = {};
+	For(i=startValue,i<endValue + increment,i+=increment,
+		insertInto(seqList,i)
+	);
+	Return(seqList)
+);
+missingCols = Function( {tableFail},{tableFail},
+	If(tableFail == "Both",
+		tableFail = "Both Tables", tableFail = tableFail||" Table"
+	);
+	New Window( tableFail||"_Incomplete Column Selection",
+		<<Modal,
+		Text Box( "Naming issue with "||tableFail, <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "One or more columns are missing or incorrect for data type", <<setfontstyle( "bold" ), <<setfontsize( 10 ) ),
+		Text Box( "" ), 
+
+		Text Box( "Please be sure the following nomenclature stadards are being adhered to", <<setfontstyle( "bold" ) ),
+		Text Box( "\!"Angle\!" = Analyzer response column" ),
+		Text Box( "\!"Assigned Conc.\!" = Reference dose column" ),
+		Text Box( "\!"conjugateTiter\!" = Titer dose column" ),
+		Button Box( "OK" ),
+
+	)
+);
+failedTiterEvent = Function({},{default local},
+	New Window( "Failed Titer Event",
+		<<Modal,
+		Text Box( "The data failed to converge on a final, reliable, Titer", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( "" ), 
+
+		Text Box( "The 'chosen' titer was not within the range of acceptable titers", <<setfontstyle( "bold" ) ),
+		Button Box( "OK" ),
+	)
+);
+successfulTiterEvent = Function({rightTiter},{default local},
+	tolerance = Round(rightTiter * 0.10, 3);
+	titerTol = Char(rightTiter) || " +/-" || Char(tolerance) || units;
+	New Window( "Successful Titer Event",
+		<<Modal,
+		Text Box( "The chosen titer for this lot is", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+		Text Box( titerTol, <<setfontstyle( "bold" ),<<setfontsize( 18 ) ),
+		Text Box( "The chosen titer will be added to the data table in a column", <<setfontstyle( "bold" ) ),
+		Button Box( "OK" ),
+	)
+);
+
+startDil = 6; // 5:1 = 6x = 6, 7:1 = 8x = 8 and so on
+doseStartValues = nrcSequence(0,30,1);
+titerStartValues = nrcSequence(0.01,2.0,0.01);
+dilStartValues = nrcSequence(startDil,startDil,2);
+If(dilStartValues[1] == 0,
+	removeFrom(dilStartValues,1);
+);
+units = " ng/mL";
+
+/*//UPDATE FOR PROG WHEN DECIDED UPON
+min15 = 1.0;
+min20 = 1.0;
+min60 = 3.4;
+accept15 = 1.5;
+accept20 = 1.86;
+accept60 = 6.0;
+*/
+//sets up for all columns to be added with formulas
+startFormula = "titerDT<<newcolumn(\!"Growth Rate(conjugateTiter)\!", Formula(";
+startFormula1 = "titerDT<<newcolumn(\!"Inflection(conjugateTiter)\!", Formula(";
+startFormula2 = "titerDT<<newcolumn(\!"LowerAsym(conjugateTiter)\!", Formula(";
+startFormula3 = "titerDT<<newcolumn(\!"UpperAsym(conjugateTiter)\!", Formula(";
+startFormula4 = "titerDT<<newcolumn(\!"Slope (Dose)\!", Formula(";
+startFormula5 = "titerDT<<newcolumn(\!"AR SD (Dose)\!", Formula(";
+startFormula6 = "titerDT<<newcolumn(\!"Dose SD (Dose)\!", Formula(";
+
+endForm = "))";
+
+arSDform = "(1.2046957598E-04 + 4.6037745001E-02 * :Name( \!"AR (Dose)\!" ) +
+	-5.8460259381E-01 * (:Name( \!"AR (Dose)\!" ) ^ 2)";
+
+dt_start = currentdatatable();
+startName = dt_start << GetName();
+origTiter = Open(); //Table from the titer exploration step in process
+origTiter << showwindow(0);
+
+colFail = 0;
+Try(
+	Is Scriptable( Column( dt_start, "conjugateTiter" ) );
+	Is Scriptable( Column( dt_start, "Assigned Conc." ) );
+	Is Scriptable( Column( dt_start, "Angle" ) );
+	Try(
+		Is Scriptable( Column( origTiter, "conjugateTiter" ) );
+		Is Scriptable( Column( origTiter, "Angle" ) );
+		,
+		missingCols("Screening");
+		Close(origTiter,nosave);
+		colFail = 1;
+	)
+	,
+	Try(
+		Is Scriptable( Column( origTiter, "conjugateTiter" ) );
+		Is Scriptable( Column( origTiter, "Angle" ) );
+		missingCols("Optimization");
+		Close(origTiter,nosave);
+		colFail = 1;
+		,
+		missingCols("Both");
+		Close(origTiter,nosave);
+		Throw();
+	)
+);
+If(colFail==1,Throw());
+/*
+dt_start << New Column("Concentration Ratio",
+	Formula(
+		Num( :Name( "conjugateTiter" ) ) / Num(:Name( "Assigned Conc." ))
+	)
+);
+*/
+dt = dt_start << Subset(Output Table( startName ), All Rows,Selected columns only( 0 ),private);
+
+For(i=1,i<=nrow(dt),i++,
+	If(Column(dt,"Assigned Conc.")[i] == 0,
+		Column(dt,"Assigned Conc.")[i] = 0.0001 // Change to 1?
+		,
+		Empty()
+	)
+);
+Summarize(dt,titerList = by(Column("conjugateTiter")));
+/*For(j=1,j<=nitems(titerList),j++,
+	For(i=1, i<=100,i++,
+		dt << Add Rows( {:Name("Assigned Conc.") = 10000, :Name("Angle") = 0.0001, :Name("conjugateTiter") = Num(titerList[j])})
+	)
+);*/
+//Column(dt,"Concentration Ratio") << Suppress formula eval(0);
+
+doseCurve = dt << Fit Curve( 
+	Y( :Name("Angle") ), 
+	X( :Name("Assigned Conc.") ), 
+	Fit Logistic 4P Rodbard,
+	By( :Name("conjugateTiter"))
+);
+//doseCurve << (Fit[1] << save prediction formula); //May not be needed with all the other stuff.
+
+params = Report(doseCurve[1])[Tablebox(3)] << make combined datatable;
+
+For(i=ncol(params),i>=1,i--,
+	a = Column(params,i) << getname();
+	
+	If(a != "Parameter" & a != "Estimate" &a != "conjugateTiter",
+		//Print("deleting");
+		//For(j=1, j<=nitems(params),j++,
+			params << DeleteColumns(a);
+		//)
+		,
+		Empty()
+	)
+);
+
+/* Rodbard Normal Form (for deriv calculations):([c-L asympt]) + ([d-U asympt] - ([c-L asympt])) / (1 + ([Concentration] / [b-inflection]) ^ [a-Growth])*/
+fitformula = {};
+fitDerivForm = {};
+For( i = 1, i <= N Items( titerList ), i++,
+	r = Eval Insert( "\!"^titerList[i]^\!"" );
+	fitFormula[i] = r || "," || Char(
+		Eval Expr(
+			Expr( params[(4 * i - 1), 3] ) + (Expr( params[(4 * i), 3] ) - Expr( params[(4 * i - 1), 3] )) / (1 + (:Name( "Dose" ) /
+			Expr( params[(4 * i - 2), 3] )) ^ Expr( params[(4 * i - 3), 3] ))
+		)
+	);
+	fitDerivForm[i] = r || "," || Char(
+		Eval(
+			Eval Expr(
+				Derivative(
+					Expr( params[(4 * i - 1), 3] ) + (Expr( params[(4 * i), 3] ) - Expr( params[(4 * i - 1), 3] )) / (1 + (:Name( "Dose" ) / Expr( params[(4 * i - 2), 3] )) ^ Expr( params[(4 * i - 3), 3] ))
+				,
+					:Name( "Dose" )
+				)
+			)
+		)
+	);
+);
+fitConcatFormula = ConcatItems(fitFormula,",");
+fitConcatDerivForm = ConcatItems(fitDerivForm,",");
+
+Column(params,"conjugateTiter") << Data Type("Numeric");
+Column(params,"conjugateTiter") << Modeling Type("Continuous");
+
+Column(origTiter,"conjugateTiter") << SetSelected(1);
+Column(origTiter,"Angle") << SetSelected(1);
+
+params2 = origTiter << Subset("Orig Subset",
+	Selected Rows(0),
+	Selected Columns(1),
+	Private
+);
+Column(params2,"conjugateTiter") << Set Name("conjugateTiter");
+Column(params2,"Angle") << Set Name("Estimate");
+params2 << New Column( "Parameter",character(10), << set each value( "Upper Asymptote" ) );
+ForEachRow(params2,RowState(Row()) = ColorState("Blue"));
+
+params << Concatenate( params2, "Append to First Table" );
+params << set name("Parameter Estimates");
+paramCurve = params << Fit Curve(
+	SendToByGroup( {:Parameter == "Growth Rate"} ),
+	Y( :Estimate ),
+	X( :Name( "conjugateTiter" ) ),
+	SendToByGroup( {:Parameter == "Growth Rate"}, Fit Exponential 3P),
+	SendToByGroup( {:Parameter == "Inflection Point"}, Fit Linear ),
+	SendToByGroup( {:Parameter == "Lower Asymptote"}, Fit Linear ),
+	SendToByGroup( {:Parameter == "Upper Asymptote"}, Fit Exponential 3P ),
+	By( :Parameter )
+);
+
+params3 = Report(paramCurve[1])[Tablebox(3)] << make combined datatable;
+params3 << show window(0);
+
+For(i=ncol(params3),i>=1,i--,
+	a = Column(params3,i) << getname();
+	
+	If(a != "Parameter" & a != "Estimate" &a != "Parameter 2",
+		//Print("deleting");
+		//For(j=1, j<=nitems(params),j++,
+			params3 << DeleteColumns(a);
+		//)
+		,
+		Empty()
+	)
+);
+params3Split = params3 << Split(
+	Split By( :Parameter 2 ),
+	Split( :Estimate ),
+	Group( :Parameter ),
+	Sort by Column Property
+);
+
+paramFormula = {};
+//Order will be Growth Rate, Inflection Point, Lower Assymptote, Upper Asymptote
+For(i = 1, i<=nrow(params3Split), i++,
+	//q = EvalInsert("\!"^params2[2 * i - 1,1]^\!"");
+	If(2 <= i <=3,
+		paramFormula[i] = Char(
+			EvalExpr(
+				:Name("conjugateTiter") * Expr(params3Split[i,6]) + Expr(params3Split[i,4])
+			)
+		)
+		,
+	/*[asymptote] + [Scale] * Exp([Growth Rate] * [concentration])*/
+		paramFormula[i] = Char(
+			EvalExpr(
+				Expr(params3Split[i,2]) + Expr(params3Split[i,5]) * Exp(Expr(params3Split[i,3]) * :Name("conjugateTiter"))
+			)
+		)
+	)
+	
+);
+
+//Close(params, nosave);
+Close(params2, nosave);
+Close(params3, nosave);
+Close(params3Split, nosave);
+Close(origTiter, nosave);
+Close(dt, nosave);
+//doseCurve << Close window();
+paramCurve << Close window();
+
+fullARsdForm = Concat(startFormula5,arSDform,endForm,")");
+
+growthRateForm = Concat(startFormula,paramFormula[1],endForm);
+inflectionForm = Concat(startFormula1,paramFormula[2],endForm);
+lowerAssForm = Concat(startFormula2,paramFormula[3],endForm);
+upperAssForm = Concat(startFormula3,paramFormula[4],endForm);
+
+titerDT1 = New Table("Titers",New Column("conjugateTiter",set values(titerStartValues)),private);
+titerDT2 = New Table("Doses",New Column("Dose",set values(doseStartValues)),private);
+titerDT3 = New Table("Dils",New Column("Dilution Factor",set values(dilStartValues)),private);
+
+titerDT4 = titerDT1 << Join( With( titerDT2 ), Cartesian Join, private );
+
+titerDT = titerDT4 << Join( With( titerDT3 ), OutputTable("Titer Optimization"),Cartesian Join );
+
+Close(titerDT1,nosave);
+Close(titerDT2,nosave);
+Close(titerDT3,nosave);
+Close(titerDT4,nosave);
+
+titerDT << New Column( "Dilution", Formula( Char( :Name( "Dilution Factor" ) - 1 ) || ":" || "1" ) );
+titerDT << MoveSelectedColumns( {"Dilution", "Dilution Factor"}, To First );
+titerDT << New Column( "Ord(conjugateTiter)", Ordinal, Character( 10 ), Formula( Char( Round( :Name( "conjugateTiter" ), 2 ) ) ) );
+Column( titerDt, "Ord(conjugateTiter)" ) << deleteformula();
+Column( titerDt, "Dilution" ) << deleteformula();
+
+Eval( Parse( growthRateForm ) );
+Eval( Parse( inflectionForm ) );
+Eval( Parse( lowerAssForm ) );
+Eval( Parse( upperAssForm ) );
+/* Rodbard Normal Form (for deriv calculations):([c-L asympt]) + ([d-U asympt] - ([c-L asympt])) / (1 + ([Concentration] / [b-inflection]) ^ [a-Growth])*/
+
+titerDT << New Column("AR(Dose)",
+	Formula((:Name("LowerAsym(conjugateTiter)") + (:Name("UpperAsym(conjugateTiter)") - (:Name("LowerAsym(conjugateTiter)"))) / (1 + (:Name("Dose") / :Name("Inflection(conjugateTiter)")) ^ :Name("Growth Rate(conjugateTiter)")))
+	)
+);
+
+titerDT << New Column("1stDeriv_AR(Dose)",
+	Formula(
+		Eval(
+			Derivative(
+				:Name( "LowerAsym(conjugateTiter)" ) + (:Name( "UpperAsym(conjugateTiter)" ) -
+				:Name( "LowerAsym(conjugateTiter)" )) / (1 + (:Dose /
+				:Name( "Inflection(conjugateTiter)" )) ^ :Name( "Growth Rate(conjugateTiter)" )),
+				:Dose
+			)
+		)
+	)
+);
+Eval( Parse( fullARsdForm ));
+titerDT << New Column("Dose SD(Dose)",
+	Formula(
+		:Name("AR SD(Dose)") * (-1 / :Name("1stDeriv_AR(Dose)"))
+	)
+);
+titerDT << New Column("Data Type",
+	Formula(
+		"Titering"
+	)
+);
+Column(titerDT,"Data Type") << deleteformula;
+
+//Eval( Parse( fullSlopeForm ));
+
+//Eval( Parse( fullDoseSDForm ));
+
+//titerDT << SelectWhere(:Name("Dose") == 15 | :Name("Dose") == 20 | :Name("Dose") == 60 );
+//NOT NEEDED UNTIL SPECIFICATIONS DECIDED UPON
+/*For Each Row(
+	If(:Name("Dose") == 15 | :Name("Dose") == 20 | :Name("Dose") == 60,
+		RowState() = CombineStates(SelectedState(1),MarkerState(16),ColorState(3));
+
+	)
+);
+Column(titerDT,"conjugateTiter") << Set Selected(1);
+Column(titerDT,"Dose") << Set Selected(1);
+Column(titerDT,"Dose SD(Dose)") << Set Selected(1);
+
+precisionSubset = titerDT << Subset("Subset",
+	Selected Rows(1),
+	Selected Columns(1)
+);
+
+precisionSplit = precisionSubset <<  Split(
+	Split By( :Dose ),
+	Split( :Name( "Dose SD(Dose)" ) ),
+	Group( :Name( "conjugateTiter" ) ),
+	Sort by Column Property
+);
+
+idealMtrx = precisionSplit << GetRowsWhere(:Name("15") <= min15 & :Name("20") <= min20 & :Name("60") <= min60);
+acceptMtrx = precisionSplit << GetRowsWhere(:Name("15") <= accept15 & :Name("20") <= accept20 & :Name("60") <= accept60);
+idealTiters = precisionSplit[idealMtrx,1];
+acceptTiters = precisionSplit[acceptMtrx,1];
+If( nitems(idealMtrx) != 0,
+	possTiters = idealTiters;
+	,
+	nitems(acceptMtrx) != 0,
+	possTiters = acceptTiters;
+	,
+	possTiters = [-1];
+);
+
+minAT15 = Min(precisionSplit[0,2]);
+minAT20 = Min(precisionSplit[0,3]);
+
+rowAT20 = precisionSplit << GetRowsWhere(:Name("20") == minAT20);
+titerAT15 = precisionSPlit[rowAT15[1], 1];
+titerAT20 = precisionSPlit[rowAT20[1], 1];
+
+Close(precisionSubset,nosave);
+Close(precisionSplit,nosave);
+
+titerDT << selectallrows;
+titerDT << invertrowselection;
+For(i=1,i<=ncol(titerDT),i++,
+	Column(titerDT,i) << Set Selected(0);
+);
+
+chosenTiter = Round(Mean(titerAT15,titerAT20),2);
+
+titer_dparamrowMtrx = (titerDT << GetRowsWhere(:Name("Ord(conjugateTiter)") == Char( chosenTiter )));
+chosen_d_param = titerDT[titer_dparamrowMtrx[1], 9];
+If(chosen_d_param < 0.03,
+	d_paramCheck = titerDT << selectwhere(:Name("Dose") == 0) << Subset("d_paramCheck",SelectedRows(1));
+	d_paramTiters = {};
+	For Each Row(d_paramCheck,
+		If(:Name("UpperAsym(conjugateTiter)") >= 0.03,
+			InsertInto(d_paramTiters,:Name("conjugateTiter"))
+		)
+	);
+	For(i=1,i<=nitems(d_paramTiters),i++,
+		If(Contains(possTiters,d_paramTiters[i]), chosenTiter = d_paramTiters[i]; Break())
+	);
+	Close(d_paramCheck,nosave);
+	,
+	chosenTiter = chosenTiter
+);
+
+If(Contains(possTiters,chosenTiter) > 0,
+	titerCheck1 = "Pass"
+	,
+	possTiters[1] == -1, titerCheck1 = "Fail"
+	,
+	For(i=1,i<=nrow(possTiters)-1,i++,
+		If(chosenTiter > possTiters[i] & chosenTiter < possTiters[i+1], titerCheck1 = "Pass"; Break()
+			, 
+			titerCheck1 = "Fail"
+		)
+	)
+	//titerCheck1 = "Fail"
+);
+*/
+biv1 = titerDT << Bivariate(
+	Y( :Name( "Dose SD (Dose)" ) ),
+	X( :Name("Dose") ),
+	SendToReport(
+		Dispatch(
+			{},
+			"2",
+			ScaleBox,
+			{Min( 0.1 ), Max( 3 ), Inc( 0.5 ), Minor Ticks( 1 )}
+		),
+		Dispatch(
+			{},
+			"1",
+			ScaleBox,
+			{Min( 0 ), Max( 30 ), Inc( 5 ), Minor Ticks( 1 )}
+		),
+		Dispatch(
+			{},
+			"Bivar Plot",
+			FrameBox,
+			{Frame Size( 450, 368 ),
+			Add Graphics Script(
+				4,
+				Description( "Precision Req" ),
+				Pen Size( 2 ); 
+				Pen Color( "blue" ); 
+				Line( {0, 0.1}, {1, 0.1}, {3, 0.2}, {6, 0.3}, {12, 0.7}, {20, 1.25}, {30, 2}, {40, 2.75} ); 
+				Pen Color( "red" ); 
+				Line( {0, 0.15}, {1, 0.15}, {3, 0.3}, {6, 0.6}, {12, 1.2}, {20, 2}, {30, 3}, {40, 4} );
+			)/* Row Legend(
+				Name("Ord(conjugateTiter)"),
+				Color( 0 ),
+				//Color Theme( "Jet" ),
+				Marker( 0 ),
+				Marker Theme( "" ),
+				Continuous Scale( 0 ),
+				Reverse Scale( 0 ),
+				Excluded Rows( 0 )
+			), Row Legend(
+				Dilution,
+				Color( 0 ),
+				Color Theme( "" ),
+				Marker( 1 ),
+				Marker Theme( "Standard" ),
+				Continuous Scale( 0 ),
+				Reverse Scale( 0 ),
+				Excluded Rows( 0 )
+			)*/
+			}
+		)
+	)
+);
+
+biv1 << Local Data Filter(
+	Add Filter(
+		columns( :Name( "Ord(conjugateTiter)" ) ),
+		Display( :Name( "Ord(conjugateTiter)" ), Size( 160, 225 ), List Display )
+	)
+);
+
+//NOT NEEDED UNTIL SPECIFICATION METHOD CHOSEN
+/*If(titerCheck1 == "Pass",
+	For Each Row(titerDT,
+		If(:Name("Ord(conjugateTiter)") == Char(chosenTiter),
+			RowState() = CombineStates(SelectedState(1),ColorState("Blue"))
+		);
+		If(:Name("Dose") == 15 | :Name("Dose") == 20 | :Name("Dose") == 60,
+			RowState() = CombineStates(SelectedState(1),MarkerState(16),ColorState(3));
+
+		)
+	);
+	successfulTiterEvent(chosenTiter);
+	/*Report(biv1)[OutlineBox(1)] <<journal;
+	For Each Row(titerDT,
+		If(:Name("Ord(conjugateTiter)") != Char(chosenTiter),
+			RowState() = CombineStates(ExcludedState(1),HiddenState(1))
+		);
+	);
+	Report(biv1)[OutlineBox(1)] <<journal;
+	For Each Row(titerDT,
+		If(:Name("Ord(conjugateTiter)") != Char(chosenTiter),
+			RowState() = CombineStates(ExcludedState(0),HiddenState(0))
+		);
+		If(:Name("Ord(conjugateTiter)") == Char(chosenTiter),
+			RowState() = CombineStates(SelectedState(1),ColorState("Blue"))
+		);
+		If(:Name("Dose") == 15 | :Name("Dose") == 20 | :Name("Dose") == 60,
+			RowState() = CombineStates(SelectedState(1),MarkerState(16),ColorState(3));
+
+		)
+	);*/
+	Eval(EvalExpr(titerDT << New Column("Chosen Titer",
+		Formula(Char(Expr(chosenTiter)) || " +/-" || Char(Round(Expr(chosenTiter) * 0.10,3)) || " "||units)
+	)));
+	Column(titerDT,"Chosen Titer") << deleteformula;
+	/*quickTable = titerDT << Subset( All rows, Selected columns only( 0 ) );
+	quickTable << SelectWhere(:Name("conjugateTiter") != chosenTiter) << deleterows;
+	quickTable << SelectWhere(:Name("Dose") != 0  & :Name("Dose") != 15 & :Name("Dose") != 60) << deleterows;
+	quickTab = quickTable << Tabulate(
+		Change Item Label( Statistics( Sum, "Data" ) ),
+		Show Control Panel( 0 ),
+		Add Table(
+			Column Table( Analysis Columns( :Name( "AR (Dose)" ), :Name("Dose SD (Dose)") ) ),
+			Row Table( Grouping Columns( :Name( "Ord(conjugateTiter)" ), :Dose ) )
+		)
+	);
+	Report(quickTab) << Journal;
+	Close(quickTable,nosave);*/
+	,
+	failedTiterEvent()
+);
+*/

@@ -1,0 +1,50 @@
+//clearglobals();
+
+Trials = 50;
+Successes = 0;
+x1 = 1;
+a1 = 1;
+
+nw = New Window( "Range Bars",
+	gb = Graph Box(
+		Y Scale( 0.01, a1 ),
+		X Scale( 0, 2 ), //2.5 ),
+		FrameSize( 200, 271 ),
+		YAxis( Show Major Grid ),
+		XAxis( Minor Ticks( 0 ), Show Major Ticks( 0 ), Show Minor Ticks( 0 ), Show Labels( 0 ) ),
+		Marker Size( 2 ),
+		Marker(
+			{x1, .5}, 
+			{x1, .25}
+		), 
+		Line(
+			{x1 - 0.125, .5},
+			{x1 + 0.125, .5}
+		), 
+		Line(
+			{x1, .5},
+			{x1, .25}
+		), 
+		Line(
+			{x1 - 0.125, .25},
+			{x1 + 0.125, .25}
+		) 
+	),
+	H List Box(
+		V List Box(
+			gb5 = Global Box( Trials ),
+			H List Box(
+				Panel Box( "A",
+					H List Box(
+						H List Box( gb1 = Global Box( Successes ) ),
+						Slider Box(
+							1,
+							Trials,
+							Successes,
+						)
+					), 		
+				), 
+			)
+		)
+	)
+);

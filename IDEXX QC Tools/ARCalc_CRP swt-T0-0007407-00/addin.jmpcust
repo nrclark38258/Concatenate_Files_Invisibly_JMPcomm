@@ -1,0 +1,24 @@
+﻿<jm:menu_and_toolbar_customizations xmlns:jm="http://www.jmp.com/ns/menu" version="3">
+  <jm:insert_in_main_menu>
+    <jm:insert_after>
+      <jm:name></jm:name>
+      <jm:menu>
+        <jm:name>IDEXX QC Tools</jm:name>
+        <jm:caption>IDEXX QC Tools</jm:caption>
+
+		<jm:menu>
+			<jm:name>com.idexx.IDEXXQCTools_CRP</jm:name>
+			<jm:caption>CRP</jm:caption>				
+			
+			<jm:command namesDefaultToHere="1">
+				<jm:name></jm:name>
+				<jm:caption>Catalyst CRP JMP Script AR Calculation v3.3</jm:caption>
+				<jm:action type="path">$ADDIN_HOME(com.idexx.IDEXXQCTools_CRP)\CatalystCRPJMPScriptARCalculation.jsl</jm:action>
+				<jm:icon type="builtin">IDB_GRAPH_VARIABILITY_CHART</jm:icon>
+			</jm:command>
+		</jm:menu>
+		
+      </jm:menu>
+    </jm:insert_after>
+  </jm:insert_in_main_menu>
+</jm:menu_and_toolbar_customizations>

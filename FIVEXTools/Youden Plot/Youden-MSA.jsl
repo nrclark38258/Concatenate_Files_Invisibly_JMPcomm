@@ -1,0 +1,737 @@
+﻿// Launch Window for Youden Plot-MSA Analysis
+
+//Author:
+//Nathan Clark
+//IDEXX Laborabories, Inc.
+//Westbrook, ME
+//nathan-clark@idexx.com
+
+//------------------Revision History for both script and Help File--
+//
+//	2.2 NClark 052620
+//		-> Updated for back update checking
+//	2.1 NClark 051210
+//		-> added include adn variables to allow for usage tracking
+//	2.0	NClark
+//		-> Added "Rep" (::colListXyp)table choice to dialog box
+//			-> Set up as global variable to be populated
+//			-> Set up as global variable to be recalled
+//		-> Added 'data organization' (stacked/split) to dialog box
+//			-> Set up as global variable to be populated
+//			-> Set up as global variable to be recalled
+//		-> Moved global population to it's own expression
+//		-> Moved 'column checking' to global population expression
+//			-> Updated column checking to work with both data types and new dialog
+//			-> New dialog is held in 'wrongCols' expression
+//		-> Added table prep expression to prepare table depending on type
+//			-> Stacked gets subset, deletes excluded rows, and then split (with 
+//				variable telling user of deletion)
+//			-> Split gets subset and excluded rows deleted (with var to let user know)
+//			-> Youden columns deleted if table had been used before
+//	1.3 NClark 111215
+//		-> uncommented the subset of Orig for the original table to become a new table, and updated the output name
+//		-> added variable origName to accomplish above
+//		-> Deletes excluded rows to work with correct calculations. table variable notifies user
+//		-> Deletes youden calculation columns if they already exists
+//		-> Updated subset of original table to be all rows so existing selection doesn't adjust the table
+// 1.2 NClark 092915
+//		-> Updated com.idexx.FIVEXTools to com.idexx.nclark.youdenMSA
+// 1.1 NClark 082712 - Added note to Help file alerting user that alterations to default platform settings may alter graphica appearance.
+// 1.0 NClark 081012 - 1st official version
+//
+// B4--B1.2 NClark 081012 - Reverted to no new table before columns added and enabled "Help" button document
+// B3--B1.2 NClark 080912 - Added "About" Button and variable for easy location of currennt version and author information
+// B2--B1.2 NClark 080812 - Changed "Units" to "Part #" for a - hopefully - more intuative understanding of what the column represents
+// B1--B1.2 NClark 080612 - lateral build from B1.2 that keeps the Range Chart live
+// B1.2 NClark 072412 - added line to not create separate data table (commented out for developmental reasons)
+// B1.1 NClark 072012 - Changed platform dialog name to "MSA-Youden Plot" from "Confidence Intervals" 
+// B1 NClark 071912 - First Beta released(B1)
+//------------------------------------------------------------------
+
+//------------------Variable List-----------------------------------
+//
+// Global
+//		globalListYP
+//			ba1ListYP, ba2ListYP, ba3ListYP, ba4ListYP
+//		globalVarYP
+//			ba1varYP
+//		lbListYP
+//			colListYyp, colListLyp, colListByp, colListXyp
+//		lbVarYP
+//			dataOrg
+//		recallItemsYP
+//		UpperLimitYP
+//		LowerLimitYP
+//		USL
+//		LSL
+// Here Namespace
+//		orig, dt, nc, lbWidth
+//		origName
+//		dtIntermediate
+//		excludedRows
+//		colName
+//		notImplemented
+//		Help
+//		About
+//		colList, nextList, lb
+//		runOK
+//		glVar
+//		exprCancelYP
+//		Ycol, Xcol
+//		xx, yy, xMin, yMin, xMax, yMax
+//		axisInc
+//		Xvar, Yvar
+//		mrExpr
+//		avgExpr
+//		sigmaExpr
+//		biv
+//		mrList
+//		mrListNum
+//		By, n
+//		varAxisMax
+//		mrLimit
+//		sigE, sigP, sigT, sigR, sigDr, pctSigE
+//		allValues
+//		var
+//		varAxis
+//		tblCol1, tblCol2, tblCol3, tblCol4
+//		rangeReport
+//		tb
+//		DrOK
+//		YoudenDlg
+//		colListData
+//------------------------------------------------------------------
+
+Names Default to Here(1);
+
+include("$ADDIN_HOME(com.idexx.nclark.updateFX)\FIVEXutils\utilities.jsl");
+If(HostIs("Mac"),
+	u = Get Environment Variable("USER");
+	,
+	u = Get Environment Variable("username");
+);
+addinID = "com.idexx.nclark.youdenMSA";
+trackUsage(u,addinID);
+batchUpdateChk(EvalList(List(addinID)));
+
+//clearglobals();
+orig = currentDataTable();
+If(IsEmpty(orig),orig=open());
+nc = ncol(orig);
+lbWidth = 130;
+notImplemented = expr(New Window("Feature Not Available",<<Modal,TextBox("This feature has not been implemented yet."),ButtonBox("OK")));
+Help = expr(Open( "$ADDIN_HOME(com.idexx.nclark.youdenMSA)\Youden-MSA_Help.pdf" ));
+About = Expr(Dialog(
+	VList("Youden Plot - MSA Analysis v2.1",
+		"",
+		"Nathan Clark",
+		"IDEXX Laboratories, Inc.",
+		"Westbrook, ME 04092",
+		"nathan-clark@idexx.com"
+	)
+));
+
+::globalListYP = {::ba1ListYP,::ba2ListYP,::ba3ListYP,::ba4ListYP};
+::globalVarYP = {::ba1VarYP};
+
+::lbListYP = Expr({::colListYyp,::colListLyp,::colListByp,::colListXyp});
+::lbVarYP = Expr({::dataOrg});
+
+//////////////// Recalls global variables to fill in previous choices /////////////////
+::recallItemsYP = Expr(
+//Is List will produce error if ba1List is not declared
+//If error, declare vars, otherwise get vars
+	colList = orig << Get Column Names(String);
+	Try(
+		For(i=1,i<=N Items(::globalListYP),i++,
+			nextList = ::globalListYP[i];
+			For(j=1,j<=N Items(nextList),j++,
+				If(N Row(Loc(colList,nextList[j])) > 0,
+					Eval(
+						Substitute(
+							Expr(lb << Append(item)),
+							Expr(lb),::lbListYP[i],
+							Expr(item),nextList[j]
+						)
+					)
+				)
+			)
+		),
+		Print("No columns to recall.")
+	);
+	Try(
+		::dataOrg<<set(Num(::ba1VarYP))
+	);
+	Try(
+		::UpperLimitYP<<settext(::USL);
+	);
+	Try(
+		::LowerLimitYP<<settext(::LSL);
+	);
+);
+//////////////// END Recalls global variables to fill in previous choices /////////////
+
+//////////////// Modal Dialog explaining incomplete variable choices //////////////////
+wrongCols = Expr(
+	New Window( "Incomplete Column Selection",
+		<<Modal,
+		Text Box("One or more variables are incorrect for data type",<<setfontstyle("bold"),<<setfontsize(12)),
+		Text Box(""),
+
+		Text Box("Stacked Data requires the following:",<<setfontstyle("bold")),
+		Text Box("    One 'Process' Variable"),
+		Text Box("    One 'Part #' Variable"),
+		Text Box("    One 'Rep' Variable"),
+		Text Box("Split Data requires the following:",<<setfontstyle("bold")),
+		Text Box("    Two 'Process' Variables"),
+		Text Box("    One 'Part #' Variable"),
+
+		Button Box( "OK"),
+	);
+);
+//////////////// End Modal Dialog explaining incomplete variable choices //////////////
+
+//////////////// Checks constraints and populates globals /////////////////////////////
+populateGlobals = Expr(
+	//Checks to make sure adequete number of columns added to boxes	
+	Match((::dataOrg<<Get),
+		1, 
+			If(Nitems(::colListYyp<<get items) > 1 | Nitems(::colListLyp<<get items) < 1 | Nitems(::colListXyp<<get items) < 1,
+				Eval(wrongCols);throw()
+			);
+	,
+		2, 
+			If(Nitems(::colListYyp<<get items) < 2 | Nitems(::colListLyp<<get items) < 1,
+				Eval(wrongCols);throw()
+			);
+	);
+	
+	//Populates Global Variables
+	For(i=1,i<=N Items(::globalListYP),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar);
+					glVar = lb << Get Items;
+					Lock Globals(glVar);
+				),
+				Expr(lb),::lbListYP[i],
+				Expr(glVar),Name Expr(::globalListYP[i])
+			)
+		);
+	);
+	For(i=1,i<=N Items(::globalVarYP),i++,
+		Eval(
+			Substitute(
+				Expr(
+					Unlock Globals(glVar1);
+					glVar1 = lb << Get;
+					Lock Globals(glVar1);
+				),
+				Expr(lb),::lbVarYP[i],
+				Expr(glVar1),Name Expr(::globalVarYP[i])
+			)
+		);
+	);
+	::USL=::UpperLimitYP<<gettext;
+	::LSL=::LowerLimitYP<<gettext;
+	
+	Eval(tablePrep);
+);
+//////////////// END Checks constraints and populates globals /////////////////////////
+
+//////////////// Creates split table by split or subset ///////////////////////////////
+tablePrep = Expr(
+	//Data analysis determined by how table is organized
+	Match((::dataOrg<<Get),
+		1, 
+			//moved data to new copy table
+			origName = orig<<getName;
+			dtIntermediate = orig<<subset(all rows, selected columns only(0),private);
+			//deletes excluded rows from table so they aren't included in any calculations
+			//also adds table variable notifying user
+			excludedRows = 0;
+			For(i=1,i<=nrow(dtIntermediate),i++,
+				If(Excluded(RowState(i)),
+					dtIntermediate<<selectwhere(Excluded(RowState()))<<delete rows;
+					excludedRows = 1;
+					i=nrow(dtIntermediate)+1
+				);
+			);
+			dt = dtIntermediate << Split(
+				Split By( ::colListXyp<<getitems ),
+				Split( ::colListYyp<<getitems ),
+				Group( ::colListByp<<getitems, ::colListLyp<<getitems )
+			);
+			If(excludedRows == 1,
+				dt<<New Table Variable("ROWS EXCLUDED FROM MAIN TABLE",
+					"Excluded rows deleted from original data table for correct calculations"
+				);
+			);
+			Close(dtIntermediate,nosave);
+	,
+		2, 
+			//moved data to new copy table
+			origName = orig<<getName;
+			dt = orig << subset(OutputTableName("Youden Plot DR_"||origName),
+				All rows,
+				Selected columns only( 0 )
+			);
+			//deletes excluded rows from table so they aren't included in any calculations
+			//also adds table variable notifying user
+			For(i=1,i<=nrow(dt),i++,
+				If(Excluded(RowState(i)),
+					dt<<selectwhere(Excluded(RowState()))<<delete rows;
+					dt<<New Table Variable("ROWS EXCLUDED FROM MAIN TABLE",
+						"Excluded rows deleted from original data table for correct calculations"
+					);
+					i=nrow(dt)+1
+				);
+			);
+	);
+	
+	//If reusing existing youden table as starting point, this will delete the youden columns
+	//from the subset table
+	For(i=ncol(dt),i>=1, i--,
+		colName=Column(i)<<getname;
+		If(Contains(colName,"Readings (")!=0|
+			Contains(colName,"Product (")!=0|
+			Contains(colName,"Avg(Prod")!=0|
+			Contains(colName,"\!U03c3")!=0|
+			colName == "MR"|
+			colName == "Dr"|
+			colName == "rICC",
+			Column(dt,i)<<deleteformula;
+			dt<<delete columns(Column(i))	
+		)
+	);
+	
+	Eval(runOK)
+);
+//////////////// END Creates split table by split or subset ///////////////////////////
+
+//////////////// Analyzes the Data and makes graphics /////////////////////////////////
+runOK = Expr(
+//Closes dialog box
+	Eval(exprCancelYP);
+	
+	//Show(::USL,::LSL,::ba1ListYP,::ba2ListYP,::ba3ListYP,::ba4ListYP);
+	//Show(::ba1ListYP[1],::ba1ListYP[2]);
+	
+//Sets up the two Process variables to be the X and Y axis for the chart
+//Different methods based on starting data format
+	Match((::dataOrg<<Get),
+		1, 
+			repCols = {};
+			grouping = ::colListXyp<<getitems;
+			Summarize(orig, repCols=By(Column(grouping)));
+			Ycol = repCols[2];
+			Xcol = repCols[1];
+	,
+		2, 
+			Ycol = ::ba1ListYP[2];
+			Xcol = ::ba1ListYP[1];
+	);
+	
+//Collects data to esablish axis ranges to be applied to all graphs
+	yy=Column(dt,Ycol)<<get values;
+	xx=Column(dt,Xcol)<<get values;
+	xMax=Max(xx);
+	xMin=Min(xx);
+	yMax=Max(yy);
+	yMin=Min(yy);
+	If(Abs(xMax-xMin) >= 5, rnd = 0,
+		Abs(xMax-xMin) <5 & Abs(xMax-xMin) > 1, rnd = 1,
+		Abs(xMax-xMin) <=1, rnd = 3
+	);
+	Show(rnd);
+	If(xMax > yMax,
+		axisMax = Round(xMax*1.1,rnd),
+		axisMax = Round(yMax*1.1,rnd)		
+	);
+	If(xMin > yMin,
+		axisMin = Round(xMin*0.90,rnd),
+		axisMin = Round(yMin*0.90,rnd)		
+	);
+	axisInc = Round((axisMax-axisMin)/10,rnd);
+//Sets up to add all math columns to new table
+	Yvar = Parse( Eval Insert( ":name( \!"^Ycol^\!" )" ) );
+	Xvar = Parse( Eval Insert( ":name( \!"^Xcol^\!" )" ) );
+	Show(axisMax,axisMin,axisInc,Yvar,Xvar);
+	
+	dt<<New Column("Readings (Range)", Numeric, Continuous,
+		Formula(Abs( Xvar - Yvar ))
+	);
+	dt<<New Column("Product (Average X)", Numeric, Continuous,
+		Formula((Xvar + Yvar) / 2)
+	);
+	//Elaborate setup to add BY variables to the Col Mean formula	
+	mrExpr = Expr( Col Mean( :Name("Readings (Range)")));
+	For( i = 1, i <= N Items( ::ba3ListYP ), i++,
+		Insert Into( mrExpr, Parse( ::ba3ListYP[i] ) ) );
+	avgExpr = Expr( Col Mean( :Name("Product (Average X)")));
+	For( i = 1, i <= N Items( ::ba3ListYP ), i++,
+		Insert Into( avgExpr, Parse( ::ba3ListYP[i] ) ) );
+	sigmaExpr = Expr( Col Std Dev( :Name("Product (Average X)")));
+	For( i = 1, i <= N Items( ::ba3ListYP ), i++,
+		Insert Into( sigmaExpr, Parse( ::ba3ListYP[i] ) ) );
+		
+	Eval(
+		Eval Expr(
+			dt << New Column( "MR",
+				Numeric,
+				Continuous,
+				Formula( Expr( Name Expr( mrExpr ) ) )
+			);
+			dt << New Column( "Avg(Prod Avg X)",
+				Numeric,
+				Continuous,
+				Formula( Expr( Name Expr( avgExpr ) ) )
+			);
+			dt << New Column( "\!U03c3"||" Unit Avg",
+				Numeric,
+				Continuous,
+				Formula( Expr( Name Expr( sigmaExpr ) ) )
+			);
+		)
+	);
+	//above is end of elaborate setup
+	//\!U03c3 is unicode for the small sigma symbol
+	dt<<New Column("\!U03c3"||"e", Numeric, Continuous,
+		Formula((:MR) / 1.128)
+	);
+	dt<<New Column("\!U03c3"||"t", Numeric, Continuous,
+		Formula(Root(
+			:σ Unit Avg ^ 2 + 0.5 * :σe ^ 2,2)
+		)
+	);
+	dt<<New Column("\!U03c3"||"p", Numeric, Continuous,
+		Formula(Root( :σt ^ 2 - :σe ^ 2, 2 )
+		)
+	);
+	dt<<New Column("rICC", Numeric, Continuous,
+		Formula(1 - :σe ^ 2 / :σt ^ 2
+		)
+	);
+	dt<<New Column("Dr", Numeric, Continuous,
+		Formula(Root( (1 + :rICC) / (1 - :rICC), 2 )
+		)
+	);
+	dt<<New Column("\!U03c3"||"e Pct of Total", Numeric, Continuous,
+		Formula((1-:rICC)*100 )
+	);
+//selects and marks ranges above the MR UCL
+	dt<<selectwhere(:Name("Readings (Range)")>(:MR * 3.267))<<Markers(11);
+	dt<<clear select;
+//Creates bivariate chart - the Youden Plot
+	biv = dt << Bivariate(
+		Y(as Name(Ycol)),//column(dt,Ycol)), //either works
+		X(as Name(Xcol)),//column(dt,Xcol)), //either works
+		By(::colListByp<<get items),
+		SendToReport(
+			Dispatch(
+				{},
+				"1",
+				ScaleBox,
+				{Format( "Best", 12 ), Min( axisMin ), Max( AxisMax ), Inc( axisInc ), Minor Ticks( 1 ),
+				Rotated Labels( "Horizontal" )}
+			),
+			Dispatch(
+				{},
+				"2",
+				ScaleBox,
+				{Format( "Best", 12 ), Min( axisMin ), Max( axisMax ), Inc( axisInc ), Minor Ticks( 1 ),
+				Rotated Labels( "Horizontal" )}
+			),
+			Dispatch(
+				{},
+				"Bivar Plot",
+				FrameBox,
+				{Frame Size( 240, 240 )}
+			)
+		)
+	);
+	//Adds y=x line as well as spec limits, if entered
+	If(IsList(biv)== 1, //If no BY variables are selected, biv will be one graph != list of graphs
+		For(i=1,i<=nitems(biv),i++,
+			Report( Biv[i] )[Framebox( 1 )] << {Add Graphics Script(
+				2,
+				Description( "Y=x" ),
+				Pen Color( 1 );
+				Y Function( x, x );
+				),
+				Grid Line Order( 1 ), Reference Line Order( 3 )
+			};
+			If(IsMissing(Num(::USL))==0 & IsMissing(Num(::LSL)) == 0,
+				Report( Biv[i])[Framebox( 1 )] << {Add Graphics Script(
+					2,
+					Description( "Spec Box" ),
+					Pen Color( "red" );
+					Line Style( "dotted" );
+					Rect( Num(::LSL), Num(::USL), Num(::USL), Num(::LSL) );
+					),
+					Grid Line Order( 1 ), Reference Line Order( 3 )
+				}
+			)
+		),
+		Report( Biv )[Framebox( 1 )] << {Add Graphics Script(
+			2,
+			Description( "Y=x" ),
+			Pen Color( 1 );
+			Y Function( x, x );
+			),
+			Grid Line Order( 1 ), Reference Line Order( 3 )
+		};
+		If(IsMissing(Num(::USL))==0 & IsMissing(Num(::LSL)) == 0,
+			Report( Biv)[Framebox( 1 )] << {Add Graphics Script(
+				2,
+				Description( "Spec Box" ),
+				Pen Color( "red" );
+				Line Style( "dotted" );
+				Rect( Num(::LSL), Num(::USL), Num(::USL), Num(::LSL) );
+				),
+				Grid Line Order( 1 ), Reference Line Order( 3 )
+			}
+		)
+	);
+//setting up to collect individual values from the columns
+//values used for ref lines on var chart as well as final table
+	mrList = Column(dt,"MR")<<getvalues;
+	mrLimitNum = Design(mrList,<<levels)[2];
+	show(mrList,mrLimitNum);
+
+	If(nitems(mrLimitNum)>1, //if no BY variables selected the "BY = ..." cannot be populated
+		Summarize(
+			By = By( eval(::ba3ListYP) ),
+			n = Count,
+			varAxisMax = Max(:Name( "Readings (Range)" )),
+			mrLimit = Mean(:MR),
+			sigE=Mean(:σe),
+			sigP=Mean(:σp),
+			sigT=Mean(:σt),
+			sigR=Mean(:rICC),
+			sigDr = Mean(:Dr),
+			pctSigE = Mean(:σe Pct of Total)
+		),
+		Summarize(
+			//By = By( eval(::ba3ListYP) ),
+			n = Count,
+			varAxisMax = Max(:Name( "Readings (Range)" )),
+			mrLimit = Mean(:MR),
+			sigE=Mean(:σe),
+			sigP=Mean(:σp),
+			sigT=Mean(:σt),
+			sigR=Mean(:rICC),
+			sigDr = Mean(:Dr),
+			pctSigE = Mean(:σe Pct of Total)
+		),
+	);
+	//pctSigE = matrix(σePctValues);
+	allValues=Concat(sigE, sigP, sigT, sigR, sigDr, pctSigE);
+	show(sigE, sigP, sigT, sigR, sigDr, pctSigE,allValues);
+
+	If(nitems(mrLimitNum)>1,
+		For( i = 1, i <= N Items( biv ), i++,
+		
+			//Creates variability chart - the range chart
+			Report(biv[i]) << append(
+				var = dt << Variability Chart(
+					Y( :Name( "Readings (Range)" ) ),
+					X( ::colListLyp << get items ),
+					Max Iter( 100 ),
+					Conv Limit( 0.00000001 ),
+					Number Integration Abscissas( 128 ),
+					Number Function Evals( 65536 ),
+					Analysis Type( Name( "Choose best analysis (EMS REML Bayesian)" ) ),
+					Process Variation( 0 ),
+					Show Range Bars( 0 ),
+					Show Cell Means( 0 ),
+					Connect Cell Means( 1 ),
+					Std Dev Chart( 0 ),
+					By( ::colListByp << get items ),
+					//Invisible
+				)
+			);
+			//adds ref lines to each graph (based on above variables)
+			varAxis={};
+			For(k=1, k<=nitems(mrLimitNum), k++,
+				If(varAxisMax[k] > (mrLimit[k] * 3.267),
+					varAxis[k] = varAxisMax[k] * 1.05,
+					varAxis[k] = (mrLimit[k] * 3.267) * 1.05
+				);
+				Report( var[k] )[AxisBox( 1 )] << Add Ref Line( mrLimit[k], "Dashed", "Red" );
+				Report( var[k] )[AxisBox( 1 )] << Add Ref Line( mrLimit[k] * 3.267, "Dashed", "Red" );
+				Report( var[k] )[AxisBox( 1 )] << Remove Ref Line( 0 );
+				Report( var[k] )[AxisBox( 1 )] << Max(varAxis[k])
+			);
+	
+			//sets up to append individual var charts to correct biv Youden plot
+			//sets up to make the individual tables of stats values also
+			tblCol1 = {"σe","σp","σt"};
+			tblCol3 = {"rICC","Dr","σe %total"};
+			
+			rangeReport = Report(var[i])[Outline Box( 2 )];
+			rangeReport<<settitle("Range Chart for Readings (Range)");
+			
+			//Deletes all Range Charts not needed
+			For(k=1,k<=nitems(var),k+=1,
+				If(k == i,,
+					Report(Var[k])<<delete;
+				)
+			);
+			
+			
+			tblCol2 = allValues[{i}, [1 2 3]]; //Takes correct values from allValues Matrix (row i, 1st three values)
+			tblCol4 = allValues[{i}, [4 5 6]];
+			Show(tblCol1,tblCol2);
+			
+			tb=table Box(
+				String Col Box( "", tblCol1 ),
+				Number Col Box( "", tblCol2 ),
+				String Col Box ( "", tblCol3 ),
+				Number Col Box( "", tblCol4 )
+			);
+			If(allValues[{i},[5]]>=7,
+				DrOK = Text Box("Measurement Discrimination is Adequate",<<setfontstyle("Bold")),
+				DrOK = Text Box("Measurement Discrimination is NOT Adequate",<<setfontstyle("Bold"))
+			
+			);
+		
+			Report(biv[i])[Outline Box( 1 )][Picture Box(1)]<<sib append(tb, horizontal);
+			tb<<sib append(DrOK, Vertical);
+		),
+		Report(biv) << append(
+			var = dt << Variability Chart(
+				Y( :Name( "Readings (Range)" ) ),
+				X( ::colListLyp << get items ),
+				Max Iter( 100 ),
+				Conv Limit( 0.00000001 ),
+				Number Integration Abscissas( 128 ),
+				Number Function Evals( 65536 ),
+				Analysis Type( Name( "Choose best analysis (EMS REML Bayesian)" ) ),
+				Process Variation( 0 ),
+				Show Range Bars( 0 ),
+				Show Cell Means( 0 ),
+				Connect Cell Means( 1 ),
+				Std Dev Chart( 0 ),
+				By( ::colListByp << get items ),
+			)
+		);
+		//adds ref lines to each graph (based on above variables)
+		varAxis={};
+		If(varAxisMax > (mrLimit * 3.267),
+			varAxis = varAxisMax * 1.05,
+			varAxis = (mrLimit * 3.267) * 1.05
+		);
+		Report( var )[AxisBox( 1 )] << Add Ref Line( mrLimit, "Dashed", "Red" );
+		Report( var )[AxisBox( 1 )] << Add Ref Line( mrLimit * 3.267, "Dashed", "Red" );
+		Report( var )[AxisBox( 1 )] << Remove Ref Line( 0 );
+		Report( var )[AxisBox( 1 )] << Max(varAxis);
+	
+		//sets up to append individual var charts to correct biv Youden plot
+		//sets up to make the individual tables of stats values also
+		tblCol1 = {"σe","σp","σt"};
+		tblCol3 = {"rICC","Dr","σe %total"};
+			
+		rangeReport = Report(var)[Outline Box( 2 )];
+		rangeReport<<settitle("Range Chart for Readings (Range)");
+		tblCol2 = allValues[[1], [1 2 3]]; //Takes correct values from allValues Matrix (row i, 1st three values)
+		tblCol4 = allValues[[1], [4 5 6]];
+		Show(tblCol1,tblCol2);
+		
+		tb=table Box(
+			String Col Box( "", tblCol1 ),
+			Number Col Box( "", tblCol2 ),
+			String Col Box ( "", tblCol3 ),
+			Number Col Box( "", tblCol4 )
+		);
+		If(allValues[[1],[5]]>=7,
+			DrOK = Text Box("Measurement Discrimination is Adequate",<<setfontstyle("Bold")),
+			DrOK = Text Box("Measurement Discrimination is NOT Adequate",<<setfontstyle("Bold"))
+			
+		);
+
+		Report(biv)[Outline Box( 1 )][Picture Box(1)]<<sib append(tb, horizontal);
+		tb<<sib append(DrOK, Vertical);
+	);
+);
+//////////////// END Analyzes the Data and makes graphics /////////////////////////////
+
+YoudenDlg = New Window( "MSA-Youden Plot",
+	Border Box( Left( 3 ), top( 2 ),
+		V List Box(
+			Text Box( "Choose columns for Measurement Analysis" ),
+			H List Box(
+				V List Box(
+					Panel Box( "Select Columns",
+						colListData = Col List Box(
+							All,
+							width( lbWidth ),
+							nLines( Min( nc, 10 ) )
+						)
+					),
+				),
+				Panel Box( "Cast Selected Columns into Roles",
+					Lineup Box( N Col( 2 ), Spacing( 3 ),
+						Button Box( "Process",
+							::colListYyp << Append( colListData << GetSelected )
+						),
+						::colListYyp = Col List Box( width( lbWidth ), minitems(1), maxitems( 2 ), nLines( 3 ), numeric ),
+						Button Box( "Part #",
+							::colListLyp << Append( colListData << GetSelected )
+						),
+						::colListLyp = Col List Box( width( lbWidth ), minitems(1), maxitems( 1 ), nLines( 2 ) ),
+						Button Box( "Rep",
+							::colListXyp << Append( colListData << GetSelected )
+						),
+						::colListXyp = Col List Box( width( lbWidth ), maxitems( 1 ), nLines( 1 ) ),
+						Button Box( "By",
+							::colListByp << Append( colListData << GetSelected )
+						),
+						::colListByp = Col List Box( width( lbWidth ), nLines( 2 ) )
+					)
+				),
+				Panel Box( "Action",
+					Lineup Box( N Col( 1 ),
+						Button Box( "OK", Eval(populateGlobals)),
+						Button Box( "Cancel", Eval(exprCancelYP) ),
+						Text Box( " " ),
+						Button Box( "Remove",
+							::colListYyp << RemoveSelected;
+							::colListLyp << RemoveSelected;
+							::colListByp << RemoveSelected;
+							::colListXyp << RemoveSelected;
+						),
+						Button Box( "Recall", Eval(::recallItemsYP) ),
+						Button Box( "Help", Eval(Help) ),
+						Button Box( "About", Eval(About) )
+					)
+				)
+			),
+			H List Box(
+				Panel Box( "Input spec limits",
+					H List Box(
+						V List Box(
+							H List Box(
+								TextBox("Upper Spec Limit "),
+								::UpperLimitYP = Text Edit Box("")
+							),
+							H List Box(
+								TextBox("Lower Spec Limit "),
+								::LowerLimitYP = Text Edit Box("")
+							)
+						)
+					)
+				),
+				Panel Box( "How is data organized",
+					V List Box(
+						::dataOrg = Radio Box({"Stacked (Reps vert),", "Split (Reps horiz)"},<<set(1)),
+						Text Box("Stacked Requires 'Rep' column input")
+					)
+				)
+			)
+		)
+	)
+);
+
+exprCancelYP = Expr(YoudenDlg << Close Window);

@@ -1,0 +1,734 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+//nathan-clark@idexx.com
+
+//-----------------Revision History for both script and Help File--
+//
+//  1.1.0 NClark 121120
+//      -> PatientOutlier:
+//          -> Updated to iterate through outlier test up to 4x
+//          -> Updated to exclude single outliers, not just whole patients
+//          -> Cleaned up code for above two, but still maintained patient exlusion if > half of a patients runs were outliers
+//      -> Added patient count function to count the number of patients present exluding anything already excluded
+//      -> Added patient check function to compare a current patient count to an exising one(as a param) to a passing limit(as a param)
+//      -> Added patient fail function for a dilog box to notify researcher of extreme patient exlusions
+//      -> Calibrate:
+//          -> Integrated patient check to stop script if patient exclusions fail
+//  1.0.1 NClark 070120
+//      -> Updated so prompts for table if one isn't already open
+//	1.0 NClark 063020
+//		-> First Version Released
+//
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+path = ConvertFilePath("");
+include(ConvertFilePath(path||"Utilities\utilities.jsl"));
+
+//////////////////////////////////////////////////
+//       Here var declaration                   //
+//////////////////////////////////////////////////
+
+    assayName = "CRP";
+    u = Get Environment Variable("username");
+	addinID = "com.idexx.IDEXXSlideCalTools_CRP";
+
+    updateIDs = {"com.idexx.IDEXXSlideCalTools_CRP"};
+    
+    minJMPver = "14";
+
+//////////////////////////////////////////////////
+
+checkVersion = Function( {minVer},
+	{default local},
+	version = Num( Substitute( minVer, ".", "" ) );
+	If( Num( Word( 1, JMP Version(), "." ) ) < version,
+		a = 0,
+		a = 1
+	);
+	Return( a );
+);
+
+wrongVer = Function( {maxVer},
+	{Default Local},
+	New Window( "Requires JMP " || Char( maxVer ),
+		<<Modal,
+		Text Box( "This addin requires the used of JMP " || Char( maxVer ) || "+" ),
+		Button Box( "OK" )
+	)
+);
+
+beckmanOutlier = Function({table},{default local},
+    
+    table << New Column("tempPanel",
+    	Formula(
+    		IsMissing(Num(substr(:Sample id,1,1)))
+    	)
+    );
+    table << select where (:tempPanel == 1) << exclude(1);
+
+    biv = table << Bivariate(
+		Y( :Beckman Rep 2 ),
+		X( :Beckman Rep 1 ),
+		Fit Line( {Line Color( {212, 73, 88} )},{Save Studentized Residuals} ),
+		SendToReport(
+			Dispatch(
+				{},
+				"Bivar Plot",
+				FrameBox,
+				{Grid Line Order( 2 ), Reference Line Order( 3 )}
+			)
+		)
+	);
+    biv << close window();
+    table << exclude(0);
+	
+	table << select where( ( Round(:Beckman Result Average,1) < 0.5 | Round(:Beckman Result Average,1) > 9.0 ) & :tempPanel != 1 ) << exclude(1);
+	table << select where(Abs(:Studentized Residuals Beckman Rep 2) > 3.0) << exclude(1);
+    rows = table << get rows where( ( Round(:Beckman Result Average,1) < 0.5 | Round(:Beckman Result Average,1) > 9.0 ) & :tempPanel != 1);
+    rows1 = table << get rows where(Abs(:Studentized Residuals Beckman Rep 2) > 3.0);
+    table << delete columns("Studentized Residuals Beckman Rep 2", "tempPanel");
+
+    Try(IsScriptable(Column(table,"Exclusion Notes"))
+        ,
+        table << New Column("Exclusion Notes",Character)
+    );
+    For(i=1, i<=nrow(rows),i++,
+        table:Name("Exclusion Notes")[rows[i]] = table:Name("Exclusion Notes")[rows[i]] ||"{> 9.0 OR < 0.5}"
+    );
+    For(i=1, i<=nrow(rows1),i++,
+        table:Name("Exclusion Notes")[rows1[i]] = table:Name("Exclusion Notes")[rows1[i]] ||"{Beckman Outlier}"
+    );
+
+);
+
+patientOutlier = Function({table},{default local},
+	//to be done after beckman exclusions
+	iter = 1;
+    totRows = {};
+	While(iter < 5,
+	
+		rodB = table << Fit Curve(
+			Y( :AR ),
+			X( :Beckman Result Average ),
+			Fit Logistic 4P Rodbard({save studentized residual formula}),
+		);
+		rodB << close window;
+		rows = ASList(table << get rows where(Abs(:Name("Studentized Residuals AR")) > 3 & Excluded(Row State(Row())) != 1));
+		table << select where(Abs(:Name("Studentized Residuals AR")) > 3 & Excluded(Row State(Row())) != 1) << exclude(1);
+		
+		totRows = totRows||rows;
+
+		//table << select where(Excluded(Row State(Row())) == 1);
+		
+		table << delete columns("Studentized Residuals AR");
+        If(rows == {},Break(),iter++);
+    );
+    If(totRows == {},
+        Empty()
+        ,
+        table << select rows(totRows) << exclude(0);
+        
+        sampleSumm = table << summary(
+            Group( :Sample id ),
+            Freq( "None" ),
+            Weight( "None" ),
+            private
+        );
+        
+        selectSub = table << Subset(
+            Copy formula( 0 ),
+            Selected Rows( 1 ),
+            Selected columns only( 0 ),
+            Link to original data table(1),
+            private
+        );
+        
+        selectSubSumm = selectSub << summary(
+            Group( :Sample id ),
+            Freq( "None" ),
+            Weight( "None" ),
+            private
+        );
+        
+        selectSubSumm:N Rows << set Name("N Rows1");
+        
+        sampleSumm << Update(
+            With( selectSubSumm ),
+            Match Columns( :Sample id = :Sample id )
+        );
+        
+        sampleSumm << select where(:N Rows1 > (:N Rows / 2));
+        patExcRows = AsList(table << get rows where(Selected(Row State(Row())) == 1));
+        table << select rows(patExcRows) << exclude(1);
+        table << select rows(totRows) << exclude(1);
+        concatRows = totRows || patExcRows;
+        finalRows = Matrix(AssociativeArray(concatRows) << get keys); //makes unique list of rows and turns to a matrix
+        
+        Try(IsScriptable(Column(table,"Exclusion Notes"))
+            ,
+            table << New Column("Exclusion Notes",Character)
+        );
+        For(i=1, i<=nrow(finalRows),i++,
+            table:Name("Exclusion Notes")[finalRows[i]] = table:Name("Exclusion Notes")[finalRows[i]] ||"{Patient Outlier}"
+        );
+        
+        table << select all rows << invert row selection;
+    );
+);
+
+patientVariance = Function({table},{default local},
+
+    sumTable = table << Summary(
+        Group( :Sample id ),
+        Mean( :AR ),
+        Std Dev( :AR ),
+        Freq( "None" ),
+        Weight( "None" ),
+        private
+    );
+    
+    For each row(sumTable,
+        If(:N Rows !=0 & !IsMissing(Num(substr(:Sample id,1,1))),
+            Match(arSDTest(:Name("Mean(AR)"),:Name("Std Dev(AR)"),:Name("N Rows")),
+                "Pass", Empty()
+                ,
+                "Fail",selected(rowstate(row())) = 1;
+            )
+        )
+    );
+    table << exclude(1);
+    sumTable << close window;
+
+    rows = table << get rows where(Selected(RowState(Row())) == 1);
+
+	Try(IsScriptable(Column(table,"Exclusion Notes"))
+        ,
+        table << New Column("Exclusion Notes",Character)
+    );
+    For(i=1, i<=nrow(rows),i++,
+        table:Name("Exclusion Notes")[rows[i]] = table:Name("Exclusion Notes")[rows[i]] ||"{Patient Variance}"
+    );
+    
+    table << select all rows << invert row selection;
+    
+);
+
+level3Fail = Function( {},
+    New Window( "Level 3, too many outliers",
+        <<Modal,
+        Text Box( "Level 3 has too many gross outliers", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+        Text Box( "Please contact supervisor and replace or augment data", <<setfontsize( 12 ) ),
+        Text Box( "" ),
+        Button Box( "OK" ),
+
+    )
+);
+
+patExcludeFail = Function( {},
+    New Window( "Patient Exclusion Error",
+        <<Modal,
+        Text Box( "Too many patients were excluded from the data", <<set wrap(500), <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+        Text Box( "from Beckman or Catalyst issues.", <<setfontstyle( "bold" ), <<setfontsize( 12 ) ),
+        Text Box( "Please contact supervisor to plan next steps", <<setfontsize( 12 ) ),
+        Text Box( "" ),
+        Button Box( "OK" ),
+
+    )
+);
+
+patExcludeCheck = Function({table,startCount,limit},{default local},
+
+    currentCount = patientCount(table);
+
+    If(startCount - currentCount > limit,
+        patExcludeFail();
+        Return(startCount - currentCount, 0);
+        ,
+        Return(startCount - currentCount, 1)
+    )
+);
+
+level3Variance = Function({table},{default local},
+
+    L3row = table << get rows where (Word(2,:Sample ID,"_") == "L3");
+
+    dt = table << Subset(
+        Rows(L3row),
+        Link to Original data Table(1),
+        Selected Columns(0),
+        private
+    );
+
+    arMtrx = dt:AR << get as matrix;
+    arMtrx_Full = dt:AR << get as matrix;
+    mean_arMtrx = Mean(arMtrx);
+    sd_arMtrx = Std Dev(arMtrx);
+    reps_arMtrx = nrow(arMtrx);
+
+    result = arSDtest(mean_arMtrx,sd_arMtrx,reps_arMtrx);
+
+    levelCheck = "Pass";
+    While(result == "Fail",
+        sqBias = (arMtrx - mean_arMtrx)^2;
+        maxLoc = LocMax(sqbias);
+        maxFull = arMtrx[maxLoc];
+        fullLoc = Loc(arMtrx_Full,maxFull);
+        
+        If(arMtrx[maxLoc] > mean_arMtrx + 2.5 * 0.2 & reps_arMtrx >= 17,
+            arMtrx[maxLoc] = [];
+            arMtrx_Full[fullLoc] = 0;
+            
+            mean_arMtrx = Mean(arMtrx);
+            sd_arMtrx = Std Dev(arMtrx);
+            reps_arMtrx = nrow(arMtrx);
+            result = arSDtest(mean_arMtrx,sd_arMtrx,reps_arMtrx);
+            ,
+            arMtrx[maxLoc] > mean_arMtrx + 2.5 * 0.2 & reps_arMtrx < 17,
+                levelCheck = "Fail";
+                Break()
+            ,
+            Break()
+        )
+    );
+
+    If(levelCheck == "Fail",
+        level3Fail();
+        dt << close window;
+        Throw()
+        ,
+        zeros = Loc(arMtrx_Full,0);
+        dt << select rows(zeros) << exclude(1);
+    );
+
+    rows = table << get rows where(Selected(RowState(Row())) == 1);
+    Try(IsScriptable(Column(table,"Exclusion Notes"))
+        ,
+        table << New Column("Exclusion Notes",Character)
+    );
+    For(i=1, i<=nrow(rows),i++,
+        table:Name("Exclusion Notes")[rows[i]] = table:Name("Exclusion Notes")[rows[i]] ||"{L3 Gross Outlier}"
+    );
+
+    dt << close window;
+
+    table << select all rows << invert row selection();
+);
+
+subsetNoExcluded = Function({table},{default local},
+    table << select where (IsMissing(Num(substr(:Sample id,1,1))));
+    table << select where (excluded(rowstate(row()))== 1, current selection("extend"));
+
+    table << invert row selection;
+    subTable = table << Subset(
+        Copy formula( 0 ),
+        Selected Rows( 1),
+        Selected columns only( 0 )
+    );
+    Return(subTable)
+);
+
+cubicSave = Function({table,suffix,respCol,openGraph=0},{default local},
+    parseRespCol = Parse(EvalInsert(":Name(\!"^respCol^\!")"));
+    here:biv = table << Bivariate(
+        Y( parseRespCol ),
+        X( :Beckman Result Average ),
+        Weight( :Weight ),
+        Fit Special(
+            Degree( 3 ),
+            Centered Polynomial( 0 ),
+            {Line Color( {212, 73, 88} )},
+            {Save Predicteds}
+        )
+    );
+    Report(here:biv)[OutlineBox("Summary of Fit")] << close;
+    Report(here:biv)[OutlineBox("Analysis of Variance")] << close;
+    Report(here:biv)[OutlineBox("Parameter Estimates")] << close;
+    If(openGraph == 0, here:biv << close window
+        ,
+        Empty()
+    );
+
+    Column(table,"Predicted "||respCol) << Set Name("Predicted_"||suffix)
+);
+
+linearSave = Function({table},{default local},
+
+    table << selectwhere(row() == nrow(table) - 5 | row() == nrow(table) - 4);
+    table << invert row selection << exclude;
+
+    biv = table << Bivariate(
+        Y( :Name( "Predicted_2;6.3;6.75" ) ),
+        X( :Beckman Result Average ),
+        Fit Special(
+            Centered Polynomial( 0 ),
+            {Line Color( {212, 73, 88} )},
+            {Save Predicteds}
+        )
+    );
+    biv << close window;
+
+    table << clear row states();
+    table:Name("Predicted Predicted_2;6.3;6.75") << Set Name("Predicted_8.3;9")
+);
+
+hookCalc= Function({mainTable,calTable},{default local},
+
+    alpha = 0.05;
+    arSD_50 = 0.02;
+
+    summTable = mainTable << Summary(
+        Group( :Sample id ),
+        Mean( :AR ),
+        Freq( "None" ),
+        Weight( "None" )
+    );
+    L3row = summTable << get rows where (Word(2,:Sample ID,"_") == "L3");
+    L3_50mean = summTable[L3row,3][1];
+    L3_50reps = summTable[L3row,2][1];
+
+    summTable << close window;
+
+    predict_10 = calTable:Name("Predicted_10")[nrow(calTable)];
+
+    zScore = -NormalQuantile(alpha);
+    LCL = NormalQuantile(1-(alpha/2)) * (arSD_50 / sqrt(L3_50reps));
+    doseLCL = L3_50mean - LCL;
+    LCL50 = doseLCL - zScore * arSD_50;
+
+    passFail = If(LCL50 >= predict_10, "Pass","Fail");
+
+    If(passFail == "Fail",
+        finalAR = LCL50
+        ,
+        finalAR = .
+    );
+
+    Return(passFail,finalAR);
+);
+
+get_cell_color = Function( {table, col, r},{default local},
+
+	col = Column(table, col);
+	s = col << get script;
+
+     //Locate argument "Color Cells" in column script
+	p=0;
+	For( i = 1, i <= N Arg( s ), i++,
+		If( Head Name( Arg( s, i ) ) == "Color Cells",
+			p = i;
+			Break();
+		)
+	);
+
+     //Identify the sublist that contains the color of row r
+
+	L = Arg( Arg( s, p ), 1 );
+
+	If(IsEmpty(L),
+		color = -1
+		,
+		!IsList(L[1]),
+			For( i = 1, i<=N Items( L[2] ), i++,
+				If( L[2][i] == r | L[2][i] == 0,
+					color = L[1];
+					Break();
+				);
+				color = -1
+			);
+		,
+		For( i = 1, i<=N Items( L ), i++,
+			If( N Row( Loc( L[i][2], r ) ) == 1,
+				color = L[i][1];
+				Break();
+			);
+			color = -1
+		);
+	);
+	
+	Return(color);
+
+);
+
+createCoeffTable = Function({table, eqn},{default local},
+    
+    lotNum = table:Name("Lot")[1];
+    chemCode = table:Name("Assay")[1];
+
+    eqnList = Words(eqn, "+");
+    For(i=1,i<=nitems(eqnList),i++,
+    eqnList[i] = Trim(eqnList[i]);
+    );
+    coeffs = {};
+    For(i=1,i<=nitems(eqnList),i++,
+        coeffs[i] = Word(1,eqnList[i]);
+    );
+    newTable = New Table(here:assayName||"_Lot"||Char(lotNum)||"_Cal Coeffs",
+        Add Rows(1),
+        New Column("chem",
+            Numeric,
+            Set Values({num(chemCode)})
+        ),
+        New Column("lot",
+            Numeric,
+            Set Values({num(lotNum)})
+        ),
+        New Column("species",
+            Numeric,
+            Set Values({99})
+        ),
+        New Column("num_wls",
+            Numeric,
+            Set Values({1})
+        ),
+        New Column("intercept",
+            Numeric,
+            Set Values({num(coeffs[1])})
+        ),
+        New Column("lin",
+            Numeric,
+            Set Values({num(coeffs[2])})
+        ),
+        New Column("quad",
+            Numeric,
+            Set Values({num(coeffs[3])})
+        ),
+        New Column("cubic",
+            Numeric,
+            Set Values({num(coeffs[4])})
+        )
+    );
+
+    Return(newTable,lotNum)
+
+);
+
+arSDtest = Function({arMean,arSD,reps},{default local},
+	
+	repQualifier = Root( ChiSquare Quantile( 1 - 0.05 / 2, reps - 1 ) / (reps - 1), 2 );
+
+    //Based on Dominic's original CRP work
+    arSDprofile = Associative Array(
+        List(
+            List("A",{0.4,0.01}),
+            List("B",{0.55, 0.01, 0.65, 0.013}),
+            List("C",{0.65, 0.013, 0.85, 0.02}),
+            List("D",{0.85,0.02}),
+        )
+    );
+        
+    assignRange = If(
+        arMean <= 0.55, "A"
+        ,
+        0.55 < arMean <= 0.65, "B"
+        ,
+        0.65 < arMean < 0.85, "C"
+        ,
+        arMean >= 0.85, "D"
+    );
+
+    limit = If(nitems(arSDprofile[assignRange]) == 2,
+        arSDprofile[assignRange][2] * repQualifier
+        ,
+        interpolate(arMean,arSDprofile[assignRange][1],arSDprofile[assignRange][2] * repQualifier,arSDprofile[assignRange][3],arSDprofile[assignRange][4] * repQualifier);
+    );
+
+    result = If(Round(arSD,10) <= Round( limit, 10), "Pass", "Fail");
+	
+	Return(result);
+);
+
+deleteExtraCols = Function({table,keepCols},{default local},
+
+    formList = {};
+    formCols = {};
+    for(i=1,i<=ncol(table),i++,
+        if(IsEmpty(Column(table,i) << get formula),
+            Empty()
+            ,
+            insertInto(formList,Column(table,i) << get formula);
+            insertinto(formCols,i);
+        );
+        //show(formList,formCols)
+    );
+
+    existingCols = table << get column names(string);
+    For(i=1,i<=nitems(existingCols), i++,
+
+        there = keepCols[existingCols[i]];
+        If(there == 0,
+            for(j=1,j<=nitems(formList),j++,
+                nowCol = existingCols[i];
+                If(Contains(char(formList[j]),nowCol) > 0,
+                    Print(nowCol);
+                    //show(formCols[j]);
+                    Try(Column(table,formCols[j]) << delete formula);
+                    ,
+                    Empty()
+                )
+            );
+        )
+    );
+    For(i=1,i<=nitems(existingCols), i++,
+
+        there = keepCols[existingCols[i]];
+        If(there == 0,
+            table << delete columns(eval(existingCols[i]))
+        )
+    );
+
+);
+
+patientCount = Function({table},{default local},
+
+    subTable = table << subset(
+        columns( :Sample id ),
+        All rows,
+        private
+    );
+
+    subTable << select where(IsMissing(Num(substr(:Sample id,1,1))) | Excluded(Row State(Row())) == 1) << delete rows;
+
+    Summarize(subTable, a = By(:Sample id));
+
+    Return(nitems(a));
+);
+
+calibrate = Function({table}, {default local},
+
+    level3Variance(table);
+    beckmanOutlier(table);
+
+    startPat = patientCount(table);
+
+    patientOutlier(table);
+    patientVariance(table);
+
+    patCheck = patExcludeCheck(table,startPat,5);
+    If(patCheck[2] == 0,
+        Print("Too many patients excluded");
+        Throw()
+        ,
+        Empty()
+    );
+
+    subsetTbl = subsetNoExcluded(table);
+
+    subsetTbl << New Column("Weight", Numeric, Continuous,
+        Set Each Value(1)
+    );
+
+    cubicSave(subsetTbl,"2;6.3;6.75","AR");
+    
+    startRows = nrow(subsetTbl);
+    subsetTbl << Add Rows(6);
+    subsetTbl:Name("Beckman Result Average")[startRows + 1] = 2.0;
+    subsetTbl:Name("Beckman Result Average")[startRows + 2] = 6.3;
+    subsetTbl:Name("Beckman Result Average")[startRows + 3] = 6.75;
+    subsetTbl:Name("Beckman Result Average")[startRows + 4] = 8.3;
+    subsetTbl:Name("Beckman Result Average")[startRows + 5] = 9.0;
+    subsetTbl:Name("Beckman Result Average")[startRows + 6] = 10.0;
+
+    subsetTbl:Name("Weight")[startRows + 1] = 1;
+    subsetTbl:Name("Weight")[startRows + 2] = 1;
+    subsetTbl:Name("Weight")[startRows + 3] = 1;
+    subsetTbl:Name("Weight")[startRows + 4] = 6;
+    subsetTbl:Name("Weight")[startRows + 5] = 6;
+    subsetTbl:Name("Weight")[startRows + 6] = 25;
+    
+    linearSave(subsetTbl);
+
+    temp = subsetTbl << New Column("Calibration AR", Numeric, Continuous,
+        Formula(
+            If( Row() >= 1 & Row() <= N Row() - 6,
+                :AR,
+                Match( :Beckman Result Average,
+                    2, :Name( "Predicted_2;6.3;6.75" ),
+                    6.3, :Name( "Predicted_2;6.3;6.75" ),
+                    6.75, :Name( "Predicted_2;6.3;6.75" ),
+                    8.3, :Name( "Predicted_8.3;9" ),
+                    9, :Name( "Predicted_8.3;9" ),
+                    10, Empty()
+                )
+            )
+        )
+    );
+    temp << delete formula();
+
+    cubicSave(subsetTbl,"10","Calibration AR");
+
+    hookRslt = hookCalc(table,subsetTbl);
+
+    Match(hookRslt[1],
+        "Fail",
+            subsetTbl:Name("Calibration AR")[nrow(subsetTbl)] = hookRslt[2];
+            subsetTbl:Name("Calibration AR") << color cells(3, nrow(subsetTbl));
+
+            subsetTbl:Name("Weight")[nrow(subsetTbl)-1] = 10;
+            subsetTbl:Name("Weight") << color cells(3, nrow(subsetTbl)-1);
+            subsetTbl:Name("Weight")[nrow(subsetTbl)-2] = 10;
+            subsetTbl:Name("Weight") << color cells(3, nrow(subsetTbl)-2);
+
+            cubicSave(subsetTbl,"Final","Calibration AR",1);
+            finalEqn = char(subsetTbl:Name("Predicted_Final") << get formula);
+            coeffTbl = createCoeffTable(subsetTbl,finalEqn);
+        ,
+        "Pass",
+            cubicSave(subsetTbl,"Final","Calibration AR",1);
+            finalEqn = char(subsetTbl:Name("Predicted_Final") << get formula);
+            coeffTbl = createCoeffTable(subsetTbl,finalEqn);
+    );
+
+    startRows = nrow(subsetTbl)-5;
+    rowList = EvalList({startRows, startRows + 1,startRows + 2,startRows + 3,startRows + 4,startRows + 5});
+    For(i=1,i<=nitems(rowList),i++,
+        RowState(subsetTbl,rowList[i]) = Combine States(
+            Marker State(12),
+            Color State(5)
+        )
+    );
+    subsetTbl << Select Where(color of(rowstate(row())) != 5) << Colors(32);
+    subsetTbl << select all rows << invert row selection;
+
+    subsetTbl << set name(here:assayName||"_Lot"||Char(coeffTbl[2])||"_Cal Table");
+
+    colsToKeep = AssociativeArray({"Time Run Started", "DateTime", "IVLS RunID", "Lot", "Assay", "Chem Type", "Instrument ID", "Sample id", "Beckman Rep 1", "Beckman Rep 2", "Beckman Result Average", "AR", "Weight", "Notes", "Exclusion Notes", "Predicted_2;6.3;6.75", "Predicted_8.3;9", "Calibration AR", "Predicted_10", "Predicted_Final"});
+
+    deleteExtraCols(subsetTbl,colsToKeep);
+    here:jrn = New Window( here:assayName||"_Lot"||Char(coeffTbl[2])||"_Cal Graph", << Journal );
+
+    here:jrn << Append( V List Box( (here:biv << Report) << Clone Box));
+    
+    table << select all rows;
+    table << invert row selection;
+
+    Return(subsetTbl, coeffTbl[1])
+);
+
+//////////////////////////////////////////////////
+//                                              //
+//               Main                           //
+//                                              //
+//////////////////////////////////////////////////
+
+If( Length( Include File List() ) == 1,
+	//batchUpdateChk(updateIDs);
+	trackUsage(u,addinID);
+
+    If( checkVersion( minJMPver ) == 1,
+        If( N Table() == 0,
+            dt_start = Open(),
+            dt_start = Current Data Table()
+        ); 
+        calibrate(dt_start);
+        ,
+		wrongVer( minJMPver );
+    );
+
+    ,
+	Print( "CRP Cal script was included from another source" );
+
+);
