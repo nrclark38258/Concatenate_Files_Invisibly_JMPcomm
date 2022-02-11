@@ -20,10 +20,10 @@ Names Default To Here( 1 );
 		,
 		u = Get Environment Variable("USERNAME");
 	);
-	addinID = "com.idexx.RoswellQCTools_QSDMA_AR";
+	addinID = "com.idexx.RoswellQCTools_SDMA4_AR";
 
 	minJMPver = "15.2";
-	knownChemType = "QSDMA";
+	knownChemType = "SDMA";
 
 	respCol = "ReflDens_avg";
 	timeCol = "TimeFromSampleDispense:sec";
@@ -32,7 +32,7 @@ Names Default To Here( 1 );
 	//version now tied to currently installed addin version
 	//MAY NOT BE CORRECT WHEN TESTING
 	Try(
-		arCalcVer = Char( Get Addin( "com.idexx.RoswellQCTools_QSDMA_AR" ) << version )
+		arCalcVer = Char( Get Addin( "com.idexx.RoswellQCTools_SDMA4_AR" ) << version )
 		,
 		Print( "Addin not installed yet" );
 		arCalcVer = "v999";

@@ -13,14 +13,14 @@
                 <jm:name>ROSWELL QC TOOLS</jm:name>
                 <jm:caption>Roswell QC Tools</jm:caption>
                 <jm:menu>
-                    <jm:name>QSDMA</jm:name>
-                    <jm:caption>QSDMA</jm:caption>
+                    <jm:name>SDMA</jm:name>
+                    <jm:caption>SDMA</jm:caption>
 
                     <jm:command>
-                        <jm:name>CATALYST QSDMA JMP SCRIPT AR CALCULATOR</jm:name>
-                        <jm:caption>Catalyst QSDMA JMP Script AR Calculator v1.0</jm:caption>
-                        <jm:action type="path">$ADDIN_HOME(com.idexx.RoswellQCTools_QSDMA_AR)\CatalystQSDMAJMPScriptARCalculation.jsl</jm:action>
-                        <jm:tip>Calculate ARs for QSDMA Data</jm:tip>
+                        <jm:name>CATALYST SDMA4 JMP SCRIPT AR CALCULATOR</jm:name>
+                        <jm:caption>Catalyst SDMA4 JMP Script AR Calculator v1.0</jm:caption>
+                        <jm:action type="path">$ADDIN_HOME(com.idexx.RoswellQCTools_SDMA4_AR)\CatalystQSDMAJMPScriptARCalculation.jsl</jm:action>
+                        <jm:tip>Calculate ARs for SDMA4 Data</jm:tip>
                         <jm:icon type="builtin">ResponseScreen</jm:icon>
                     </jm:command>
 
