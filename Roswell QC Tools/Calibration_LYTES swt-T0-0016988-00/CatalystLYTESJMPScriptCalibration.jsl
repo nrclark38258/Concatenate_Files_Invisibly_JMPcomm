@@ -15,53 +15,137 @@ Names Default To Here( 1 );
 //-----------Variable Declarations (above Main for easy access)--
 
 //tested
-If( Host is( "MAC" ),
-	u = Get Environment Variable( "USER" ),
-	u = Get Environment Variable( "USERNAME" )
-);
-addinID = "com.idexx.RoswellQCTools_LYTES_calibration";
+	If(HostIs("MAC"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("USERNAME");
+	);
+	addinID = "com.idexx.RoswellQCTools_LYTES_calibration";
 
-minJMPver = "15.2";
+	minJMPver = "15.2";
 
 	//assaymidpoint
-assayMidPoint = Associative Array( {{"40", 115}, {"41", 4.3}, {"42", 153}, {"CL", 115}, {"K", 4.3}, {"NA", 153}} );
+	assayMidPoint = Associative Array(
+		{
+			{"40", 115},
+			{"41", 4.3},
+			{"42", 153},
+			{"CL", 115},
+			{"K", 4.3},
+			{"NA", 153}			
+		}
+	);
 	// range lo, hi
-assayRange = Associative Array( {{"40", {50, 160}}, {"41", {0.8, 10}}, {"42", {85, 180}}, {"CL", {50, 160}}, {"K", {0.8, 10}}, {"NA", {85, 180}}} );
+	assayRange = Associative Array(
+		{
+			{"40", {50, 160}},
+			{"41", {0.8, 10}},
+			{"42", {85, 180}},
+			{"CL", {50, 160}},
+			{"K", {0.8, 10}},
+			{"NA", {85, 180}}		
+		}
+	);
 	//cubic coeffs for corrected 3P
-assayCorrectedCubic = Associative Array(
-	{{"40", Associative Array(
-		{{"int", 11.0422244319215}, {"lin", 0.631429652798366}, {"quad", 0.00384826612677856}, {"cub", -0.0000126863381553078}}
-	)}, {"41", Associative Array(
-		{{"int", (0.491047025197684 + 0.01)}, {"lin", 0.589025966029642}, {"quad", 0.0928461121150412}, {"cub", -0.00594812663885595}}
-	)}, {"42", Associative Array(
-		{{"int", 80.2669819780055}, {"lin", -1.01470981530239}, {"quad", 0.0162340428546581}, {"cub", -0.0000421742221477125}}
-	)}, {"CL", Associative Array(
-		{{"int", 11.0422244319215}, {"lin", 0.631429652798366}, {"quad", 0.00384826612677856}, {"cub", -0.0000126863381553078}}
-	)}, {"K", Associative Array(
-		{{"int", (0.491047025197684 + 0.01)}, {"lin", 0.589025966029642}, {"quad", 0.0928461121150412}, {"cub", -0.00594812663885595}}
-	)}, {"NA", Associative Array(
-		{{"int", 80.2669819780055}, {"lin", -1.01470981530239}, {"quad", 0.0162340428546581}, {"cub", -0.0000421742221477125}}
-	)}}
-);
+	assayCorrectedCubic = Associative Array(
+		{
+			{"40", Associative Array(
+					{
+						{"int", 11.0422244319215},
+						{"lin", 0.631429652798366},
+						{"quad", 0.00384826612677856},
+						{"cub", -0.0000126863381553078}		
+					}
+				)
+			},
+			{"41", Associative Array(
+					{
+						{"int", (0.491047025197684 + 0.01)},
+						{"lin", 0.589025966029642},
+						{"quad", 0.0928461121150412},
+						{"cub", -0.00594812663885595}		
+					}
+				)
+			},
+			{"42", Associative Array(
+					{
+						{"int", 80.2669819780055},
+						{"lin", -1.01470981530239},
+						{"quad", 0.0162340428546581},
+						{"cub", -0.0000421742221477125}	
+					}
+				)
+			},
+			{"CL", Associative Array(
+					{
+						{"int", 11.0422244319215},
+						{"lin", 0.631429652798366},
+						{"quad", 0.00384826612677856},
+						{"cub", -0.0000126863381553078}		
+					}
+				)
+			},
+			{"K", Associative Array(
+					{
+						{"int", (0.491047025197684 + 0.01)},
+						{"lin", 0.589025966029642},
+						{"quad", 0.0928461121150412},
+						{"cub", -0.00594812663885595}		
+					}
+				)
+			},
+			{"NA", Associative Array(
+					{
+						{"int", 80.2669819780055},
+						{"lin", -1.01470981530239},
+						{"quad", 0.0162340428546581},
+						{"cub", -0.0000421742221477125}		
+					}
+				)
+			}
+		}
+	);
 
 //tested above ... add new below
-/* AR threshold EQN coeffs
+	/* AR threshold EQN coeffs
 	a + b * :"RepCount"n + c *
 	:"Threshold Median AR"n + (:"RepCount"n - 7) * ((:"Threshold Median AR"n + d)
 	* e)
 	*/
-arThresholdCoeffs = Associative Array(
-	{{40, Associative Array(
-		{{"a", 0.00145270679520435}, {"b", -0.0000890475056397184}, {"c", 0.00137756746403748}, {"d", -0.451724816698737}, {"e",
-		-0.0000869119658323121}}
-	)}, {41, Associative Array(
-		{{"a", 0.000445919607298063}, {"b", -0.0000677707995388024}, {"c", 0.00262129294387304}, {"d", -0.42886169898018}, {"e",
-		-0.000160660681860337}}
-	)}, {42, Associative Array(
-		{{"a", 0.000948534702861681}, {"b", -0.000115175338670205}, {"c", 0.0025543689215949}, {"d", -0.688722947498828}, {"e", -0.000161335526677608
-		}}
-	)}}
-);
+	arThresholdCoeffs = Associative Array(
+		{
+			{40, Associative Array(
+					{
+						{"a",0.00145270679520435},
+						{"b",-0.0000890475056397184},
+						{"c",0.00137756746403748},
+						{"d",-0.451724816698737},
+						{"e",-0.0000869119658323121}
+					}
+				)
+			},
+			{41, Associative Array(
+					{
+						{"a",0.000445919607298063},
+						{"b",-0.0000677707995388024},
+						{"c",0.00262129294387304},
+						{"d",-0.42886169898018},
+						{"e",-0.000160660681860337}
+					}
+				)
+			},
+			{42, Associative Array(
+					{
+						{"a",0.000948534702861681},
+						{"b",-0.000115175338670205},
+						{"c",0.0025543689215949},
+						{"d",-0.688722947498828},
+						{"e",-0.000161335526677608}
+					}
+				)
+			}
+		}
+	);
 //-----------/Variable Declarations-----------------------
 
 //INCLUDES GO HERE
@@ -72,30 +156,21 @@ arThresholdCoeffs = Associative Array(
 //                                    //
 ////////////////////////////////////////
 
-/////////////////////////////////////////
-//       Support functions             //
-/////////////////////////////////////////
+	/////////////////////////////////////////
+	//       Support functions             //
+	/////////////////////////////////////////
 //TESTED FUNCTIONS
 checkVersion = Function( {minVer},
 	{default local},
 	currVer = JMP Version();
-	currWords = Words( currVer, "." );
-	minWords = Words( minVer, "." );
-	minBackHalf = If( N Items( minWords ) == 1,
-		"0",
-		Concat Items( minWords[2 :: N Items( minWords )], "" )
-	);
-	backHalf = If( N Items( currWords ) == 1,
-		"0",
-		Concat Items( currWords[2 :: N Items( currWords )], "" )
-	);
-	newNumVer = Num( currWords[1] || "." || backHalf );
-	newMinVer = Num( minWords[1] || "." || minBackHalf );
+	currWords = words(currVer,".");
+	minWords = words(minVer,".");
+	minBackHalf = If(nitems(minWords)==1,"0",concatitems(minWords[2::nitems(minWords)],""));
+	backHalf = If(nitems(currWords)==1,"0",concatitems(currWords[2::nitems(currWords)],""));
+	newNumVer = Num(currWords[1]||"."||backHalf);
+	newMinVer = Num(minWords[1]||"."||minBackHalf);
 	
-	If( newNumVer >= newMinVer,
-		Return( 1 ),
-		Return( 0 )
-	);
+	If(newNumVer >= newMinVer, Return(1),Return(0));
 );
 
 wrongVer = Function( {maxVer},
@@ -117,9 +192,9 @@ factorFinder = Function( {number},
 		a = a / 2;
 		b |/= a;
 	);
-	b |/= number / b;
+	b |/= number/b;
 	
-	table = New Table( "Factor Table", <<Add Rows( N Rows( b ) ), New Column( "Factors", Numeric, Continuous, Set Values( b ) ), invisible );
+	table = New Table( "Factor Table", <<Add Rows( N Rows( b ) ), New Column( "Factors", Numeric, Continuous, Set Values( b ) ),invisible );
 	table << Sort( Replace Table, By( :Factors ) );
 	table << Select Where( :Factors == 1 ) << Delete Rows;
 	Return( table );
@@ -127,56 +202,98 @@ factorFinder = Function( {number},
 
 //UNTESTED FUNCTIONS
 //nate created, needs to test
-preparation = Function( {tableName, instrumentIDcolumn},
-	{default local}, 
+preparation = Function( {tableName, instrumentIDcolumn}, {default local},
 	
 	//variable shortening
 	instID = instrumentIDcolumn;
 	
 	//convert text cols names into jsl local column variables
 	//JMP 16 may have fixed issues that require needing both styles
-	nameIDCol = Eval Insert( ":\!"^instID^\!"n" );
+	nameIDCol = EvalInsert(":\!"^instID^\!"n");
 	
-	parseIDCol = Parse( Eval Insert( ":\!"^instID^\!"n" ) );
+	parseIDCol = Parse(EvalInsert(":\!"^instID^\!"n"));
 
 	//this will recode an existing Inst Type column with hopefully the correct layout
 	Try(
-		Is Scriptable( Column( tableName, "Inst Type" ) );
+		IsScriptable(Column(tableName, "Inst Type"));
 		tableName << Recode Column(
 			:"Inst Type"n,
-			{lower_rcNow = Lowercase( _rcNow ) ; Map Value(
+			{lower_rcNow = Lowercase( _rcNow ); Map Value(
 				lower_rcNow,
-				{"catalyst dx", "ctdx", "catdx", "ctdx", "cat dx", "ctdx", "catalystdx", "ctdx", "catone", "cat1", "cat one", "cat1", "catalyst one",
-				"cat1", "catalystone", "cat1", "catalyst1", "cat1", "catalyst 1", "cat1"},
+				{"catalyst dx", "ctdx", "catdx", "ctdx", "cat dx", "ctdx", "catalystdx", "ctdx", 
+				"catone", "cat1", "cat one", "cat1", "catalyst one", "cat1", "catalystone", "cat1", "catalyst1", "cat1", "catalyst 1", "cat1"},
 				Unmatched( lower_rcNow )
 			)},
-			Target Column( :"Inst Type"n )
+			Target Column(:"Inst Type"n)
 		);
-	,
-		tableName << New Column( "Inst Type", Character, Nominal, Formula( Match( Substr( parseIDCol, 1, 4 ), "CTDX", "ctdx", "CAT1", "cat1" ) ) );
+		,
+		tableName << new column("Inst Type",Character,Nominal,
+			Formula(
+				Match(Substr(parseIDCol,1,4),
+					"CTDX", "ctdx"
+					,
+					"CAT1", "cat1"
+				)
+			)
+		);
 		tableName:"Inst Type"n << delete formula;
 	);
 
-	Return( tableName );
+	Return(tableName);
 );
 
 //added by nate to turn Chem Types into Chem Codes
 //technically needs to be tested ... and eventually moved to libraries
-assayTypes = Function( {},
-	{default local},
+assayTypes = Function({},{default local},
 	assayTyp = Associative Array(
-		{{"GLU", 00}, {"BUN", 01}, {"CA", 03}, {"URIC", 05}, {"TP", 06}, {"TRIG", 07}, {"CHOL", 08}, {"ALB", 09}, {"NH3", 10}, {"PHOS", 12}, {"TBIL",
-		14}, {"CREA", 15}, {"FRU", 16}, {"CRP", 17}, {"SDMA", 18.04}, {"BA", 21}, {"PROG", 23}, {"PHBR", 25}, {"TT4", 28.30}, {"MG", 32}, {"LAC", 35},
-		{"CL", 40}, {"K", 41}, {"NA", 42}, {"UPRO", 54}, {"ALTV", 56}, {"TCO2", 57}, {"LIPA", 59}, {"AMYL", 60}, {"ALT", 62}, {"LDH", 63}, {"CK", 64},
-		{"ALKP", 65}, {"GGT", 67}, {"UCRE", 70}, {"AST", 73}, {"WRS", 90}, {., -999}}
+		{
+			{"GLU",00},
+			{"BUN",01},
+			{"CA",03},
+			{"URIC",05},
+			{"TP",06},
+			{"TRIG",07},
+			{"CHOL",08},
+			{"ALB",09},
+			{"NH3",10},
+			{"PHOS",12},
+			{"TBIL",14},
+			{"CREA",15},
+			{"FRU",16},
+			{"CRP",17},
+			{"SDMA",18.04},
+			{"BA",21},
+			{"PROG",23},
+			{"PHBR",25},
+			{"TT4",28.30},
+			{"MG",32},
+			{"LAC",35},
+			{"CL",40},
+			{"K",41},
+			{"NA",42},
+			{"UPRO",54},
+			{"ALTV",56},
+			{"TCO2",57},
+			{"LIPA",59},
+			{"AMYL",60},
+			{"ALT",62},
+			{"LDH",63},
+			{"CK",64},
+			{"ALKP",65},
+			{"GGT",67},
+			{"UCRE",70},
+			{"AST",73},
+			{"WRS",90},
+			{.,-999}
+		}
 	);
-	Return( assayTyp );
+	Return(assayTyp)
 );
 
 
 //nate brought in, from Tim's function probably won't be tested specifically
 Recursething = Function( {resultlist, threshold},
-	{default local}, 
+	{default local},
 	//**********recursive function to create the final result list*********
 
 	TempMedian = Median( resultlist );
@@ -198,8 +315,8 @@ Recursething = Function( {resultlist, threshold},
 );
 
 	/////////////////////////////////////////
-//       Main functions                //
-/////////////////////////////////////////
+	//       Main functions                //
+	/////////////////////////////////////////
 //TESTED MAIN FUNCTIONS
 
 //UNTESTED MAIN FUNCTIONS
@@ -584,7 +701,7 @@ linearFitadder = Function( {table, respCol, posCol, fluidCol, slideLotvar, chemT
 
 
 //nate included, will cover UTs for function
-buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePath},
+buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expirationTable, jsonSavePath},
 	{default local}, 
 	///function should probably check to ensure first three are data tables and last is an associative array
 	// ... not a must have, but would be good practice
@@ -602,7 +719,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	//.... other stuff too based on what comes in with this file
 	//.... format Expiration dates as follows below
 	//.... make format YYYY.MM.DD (not YYYY-MM-DD)
-/*Data Table( "basicTest_expDates" ):ExpirationDate <<
+	/*Data Table( "basicTest_expDates" ):ExpirationDate <<
 			Format(
 				"Custom",
 				Formula(
@@ -623,7 +740,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	// save (0/1) default to 1
 	// json Save path
 	
-/*
+	/*
 	mainCurveTable = Datatable("QSDMA Master Curve Table for 10_72_112221");
 	crosswebTable = Datatable("QSDMA crosswebs");
 	foilTable = Datatable("QSDMA foils");
@@ -774,10 +891,14 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	For( i = 1, i <= N Items( jsonFiles ), i++,
 		tempJSONArray = Parse JSON( Load Text File( jsonPath || jsonFiles[i] ) );
 		platformKey = finalChemArray << first;
-		For( j = 1, j <= N Items( finalChemArray ), j++,
-			Insert Into( finalChemArray[platformKey]["lots"], tempJSONArray[platformKey]["lots"] );
-			platformKey = finalChemArray << Next( platformKey );
-		);
+		For(j=1,j<=nitems(finalChemArray),j++,
+			insertinto(
+				finalChemArray[platformKey]["lots"]
+				,
+				tempJSONArray[platformKey]["lots"]
+			);
+			platformKey = finalChemArray << Next(platformKey)
+		)
 	);
 		
 	jsonExpr = As JSON Expr( finalChemArray );
@@ -934,8 +1055,7 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 //Nates mods of Jesse's mods of Tim's outlier function
 //untested
 // example: outlierDetectWithinGroup(dt,"AR","Assay","Lot","Instrument Type");
-outlierDetectWithinGroup = Function( {DTinitial, responseColumn, assayCodeColumn, slideLotColumn, instrumentTypeColumn},
-	{default local}, 
+outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn},{default local},
 
 	// DTinitial = current data table();
 	// responseColumn = "AR";
@@ -951,28 +1071,33 @@ outlierDetectWithinGroup = Function( {DTinitial, responseColumn, assayCodeColumn
 	
 	//convert text cols names into jsl local column variables
 	//JMP 16 may have fixed issues that require needing both styles
-	nameRespCol = Eval Insert( ":\!"^respCol^\!"n" );
-	nameLotCol = Eval Insert( ":\!"^lotCol^\!"n" );
-	nameAssayCol = Eval Insert( ":\!"^assayCol^\!"n" );
-	nameInstCol = Eval Insert( ":\!"^instType^\!"n" );
+	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
+	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
+	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
+	nameInstCol = EvalInsert(":\!"^instType^\!"n");
 	
-	parseRespCol = Parse( Eval Insert( ":\!"^respCol^\!"n" ) );
-	parseLotCol = Parse( Eval Insert( ":\!"^lotCol^\!"n" ) );
-	parseAssayCol = Parse( Eval Insert( ":\!"^assayCol^\!"n" ) );
-	parseInstCol = Parse( Eval Insert( ":\!"^instType^\!"n" ) );
+	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
+	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
+	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
+	parseInstCol = Parse(EvalInsert(":\!"^instType^\!"n"));
 	
 	//**********Sort Table**********
 	DTinitial << Clear Column Selection();
-	temp = DTinitial << New Column( "Calibration Group", character, formula( Char( parseAssayCol ) || Char( parseLotCol ) || parseInstCol ) );
-	temp1 = DTinitial << New Column( "Calibration Within Group", character, formula( :"Calibration Group"n || :"Sample id"n ) );
-	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n ), Order( Ascending, Ascending ) );
+	temp = DTinitial << New Column("Calibration Group",character,formula(char(parseAssayCol) || char(parseLotCol) || parseInstCol));
+	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || :"Sample id"n));
+	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n), Order(Ascending, Ascending));
 
 	//**********Run Order Column**********
 	temp2 = DTinitial << New Column( "GroupRunOrder",
 		Numeric,
 		"Continuous",
 		Format( "Best", 12 ),
-		Formula( If( Row() == 1 | :"Calibration Within Group"n != Lag( :"Calibration Within Group"n, 1 ), 1, Lag( :"GroupRunOrder"n, 1 ) + 1 ) )
+		Formula(
+			If( Row() == 1 | :"Calibration Within Group"n != Lag( :"Calibration Within Group"n, 1 ),
+				1,
+				Lag( :"GroupRunOrder"n, 1 ) + 1
+			)
+		)
 	);
 	
 		
@@ -980,29 +1105,27 @@ outlierDetectWithinGroup = Function( {DTinitial, responseColumn, assayCodeColumn
 	temp3 = DTinitial << New Column( "BuildGroupList",
 		Expression,
 		"None",
-		Formula(
-			If( :"GroupRunOrder"n == 1,
-				Eval List( {parseRespCol} ),
-				Sort List( Insert( Eval List( Lag( :"BuildGroupList"n, 1 ) ), Eval List( {parseRespCol} ) ) )
-			)
-		)
+		Formula( If( :"GroupRunOrder"n == 1, Eval List( {parseRespCol} ), Sort List( Insert( Eval List( Lag( :"BuildGroupList"n, 1 ) ), Eval List( {parseRespCol} ) ) ) ) )
 	);
 
 	//**********Mean for Threshold Calc Column**********
-	temp4 = DTinitial << New Column( "Threshold Median AR", Numeric, "Continuous", Format( "Best", 12 ), Formula( Median( :"BuildGroupList"n ) ) );
+	temp4 = DTinitial << New Column( "Threshold Median AR",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula( Median( :"BuildGroupList"n ) )
+	);
 			
 	//**********AR Threshold Column**********
 	//prediction model version
 	//RepCount = 6;
-	temp5 = DTinitial << New Column( "RepCount", numeric, continuous, set each value( 4 ) );
+	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(4));
 	temp6 = DTinitial << New Column( "ARthreshold",
 		Numeric,
 		"Continuous",
 		Format( "Best", 12 ),
 		Formula(
-			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] *
-			:"Threshold Median AR"n + (:"RepCount"n - 7) * ((:"Threshold Median AR"n + arThresholdCoeffs[parseAssayCol]["d"]) * arThresholdCoeffs[
-			parseAssayCol]["e"])
+			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + (:"RepCount"n - 7) * (( :"Threshold Median AR"n + arThresholdCoeffs[parseAssayCol]["d"]) * arThresholdCoeffs[parseAssayCol]["e"])
 		)
 	);
 
@@ -1034,54 +1157,64 @@ outlierDetectWithinGroup = Function( {DTinitial, responseColumn, assayCodeColumn
 		"Nominal",
 		Formula( If( Contains( :"FinalResultList"n, "Fail" ), "Failed Level", Contains( :"FinalResultList"n, :AR ), "Include", "Exclude" ) )
 	);
-	temp10 = DTinitial << New Column( "Outlier 1/0",
-		numeric,
-		nominal,
-		formula( Match( :"Outlier Status"n, "Include", 0, "Exclude", 1, "Failed Level", 1 ) )
-	);
+	temp10 = DTinitial << New Column( "Outlier 1/0", numeric,nominal,formula(Match(:"Outlier Status"n,"Include",0,"Exclude",1,"Failed Level",1)));
 
-	temp11 = DTinitial << New Column( "N Outliers (within group)",
-		Numeric,
-		Continuous,
-		Formula( Col Sum( :"Outlier 1/0"n, :"Calibration Within Group"n ) )
+	temp11 = DTinitial << New Column("N Outliers (within group)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Within Group"n )
+		)
 	);
-	temp12 = DTinitial << New Column( "N Outliers (lot)", Numeric, Continuous, Formula( Col Sum( :"Outlier 1/0"n, :"Calibration Group"n ) ) );
+	temp12 = DTinitial << New Column( "N Outliers (lot)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Group"n ) 
+		)
+	);
 	
-	Try( temp << delete formula );
-	Try( temp1 << delete formula );
-	Try( temp2 << delete formula );
-	Try( temp3 << delete formula );
-	Try( temp4 << delete formula );
-	Try( temp5 << delete formula );
-	Try( temp6 << delete formula );
-	Try( temp7 << delete formula );
-	Try( temp8 << delete formula );
-	Try( temp9 << delete formula );
-	Try( temp10 << delete formula );
-	Try( temp11 << delete formula );
-	Try( temp12 << delete formula );
+	Try(temp << delete formula);
+	Try(temp1 << delete formula);
+	Try(temp2 << delete formula);
+	Try(temp3 << delete formula);
+	Try(temp4 << delete formula);
+	Try(temp5 << delete formula);
+	Try(temp6 << delete formula);
+	Try(temp7 << delete formula);
+	Try(temp8 << delete formula);
+	Try(temp9 << delete formula);
+	Try(temp10 << delete formula);
+	Try(temp11 << delete formula);
+	Try(temp12 << delete formula);
 	
-	DTinitial << delete columns( temp, temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, temp9 );
+	DTinitial << delete columns(
+		temp,
+		temp1,
+		temp2,
+		temp3,
+		temp4,
+		temp5,
+		temp6,
+		temp7,
+		temp8,
+		temp9
+	);
 	
-	DTinitial << selectwhere( :"Outlier 1/0"n == 1 ) << exclude( 1 );
+	DTinitial << selectwhere( :"Outlier 1/0"n == 1) << exclude(1);
 	DTinitial << select all rows;
 	DTinitial << invert row selection;
 	
-	Return( DTinitial );
+	return(DTinitial);
 	
 );
 
 //brought in by nate for the starting dialog
 //may change the name to something reasonable :)
 // nate responsible for unit testing
-ionChemCalDialog = Function( {},
-	{default local},
-	nw = New Window( "Operator inputs", 
+ionChemCalDialog = Function({},{default local},
+	nw = New Window("Operator inputs",
 		//show Menu(0),
 		//show toolbars(0),
-		<<modal, 
+		<< modal,
 		
-		<<on validate(
+		<< on validate(			
 			lyteCal = lytesCalDataPath << get text;
 			lyteLoop = lytesLoopDataPath << get text;
 			lyteExp = lytesExpirationDataPath << get text;
@@ -1092,121 +1225,134 @@ ionChemCalDialog = Function( {},
 			qPFT = qsdmaPlatformFTDataPath << get text;
 			qSFT = qsdmaSpeciesFTDataPath << get text;
 			qLoopMatch = qsdmaLoopMatchDataPath << get text;
-			qExpList = If( Left( qsdmaExpirationDataPath << get text, 1 ) == "{",
-				Parse( qsdmaExpirationDataPath << get text ),
-				qsdmaExpirationDataPath << get text
+			qExpList = If(Left(qsdmaExpirationDataPath<< get text,1) == "{",
+				parse(qsdmaExpirationDataPath<< get text);
+				,
+				qsdmaExpirationDataPath<< get text
 			);
 			qJSON = qsdmaJSONSaveFolder << get text;
-			If(
-				Is Missing( qExpList ) == 1, qExpSuccess = 0,
-				Is String( qExpList ) == 1, qLoopSuccess = 0,
-				For( i = 1, i <= N Items( qExpList ), i++,
-					If( Right( qExpList[i], 5 ) == ".xlsx" & Is File( qExpList[i] ),
-						qExpSuccess = 1,
-						qExpSuccess = 0;
-						Break();
+			If(IsMissing(qExpList) == 1,
+				qExpSuccess = 0
+				,
+				IsString(qExpList) == 1,
+				qLoopSuccess = 0
+				,
+				For(i=1,i<=nitems(qExpList),i++,
+					if(
+						Right(qExpList[i],5) == ".xlsx" & IsFile(qExpList[i]), qExpSuccess = 1
+						,
+						qExpSuccess = 0; break()
 					)
-				)
+				);
 			);
 			//show(tb << get selected,lyteCal,lyteLoop,lyteExp,lyteJSON,qCal,qLoop,qPFT,qSFT,qLoopList,qExpList,qJSON,qExpSuccess);
 			
 			If(
-				tb << get selected == 1, 0,
+				tb << get selected == 1, 0
+				,
 				tb << get selected == 2,
-					Right( lyteCal, 4 ) == ".jmp" & Is File( lyteCal ) & 
+				Right(lyteCal, 4) == ".jmp" & 
+				IsFile(lyteCal) &
 				
-					Right( lyteLoop, 4 ) == ".jmp" & Is File( lyteLoop ) & 
+				Right(lyteLoop, 4) == ".jmp" & 
+				IsFile(lyteLoop) &
 				
-					Right( lyteExp, 5 ) == ".xlsx" & Is File( lyteExp ) & 
+				Right(lyteExp, 5) == ".xlsx" & 
+				IsFile(lyteExp) &
 				
-					Is Directory Writable( lyteJSON ) & (Right( lyteJSON, 1 ) == "/" | Right( lyteJSON, 1 ) == "\"),
+				Is Directory Writable(lyteJSON) &
+				(Right(lyteJSON,1) == "/" | Right(lyteJSON,1) == "\")
+				,
 				tb << get selected == 3,
-					Right( qCal, 4 ) == ".jmp" & Is File( qCal ) & 
+				Right(qCal, 4) == ".jmp" & 
+				IsFile(qCal) &
 				
-					Right( qLoop, 4 ) == ".jmp" & Is File( qLoop ) & 
+				Right(qLoop, 4) == ".jmp" & 
+				IsFile(qLoop) &
 				
-					Right( qPFT, 4 ) == ".jmp" & Is File( qPFT ) & 
+				Right(qPFT, 4) == ".jmp" & 
+				IsFile(qPFT) &
 				
-					Right( qSFT, 4 ) == ".jmp" & Is File( qSFT ) & 
+				Right(qSFT, 4) == ".jmp" & 
+				IsFile(qSFT) &
 				
-					Right( qLoopMatch, 5 ) == ".xlsm" & Is File( qLoopMatch ) & 
+				Right(qLoopMatch, 5) == ".xlsm" & 
+				IsFile(qLoopMatch) &
 				
-					qExpSuccess == 1 & 
+				qExpSuccess == 1 &
 				
-					Is Directory Writable( qJSON ) & (Right( qJSON, 1 ) == "/" | Right( qJSON, 1 ) == "\")
+				Is Directory Writable(qJSON) &
+				(Right(qJSON,1) == "/" | Right(qJSON,1) == "\")
 				
-			);
+			)
 		),
-		<<return result,
-		tb = Tab Box(
-			Tab Page Box(
-				"",
-				Icon( "TabBox" ),
-				Text Box( "Please choose your desired tab and fill in the necessary inputs", <<set font style( "Bold" ), <<set font size( 12 ) )
-			),
-			Tab Page Box(
-				"LYTES",
+		<< return result,
+		tb = TabBox(
+			Tab Page Box("",Icon("TabBox"),
+				Text Box("Please choose your desired tab and fill in the necessary inputs",<< set font style("Bold"), << set font size(12))
+			)
+			,
+			Tab Page Box("LYTES",
 				V List Box(
 					//TextBox("", << set font size(10)),
-					Panel Box( "",
-						Text Box(
-							"Enter or navigate to each location and click 'Ok' to continue",
-							<<set wrap( 800 ),
-							<<set font style( "Bold" ),
-							<<set font size( 10 )
-						),
-						Text Box( "", <<set font size( 5 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Species Cal Data ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+					PanelBox("",
+						TextBox("Enter or navigate to each location and click 'Ok' to continue", << set wrap(800), << set font style("Bold"), << set font size(10)),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Species Cal Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							lytesCalDataPath = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							lytesCalDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									lytesCalDataPath << set text( file );
-								)
-							)
+									lytesCalDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Loop Qual ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							lytesLoopDataPath = Text Edit Box( "", <<set width( 300 ), ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							lytesLoopDataPath = TextEditBox("",
+								<< set width(300),
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									lytesLoopDataPath << set text( file );
-								)
-							)
-						), 
+									lytesLoopDataPath << set text(file);
+								);
+							);
+						),
 						//DX release not needed for lytes as species cal will have info from check
-/*TextBox("", << set font size(2)),
+						/*TextBox("", << set font size(2)),
 						HListBox(
 							TextBox("Select Location of ",  << set font size(10)),
 							TextBox("DX Release ",  << set font style("Bold"), << set font size(10)),
@@ -1233,238 +1379,259 @@ ionChemCalDialog = Function( {},
 								);
 							);
 						),*/
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Slide Lot Expiration ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".xlsx file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("Slide Lot Expiration ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsx file",  << set font size(10))
 						),
 						H List Box(
-							lytesExpirationDataPath = Text Edit Box( "", <<set width( 300 ), ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							lytesExpirationDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|xlsx"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									lytesExpirationDataPath << set text( file );
-								)
-							)
+									lytesExpirationDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select where to save the ", <<set font size( 10 ) ),
-							Text Box( ".json ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( "file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select where to save the ",  << set font size(10)),
+							TextBox(".json ",  << set font style("Bold"), << set font size(10)),
+							TextBox("file",  << set font size(10))
 						),
 						H List Box(
-							lytesJSONSaveFolder = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							lytesJSONSaveFolder = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									dir = Pick Directory();
-									lytesJSONSaveFolder << set text( dir );
+									lytesJSONSaveFolder << set text(dir);
 								)
-							)
+							); 
 						)
 					)
 				)
-			),
-			Tab Page Box(
-				"SDMA(ChemCode 4)",
+			)
+			,
+			Tab Page Box("SDMA(ChemCode 4)",
 				V List Box(
 					//TextBox("", << set font size(10)),
-					Panel Box( "",
-						Text Box(
-							"Enter or navigate to each location and click 'Ok' to continue",
-							<<set wrap( 800 ),
-							<<set font style( "Bold" ),
-							<<set font size( 10 )
-						),
-						Text Box( "", <<set font size( 5 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Calibration Data ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+					PanelBox("",
+						TextBox("Enter or navigate to each location and click 'Ok' to continue", << set wrap(800), << set font style("Bold"), << set font size(10)),
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Calibration Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							qsdmaCalDataPath = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaCalDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									qsdmaCalDataPath << set text( file );
-								)
-							)
+									qsdmaCalDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Loop Qual ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							qsdmaLoopDataPath = Text Edit Box( "", <<set width( 300 ), ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaLoopDataPath = TextEditBox("",
+								<< set width(300),
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									qsdmaLoopDataPath << set text( file );
-								)
-							)
+									qsdmaLoopDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 5 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Platform Finetune Data ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Platform Finetune Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							qsdmaPlatformFTDataPath = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaPlatformFTDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									qsdmaPlatformFTDataPath << set text( file );
-								)
-							)
+									qsdmaPlatformFTDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 5 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Species Finetune Data ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".jmp file", <<set font size( 10 ) )
+						TextBox("", << set font size(5)),
+						HListBox(
+							TextBox("Select Location of ", << set font size(10)),
+							TextBox("Species Finetune Data ", << set font style("Bold"), << set font size(10)),
+							TextBox(".jmp file", << set font size(10))
 						),
 						H List Box(
-							qsdmaSpeciesFTDataPath = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaSpeciesFTDataPath = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|jmp"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									qsdmaSpeciesFTDataPath << set text( file );
-								)
-							)
+									qsdmaSpeciesFTDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "QSDMA Tracking Board ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".xlsm file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("QSDMA Tracking Board ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsm file",  << set font size(10))
 						),
 						H List Box(
-							qsdmaLoopMatchDataPath = Text Edit Box( "", <<set width( 300 ), ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaLoopMatchDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									file = Pick File(
 										,
 										,
 										{"All Files|xlsm"},
 										1,
 										0,
-										, 
+										,
 										//Multiple
 									);
-									qsdmaLoopMatchDataPath << set text( file );
-								)
-							)
+									qsdmaLoopMatchDataPath << set text(file);
+								);
+							);
 						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select Location of ", <<set font size( 10 ) ),
-							Text Box( "Slide Lot Expiration ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( ".xlsx file(s)", <<set font size( 10 ) )
-						),
-						H List Box(
-							qsdmaExpirationDataPath = Text Edit Box( "", <<set width( 300 ), ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
-									file = Pick File( , , {"All Files|xlsx"}, 1, 0, , Multiple );
-									qsdmaExpirationDataPath << set text( Char( file ) );
-								)
-							)
-						),
-						Text Box( "", <<set font size( 2 ) ),
-						H List Box(
-							Text Box( "Select where to save the ", <<set font size( 10 ) ),
-							Text Box( ".json ", <<set font style( "Bold" ), <<set font size( 10 ) ),
-							Text Box( "file", <<set font size( 10 ) )
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select Location of ",  << set font size(10)),
+							TextBox("Slide Lot Expiration ",  << set font style("Bold"), << set font size(10)),
+							TextBox(".xlsx file(s)",  << set font size(10))
 						),
 						H List Box(
-							qsdmaJSONSaveFolder = Text Edit Box( "", <<set width( 300 ) ),
-							Text Box( "  " ),
-							Button Box( "",
-								<<Set Icon( "WinFileOpen" ),
-								<<set script(
+							qsdmaExpirationDataPath = TextEditBox("",
+								<< set width(300),						
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
+									file = Pick File(
+										,
+										,
+										{"All Files|xlsx"},
+										1,
+										0,
+										,
+										Multiple
+									);
+									qsdmaExpirationDataPath << set text(char(file));
+								);
+							);
+						),
+						TextBox("", << set font size(2)),
+						HListBox(
+							TextBox("Select where to save the ",  << set font size(10)),
+							TextBox(".json ",  << set font style("Bold"), << set font size(10)),
+							TextBox("file",  << set font size(10))
+						),
+						H List Box(
+							qsdmaJSONSaveFolder = TextEditBox("",
+								<< set width(300)
+							),
+							TextBox("  "),
+							buttonbox("",
+								<< Set Icon( "WinFileOpen" ),
+								<< set script(
 									dir = Pick Directory();
-									qsdmaJSONSaveFolder << set text( dir );
+									qsdmaJSONSaveFolder << set text(dir);
 								)
-							)
+							); 
 						)
 					)
 				)
 			)
-		),
-		Text Box( "", <<set font size( 5 ) ),
-		H List Box( Button Box( "Ok" ), Button Box( "Cancel" ) )
+		)
+		,
+		TextBox("", << set font size(5)),
+		H List Box(
+			ButtonBox("Ok"),
+			ButtonBox("Cancel")
+		)
 	);
 	
-	If( nw["Button"] == -1,
-		Return( 0 ),
-		Return( nw )
-	);
+	If(nw["Button"] == -1, Return(0), Return(nw));
 );
 
-
 //may change the inputs. still working on this.
-lytesAssStitching = Function( {dtCal, dtLoop, dtDXrel, dtSLExp, jsonloc},
+lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	{default local}, 
 	//testing variables
 	//dtCal = Data Table( "Subset of NA Master Cal Table Concept_010422.jmp" );
@@ -1791,7 +1958,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtDXrel, dtSLExp, jsonloc},
 	//crossWebmaster << Close Window; Table closed long before this step.
 	//foilMaster << Close Window; This closes the Data Table("Foil"). Which is called in a later step.
 	dtCalout2 << Close Window;
-	dtCal << Close Window;
+	//dtCal << Close Window;
 	dtSub << Close Window;
 	////clean up all the tables that go into the JSON maker
 
@@ -1909,8 +2076,15 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtDXrel, dtSLExp, jsonloc},
 	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
 	
 	//do a little work with dtcal to getdry reads and table name on based coeffs then do JSON stuffs
-	
-	
+	//the assumption is dtCal (the original cal table) will be named with something like: CALxx LOTS yyyyyy-zzzzzz
+	//xx = the Cal Event for the build
+	//yyyyyy = lot range start for the event
+	//zzzzzz = lot range end for the event
+
+	dtCaloutlast << set name( dtCal << get name || "_base coefficients");
+
+	//BUILDJSON(dtCaloutlast, cwSplit2, foilMasterall, dtSLExp, jsonloc);
+		//JSON building won't close any of these tables - currently
 	//return the necessary tables
 	
 );
@@ -1950,10 +2124,10 @@ inputCleanup = Function( {dialogOutput},
 	)
 );
 
-
 prepCalData = Function( {calPathway, dataPath},
 	{default local}, 
 
+	//addin sages barcode function to this preparation
 	dt = Open( dataPath );
 	Return( dt );
 
@@ -1971,6 +2145,35 @@ prepExpiration = Function( {calPathway, dataPath},
 	{default local}, 
 
 	//def will need to be updated for QSDMA - that path will be a list of one to many files
+	//do the updates to the expiration data fomratting here
+
+	// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
+	//.... ClipLot becomes cliplot ExpirationDate become exp_date
+	//.... delete clip type
+	//.... convert chemabbr to chemcode ... don't use array of chem codes, call function to get them and add function to overarching list of functions
+	//.... other stuff too based on what comes in with this file
+	//.... format Expiration dates as follows below
+	//.... make format YYYY.MM.DD (not YYYY-MM-DD)
+	/*Data Table( "basicTest_expDates" ):ExpirationDate <<
+			Format(
+				"Custom",
+				Formula(
+					Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+						1, "0" || Char( Month( value ) ),
+						2, Char( Month( value ) )
+					) || "." || Match( Length( Char( Day( value ) ) ),
+						1, "0" || Char( Day( value ) ),
+						2, Char( Day( value ) )
+					)
+				),
+				10,
+				0
+			);
+		*/
+	//.... make date column character to be properly maintained in array and to JSON
+
+
+	
 	dt = Open( dataPath );
 	Return( dt );
 
@@ -2017,7 +2220,7 @@ If( Length( Include File List() ) == 1,
 	,
 		wrongVer( minJMPver )
 	);
-,
+	,
 	Print( "Calibration script was included from another source" );
 
 );
