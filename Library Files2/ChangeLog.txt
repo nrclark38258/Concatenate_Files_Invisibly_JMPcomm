@@ -6,8 +6,10 @@
 
 //------------------Revision History for script(s)---------------------
 //
-//  21.0.0.0 NClark 021022
+//  21.0.8 NClark 021422
 //      -> TablePreparation
+//  	3.7.8 NClark 021422
+//	    	-> updated funct51 and 52 to force column to become numeric / continuous
 //	    3.7.7 NClark 021022
 //	    	-> added funct56 to handle all the slide_mfg node columns from slide manufacturing json sequence
 //	    	-> added funct57 for results_calculated.elapsed_time

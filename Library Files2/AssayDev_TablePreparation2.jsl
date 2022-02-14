@@ -6,6 +6,8 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.7.8 NClark 021422
+//		-> updated funct51 and 52 to force column to become numeric / continuous
 //	3.7.7 NClark 021022
 //		-> added funct56 to handle all the slide_mfg node columns from slide manufacturing json sequence
 //		-> added funct57 for results_calculated.elapsed_time
@@ -1329,11 +1331,15 @@ funct50 = Function({dtName,colName},{dtName,colName},
 
 funct51 = Function({dtName,colName},{dtName,colName},
 
+	Column(dtName, colName) << set data type("Numeric");
+	Column(dtName, colName) << set modeling type("Continuous");
 	Column(dtName, colName) << Set Name("Assay Gain")
 );
 
 funct52 = Function({dtName,colName},{dtName,colName},
 
+	Column(dtName, colName) << set data type("Numeric");
+	Column(dtName, colName) << set modeling type("Continuous");
 	Column(dtName, colName) << Set Name("Assay Offset")
 );
 
