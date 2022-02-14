@@ -1649,9 +1649,9 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
 	
 	//outlier detection step for cal. not sure these are the inputs.
-	outlierDetectWithinGroup( dtCal, "AR", "Assay", "Slide Lot", "Instrument Type" );
+	//outlierDetectWithinGroup( dtCal, "AR", "Assay", "Slide Lot", "Instrument Type" );
 	//outlier detection step for loop qual. not sure these are the inputs.
-	outlierDetectWithinGroup( dtSub, "AR", "Assay", "Slide Lot", "Instrument ID" );
+	//outlierDetectWithinGroup( dtSub, "AR", "Assay", "Slide Lot", "Instrument ID" );
 	
 	//potentially move this step prior to outlierdetection.
 	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
@@ -1937,14 +1937,19 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	dtCalfinal << New Column( "Sub Lot Adjusted Dose", Numeric, Continuous, Set Formula( (:Dose - :Sub Lot Offset) / :Sub Lot Gain ) );
 
 	////produce master curve JMP file - modify this to be dynamic for the assay////////////////////////////////
-	dtCaloutlast = calFitfunc( dtCalfinal, "Cross Web", "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	///instead of calFitfunc -- would call jesses func. sub lot adjusted dose as your x. AR as normal.
+	//dtCaloutlast = calFitfunc( dtCalfinal, "Cross Web", "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	dtCaloutlast = lytesCubicTo3P(dtCalfinal, "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Assay", "Inst Type");
 	dtCaloutlast << Set Name( "Final Curve Coefficients" );
-	Column( dtCaloutlast, "Slide Lot" ) << Set Data Type( "Numeric" );
+	Column( dtCaloutlast, "Slide Lot" ) << Set Data Type( "Numeric" ) << Set Modeling Type( "Continuous" );
 
+	//Newton Rhaphson if we wanted to check this.
 	dtCalfinal << Update(
 		With( dtCaloutlast ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
-		Replace Columns in Main Table( :Asymptote, :Growth Rate, :Scale )
+		Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
+		//Replace Columns in Main Table( :Asymptote, :Growth Rate, :Scale ) Removed as this is for a 3P not a cubic.
+		Add Columns from Update Table( :Cubic, :Intercept, :Quadratic, :Slope),
+		Replace Columns in Main Table( None )
 	);
 
 	Column( dtCalfinal, "Base Concentration" ) << Suppress Eval( 0 );
@@ -1968,9 +1973,16 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 
 	foilMasterall << Delete Columns( "N Rows", "Foil Gain Spline", "Foil Offset Spline" );
 
+	/* For QSDMA as Lytes is a Cubic fit.
 	Column( dtCaloutlast, "Asymptote" ) << Set Name( "a" );
 	Column( dtCaloutlast, "Scale" ) << Set Name( "b" );
 	Column( dtCaloutlast, "Growth Rate" ) << Set Name( "c" );
+	*/
+	
+	Column( dtCaloutlast, "Cubic" ) << Set Name( "d" );
+	Column( dtCaloutlast, "Quadratic" ) << Set Name( "c" );
+	Column( dtCaloutlast, "Slope" ) << Set Name( "b" );
+	Column( dtCaloutlast, "Intercept" ) << Set Name( "a" );
 	
 	////add all the calibration and sublot corrections to the sub lot table to check that it's all good
 
@@ -1994,19 +2006,20 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	Column( dtCaloutlasttemp, "a" ) << Set Name( "Base a" );
 	Column( dtCaloutlasttemp, "b" ) << Set Name( "Base b" );
 	Column( dtCaloutlasttemp, "c" ) << Set Name( "Base c" );
-	Try( Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" ), Throw() );
+	Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" );
+	//Try( Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" ), Throw() ); Lytes will have a column d because it's a cubic fit. QSDMA will not.
 	
 	///updating the loop qual table to check the precision post sub lot corrections
 	//adding base curve data to loop qual
 	Try(
 		dtSubop << Update(
 			With( dtCaloutlasttemp ),
-			Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
 			Add Columns from Update Table( :Base a, :Base b, :Base c, :Base d )
 		),
 		dtSubop << Update(
 			With( dtCaloutlasttemp ),
-			Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
 			Add Columns from Update Table( :Base a, :Base b, :Base c )
 		)
 	);
@@ -2046,6 +2059,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 		:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", :Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3,
 		Stop()
 	);*/
+	/*
 	dtSubop << New Column( "Base Concentration", Numeric, Continuous, 
 		Set Formula(
 			If(
@@ -2056,8 +2070,35 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 					:Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3
 			)
 		)
-	);
+	);*/
 	
+	//base concentration will now be added using a method to solve a cubic function for lytes as lytes is fit with a cubic.
+	dtSubop << new column(
+		"Base Concentration",
+		Numeric,
+		Continuous,
+		Formula(
+			p=((3*:Base b)/:Base d - (:Base c/:Base d)^2)/3;
+			q=(2*(:Base c/:Base d)^3 - ((9*:Base c*:Base b)/Base d)/Base d + (27*(:Base a-:AR)/:Base d))/27;
+			D=(p/3)^3 + (q/2)^2;
+			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
+
+			If(D>=0,
+				u=Root((-q/2 + (D)^0.5),3);
+				v=Root((-q/2 - (D)^0.5),3);
+				y1=u+v;
+				x1=y1 - (:Base c/:Base d)/3;
+				char(x1),
+				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
+				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
+				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
+				x1=y1-(:Base c/:Base d)/3;
+				x2=y2-(:Base c/:Base d)/3;
+				x3=y3-(:Base c/:Base d)/3;
+				char(x1)||" "||char(x2)||" "||char(x3)
+			);
+		)
+	);
 	
 	dtSubop << New Column( "Cross Web Gain",
 		Numeric,
@@ -2073,7 +2114,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	dtSubop << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
 	dtSubop << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
 	
-	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
+	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * Num(:Base Concentration) + :Sub Lot Offset ) );
 	
 	//do a little work with dtcal to getdry reads and table name on based coeffs then do JSON stuffs
 	//the assumption is dtCal (the original cal table) will be named with something like: CALxx LOTS yyyyyy-zzzzzz
