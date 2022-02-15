@@ -1216,7 +1216,7 @@ ionChemCalDialog = Function({},{default local},
 		
 		<< on validate(			
 			lyteCal = lytesCalDataPath << get text;
-			lyteLoop = lytesLoopDataPath << get text;
+			lyteLoop = lytesLoopFolder << get text;
 			lyteExp = lytesExpirationDataPath << get text;
 			lyteJSON = lytesJSONSaveFolder << get text;
 			
@@ -1254,8 +1254,8 @@ ionChemCalDialog = Function({},{default local},
 				Right(lyteCal, 4) == ".jmp" & 
 				IsFile(lyteCal) &
 				
-				Right(lyteLoop, 4) == ".jmp" & 
-				IsFile(lyteLoop) &
+				Is Directory Writable(lyteLoop) &
+				(Right(lyteLoop,1) == "/" | Right(lyteLoop,1) == "\") &
 				
 				Right(lyteExp, 5) == ".xlsx" & 
 				IsFile(lyteExp) &
@@ -1328,28 +1328,20 @@ ionChemCalDialog = Function({},{default local},
 						HListBox(
 							TextBox("Select Location of ", << set font size(10)),
 							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
-							TextBox(".jmp file", << set font size(10))
+							TextBox("head folder", << set font size(10))
 						),
 						H List Box(
-							lytesLoopDataPath = TextEditBox("",
-								<< set width(300),
+							lytesLoopFolder = TextEditBox("",
+								<< set width(300)
 							),
 							TextBox("  "),
 							buttonbox("",
 								<< Set Icon( "WinFileOpen" ),
 								<< set script(
-									file = Pick File(
-										,
-										,
-										{"All Files|jmp"},
-										1,
-										0,
-										,
-										//Multiple
-									);
-									lytesLoopDataPath << set text(file);
-								);
-							);
+									dir = Pick Directory();
+									lytesLoopFolder << set text(dir);
+								)
+							); 
 						),
 						//DX release not needed for lytes as species cal will have info from check
 						/*TextBox("", << set font size(2)),
@@ -2136,7 +2128,6 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	
 );
 
-
 inputCleanup = Function( {dialogOutput},
 	{default local}, 
 	
@@ -2180,11 +2171,57 @@ prepCalData = Function( {calPathway, dataPath},
 
 );
 
-prepLoopData = Function( {calPathway, dataPath},
-	{default local}, 
+prepLoopData = Function( {calPathway, dataPath, calData},
+	{default local},
 
-	dt = Open( dataPath );
-	Return( dt );
+	neededLoops = AssociativeArray(calData:"Loop Lot_DxRelease");
+	removefrom(neededLoops,"");
+	
+	//loopQualPath = "/D:/IDEXX/Lytes One Loop = One Lot - Documents/Documentation/CO3489 - QC for OLOL/4. Species Calibration/Species File Check/";
+	loopfileList = Files In Directory(dataPath,recursive);
+	
+	For(i=nitems(loopfileList),i>=1,i--,
+		If(
+			Contains(loopfileList[i], "Loop Qualification") |
+			Contains(loopfileList[i], "NDE Count") |
+			Contains(loopfileList[i], "unchosen") |
+			Contains(loopfileList[i], "Sublot Corrected"),
+			RemoveFrom(loopfileList,i)
+			,
+			//show(word(1,loopfileList[i],"/\"));
+			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
+			If(neededLoops[loop] == 0,
+				RemoveFrom(loopfileList,i)
+			)
+		);
+		
+	);
+	
+	loopFiles = {};
+	For(i=1,i<=nitems(fileList),i++,
+		loopFiles[i] = Open(
+			loopQualPath||loopFiles[i],
+			private
+		);
+	);
+	loopFiles1 = Remove(loopFiles,1);
+	
+	If(
+		N Items( loopFiles ) == 1, 
+			loopQualTable = loopFiles[1];
+			Return(loopQualTable);
+		,
+		N Items( loopFiles ) > 1,
+			loopQualTable = loopFiles[1] << concatenate( looFiles1, create source column );
+			For( i = 1, i <= N Items( loopFiles ), i++,
+				Close( loopFiles[i], nosave )
+			);
+			Return(loopQualTable);
+		,
+		N Items( loopFiles ) == 0,
+			Print( "no loop data, please try again" );
+			Return(0);
+	);
 
 );
 
@@ -2266,7 +2303,7 @@ prepExpiration = Function( {calPathway, dataPath},
 		)
 	);
 	dt << delete columns({"ClipType", "ChemAbbr"});
-	
+
 	Return( dt );
 
 );
@@ -2293,17 +2330,18 @@ If( Length( Include File List() ) == 1,
 					calDataPath = datatables[1];
 					loopDataPath = datatables[2];
 					expirationPath = datatables[3];
+					jsonPath = datatables[4];
 				
 				/*Preps the tables individually so functions can be updated with error checks, if need be*/
 					calData = prepCalData( "LYTES", calDataPath );
-					loopData = prepLoopData( "LYTES", loopDataPath );
+					loopData = prepLoopData( "LYTES", loopDataPath, calData );
 					expiration = prepExpiration( "LYTES", expirationPath );
 
 					If( calData == 0 | loopData == 0 | expiration == 0,
 						Close All( data tables, nosave );
 						Stop();
 					,
-						lytesAssStitching( calData, loopData )
+						lytesAssStitching( calData, loopData, expiration, jsonPath )
 					);,
 				"QSDMA",
 					Empty();//qsdmaAssStitching(datatables);
