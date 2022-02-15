@@ -2074,12 +2074,12 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	
 	//base concentration will now be added using a method to solve a cubic function for lytes as lytes is fit with a cubic.
 	dtSubop << new column(
-		"Base Concentration",
+		"Base Concentration Char",
 		Numeric,
 		Continuous,
 		Formula(
-			p=((3*:Base b)/:Base d - (:Base c/:Base d)^2)/3;
-			q=(2*(:Base c/:Base d)^3 - ((9*:Base c*:Base b)/Base d)/Base d + (27*(:Base a-:AR)/:Base d))/27;
+			p=((3*:"Base b"n)/:"Base d"n - (:"Base c"n/:"Base d"n)^2)/3;
+			q=(2*(:"Base c"n/:"Base d"n)^3 - ((9*:"Base c"n*:"Base b"n)/:"Base d"n)/:"Base d"n + (27*(:"Base a"n-:"AR"n)/:"Base d"n))/27;
 			D=(p/3)^3 + (q/2)^2;
 			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
 
@@ -2087,17 +2087,23 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 				u=Root((-q/2 + (D)^0.5),3);
 				v=Root((-q/2 - (D)^0.5),3);
 				y1=u+v;
-				x1=y1 - (:Base c/:Base d)/3;
+				x1=y1 - (:"Base c"n/:"Base d"n)/3;
 				char(x1),
 				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
 				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
 				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
-				x1=y1-(:Base c/:Base d)/3;
-				x2=y2-(:Base c/:Base d)/3;
-				x3=y3-(:Base c/:Base d)/3;
+				x1=y1-(:"Base c"n/:"Base d"n)/3;
+				x2=y2-(:"Base c"n/:"Base d"n)/3;
+				x3=y3-(:"Base c"n/:"Base d"n)/3;
 				char(x1)||" "||char(x2)||" "||char(x3)
 			);
-		)
+		);
+	);
+	
+	dtSubop << New Column( "Base Concentration",
+		Numeric,
+		Continuous,
+		Set Formula( num(:"Base Concentration Char"n) )
 	);
 	
 	dtSubop << New Column( "Cross Web Gain",
@@ -2114,8 +2120,8 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	dtSubop << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
 	dtSubop << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
 	
-	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * Num(:Base Concentration) + :Sub Lot Offset ) );
-	
+	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
+
 	//do a little work with dtcal to getdry reads and table name on based coeffs then do JSON stuffs
 	//the assumption is dtCal (the original cal table) will be named with something like: CALxx LOTS yyyyyy-zzzzzz
 	//xx = the Cal Event for the build
