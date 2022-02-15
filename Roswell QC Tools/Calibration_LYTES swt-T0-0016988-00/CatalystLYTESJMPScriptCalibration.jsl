@@ -116,36 +116,36 @@ Names Default To Here( 1 );
 		{
 			{40, Associative Array(
 					{
-						{"a",0.00145270679520435},
-						{"b",-0.0000890475056397184},
-						{"c",0.00137756746403748},
-						{"d",-0.451724816698737},
-						{"e",-0.0000869119658323121}
+						{"a",0.0012707971679844},
+						{"b",-0.0000586962682322227},
+						{"c",0.00254292011925348},
+						{"d",-0.000153491812055332}
 					}
 				)
 			},
 			{41, Associative Array(
 					{
-						{"a",0.000445919607298063},
-						{"b",-0.0000677707995388024},
-						{"c",0.00262129294387304},
-						{"d",-0.42886169898018},
-						{"e",-0.000160660681860337}
+						{"a",-0.000267089995094783},
+						{"b",0.0000383105894415053},
+						{"c",0.00505495064190689},
+						{"d",-0.000340653064411896}
 					}
 				)
 			},
 			{42, Associative Array(
 					{
-						{"a",0.000948534702861681},
-						{"b",-0.000115175338670205},
-						{"c",0.0025543689215949},
-						{"d",-0.688722947498828},
-						{"e",-0.000161335526677608}
+						{"a",0.000414602187026228},
+						{"b",-0.0000407295042376547},
+						{"c",0.00399395551194415},
+						{"d",-0.000179122017449908}
 					}
 				)
 			}
 		}
 	);
+
+	outlierLimitCount = 2;
+
 //-----------/Variable Declarations-----------------------
 
 //INCLUDES GO HERE
@@ -292,21 +292,21 @@ assayTypes = Function({},{default local},
 
 
 //nate brought in, from Tim's function probably won't be tested specifically
-Recursething = Function( {resultlist, threshold},
+outlierRecursion = Function( {resultlist, threshold, outlierLimitCount},
 	{default local},
 	//**********recursive function to create the final result list*********
 
 	TempMedian = Median( resultlist );
 	TempMean = Mean( resultlist );
 	TempN = Length( resultlist );
-	If( TempN < 5,
+	If( TempN < outlierLimitCount,
 		Return( {"Fail"} ),
 		If( Abs( TempMedian - TempMean ) > threshold,
 			If( TempMedian - TempMean < 0,
 				resultlist = Remove( resultlist, TempN, 1 ),
 				resultlist = Remove( resultlist, 1, 1 )
 			);
-			resultlist = Recursething( resultlist, threshold );
+			resultlist = outlierRecursion( resultlist, threshold );
 		,
 			Return( resultlist )
 		);
@@ -1118,14 +1118,14 @@ outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,sl
 			
 	//**********AR Threshold Column**********
 	//prediction model version
-	//RepCount = 6;
-	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(4));
+	//RepCount = 3;
+	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(3));
 	temp6 = DTinitial << New Column( "ARthreshold",
 		Numeric,
 		"Continuous",
 		Format( "Best", 12 ),
 		Formula(
-			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + (:"RepCount"n - 7) * (( :"Threshold Median AR"n + arThresholdCoeffs[parseAssayCol]["d"]) * arThresholdCoeffs[parseAssayCol]["e"])
+			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + :"RepCount"n * :"Threshold Median AR"n * arThresholdCoeffs[parseAssayCol]["d"]
 		)
 	);
 
@@ -1135,7 +1135,7 @@ outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,sl
 		"None",
 		Formula(
 			If( :"GroupRunOrder"n > Lag( :"GroupRunOrder"n, -1 ) | Is Missing( Lag( :"GroupRunOrder"n, -1 ) ),
-				Recursething( :"BuildGroupList"n, :"ARthreshold"n )
+				outlierRecursion( :"BuildGroupList"n, :"ARthreshold"n )
 			)
 		)
 	);
@@ -2213,9 +2213,54 @@ prepExpiration = Function( {calPathway, dataPath},
 		*/
 	//.... make date column character to be properly maintained in array and to JSON
 
+	assayCodes = assayTypes();
 
+	dt = Open(
+		dataPath,
+		Import Settings(
+			End Of Line( CRLF, CR, LF ),
+			End Of Field( Comma, CSV( 1 ) ),
+			Strip Quotes( 0 ),
+			Use Apostrophe as Quotation Mark( 0 ),
+			Use Regional Settings( 0 ),
+			Scan Whole File( 1 ),
+			Treat empty columns as numeric( 0 ),
+			CompressNumericColumns( 0 ),
+			CompressCharacterColumns( 0 ),
+			CompressAllowListCheck( 0 ),
+			Labels( 1 ),
+			Column Names Start( 1 ),
+			Data Starts( 2 ),
+			Lines To Read( "All" ),
+			Year Rule( "20xx" )
+		)
+	);
+	dt:ExpirationDate << Format(
+		"Custom",
+		Formula(
+			Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+				1, "0" || Char( Month( value ) ),
+				2, Char( Month( value ) )
+			) || "." || Match( Length( Char( Day( value ) ) ),
+				1, "0" || Char( Day( value ) ),
+				2, Char( Day( value ) )
+			)
+		),
+		10,
+		0
+	);
+	dt:"ExpirationDate"n << set name("exp_date");
+	dt:"Lot"n << set name("slide_lot");
+	dt:"ClipLot"n << set name("cliplot");
+	dt:"exp_date"n << set data type("Character");
+
+	dt << New Column("chemcode",
+		Formula(
+			assayCodes[:"ChemAbbr"n]
+		)
+	);
+	dt << delete columns({"ClipType", "ChemAbbr"});
 	
-	dt = Open( dataPath );
 	Return( dt );
 
 );
