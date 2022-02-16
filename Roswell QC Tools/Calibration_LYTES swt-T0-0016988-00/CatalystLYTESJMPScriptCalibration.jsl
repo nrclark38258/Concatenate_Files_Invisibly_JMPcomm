@@ -314,6 +314,43 @@ outlierRecursion = Function( {resultlist, threshold, outlierLimitCount},
 	);
 );
 
+//parse the barcode to get slide lot number, crossweb number, foil number, assay code.
+calBarcodeParse = Function({tablename, barcodecol}, {default local},
+	//tablename = current data table();
+	//barcodecol = "Barcode";
+	parse_barcodecol = Parse( Eval Insert( ":\!"^barcodecol^\!"n" ) );
+	//show(parse_barcodecol);
+	
+	collist = tablename << get column names(string);
+	//show(collist);
+	
+	if(!contains(collist, "Slide Lot_BC"),
+		tablename << New Column("Slide Lot_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 1, 4 )));
+	);
+
+	if(!contains(collist, "Crossweb_BC"),
+		tablename << New Column("Crossweb_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 7, 2 )));
+	);
+
+		
+	if(!contains(collist, "Foil_BC"),
+		tablename << New Column("Foil_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 5, 2 ) ));
+	);
+	
+	if(!contains(collist, "Assay Code_BC"),
+		tablename << New Column("Assay Code_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 9, 2 ) ));
+	);	
+	
+	tablename:"Slide Lot_BC"n << delete property(Formula);
+	tablename:"Crossweb_BC"n << delete property(Formula);
+	tablename:"Foil_BC"n << delete property(Formula);
+	tablename:"Assay Code_BC"n << delete property(Formula);
+	
+	return(tablename);	
+);
+
+
+
 	/////////////////////////////////////////
 	//       Main functions                //
 	/////////////////////////////////////////
