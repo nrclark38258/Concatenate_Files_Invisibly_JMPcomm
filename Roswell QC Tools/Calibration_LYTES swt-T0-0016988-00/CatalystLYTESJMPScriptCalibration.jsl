@@ -325,20 +325,20 @@ calBarcodeParse = Function({tablename, barcodecol}, {default local},
 	//show(collist);
 	
 	if(!contains(collist, "Slide Lot_BC"),
-		tablename << New Column("Slide Lot_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 1, 4 )));
+		tablename << New Column("Slide Lot_BC", Character, Nominal, formula( Substr( Char( parse_barcodecol ), 1, 4 )));
 	);
 
 	if(!contains(collist, "Crossweb_BC"),
-		tablename << New Column("Crossweb_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 7, 2 )));
+		tablename << New Column("Crossweb_BC", Character, Nominal, formula( Substr( Char( parse_barcodecol ), 7, 2 )));
 	);
 
 		
 	if(!contains(collist, "Foil_BC"),
-		tablename << New Column("Foil_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 5, 2 ) ));
+		tablename << New Column("Foil_BC", Character, Nominal, formula( Substr( Char( parse_barcodecol ), 5, 2 ) ));
 	);
 	
 	if(!contains(collist, "Assay Code_BC"),
-		tablename << New Column("Assay Code_BC", Character, Nominal, formula( Substr( Char( :Barcode ), 9, 2 ) ));
+		tablename << New Column("Assay Code_BC", Character, Nominal, formula( Substr( Char( parse_barcodecol ), 9, 2 ) ));
 	);	
 	
 	tablename:"Slide Lot_BC"n << delete property(Formula);
@@ -348,7 +348,6 @@ calBarcodeParse = Function({tablename, barcodecol}, {default local},
 	
 	return(tablename);	
 );
-
 
 
 	/////////////////////////////////////////
@@ -366,6 +365,18 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 	fluidCol = to identify concentration for calibration purposes
 	slideLotvar = the slide lot that excludes the sublot field
 	fitType = the fit form specific to the assay*/
+	
+	/*
+	table = dtCal;
+	posCol = "Cross Web";
+	respCol = "AR";
+	fluidCol = "Dose";
+	slideLotvar = "Slide Lot";
+	chemTypecol = "Chem Type";
+	instTypecol = "Inst Type";
+	fitType = "3P";
+	fitType2 = "Master";
+	*/
 	
 	parseColNamesublot = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
 	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
@@ -391,9 +402,9 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 				Fit Exponential 3P
 			);
 			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-			Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;, 
+			dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+			Report( calFit[1] ) << Close Window;
+		, 
 	
 		fitType == "Rodbard", 
 	
@@ -485,6 +496,16 @@ subLotcharFunc = Function( {table, posCol, respCol, slideLotvar, chemTypecol, la
 	slideLotvar = the slide lot that excludes the sublot field
 	cont = the type of sublot pattern we are correcting for*/
 	
+	/*
+	table=dtSubop_cw;
+	posCol="Cross Web";
+	respCol="Offset Calc_Cross Web";
+	slideLotvar="Slide Lot";
+	chemTypecol="Chem Type";
+	lamda=100;
+	cont="Yes";
+	*/
+	
 	parseColNamesublot = Parse( Eval Insert( "^table^:name(\!"^posCol^\!" )" ) );
 	parseColNameresponse = Parse( Eval Insert( "^table^:name(\!"^respCol^\!" )" ) );
 	parseColNamecoating = Parse( Eval Insert( "^table^:name(\!"^slideLotvar^\!" )" ) );
@@ -506,7 +527,7 @@ subLotcharFunc = Function( {table, posCol, respCol, slideLotvar, chemTypecol, la
 			Link to original data table( 0 ),
 			Invisible
 		);
-	
+		Column( table, posCol ) << set data type("Numeric");
 		posCount = Max( Column( table, posCol ) << Get Values );
 	
 		dtTempcount = New Table( "Arbritrary Positions", New Column( posCol, Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
@@ -626,6 +647,18 @@ subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, sli
 	fluidCol = to cover in the event we have multiple fluid levels in the data this identifies unique fluids
 	slideLotvar = the slide lot that excludes the sublot field
 	cont = the type of sublot pattern we are correcting for*/
+	
+	/*
+	table=dtSubop;
+	respCol="Predicted Dose from Master";
+	posCol="Crossweb_LQ";
+	blockCol="Foil_LQ";
+	fluidCol="Dose";
+	slideLotvar="Slide Lot";
+	outputCol="Cross Web Correction";
+	chemTypecol="Chem Type";
+	blockType="Relative"
+	*/
 	
 	parseColNamesublotx = Parse( Eval Insert( ":name(\!"^posCol^\!" )" ) );
 	parseColNameblocker = Parse( Eval Insert( ":name(\!"^blockCol^\!" )" ) );
@@ -1660,19 +1693,26 @@ ionChemCalDialog = Function({},{default local},
 );
 
 //may change the inputs. still working on this.
-lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
+lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	{default local}, 
 	//testing variables
 	//dtCal = Data Table( "Subset of NA Master Cal Table Concept_010422.jmp" );
 	//dtSub = Data Table( "Subset of NA Master Sub Lot Table Concept_010422.jmp" );
 	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
-
+	/*
+	dtCal = calData;
+	dtLoop = loopData;
+	dtSlideLotExpiration = expiration;
+	jsonloc = jsonPath;
+	*/
 	//setting variables
 	dtSub = dtLoop;
+	dtSLExp = dtSlideLotExpiration;
 	cwPostotal = 40;
 	foilPostotal = 30;
 	defaultBin = 8;
 
+	dtCal:"Crossweb_BC"n << set name("Cross Web");
 	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
 	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
 	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
@@ -1705,25 +1745,25 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 		"Foil",
 		"Dose",
 		"Slide Lot",
-		"Cross Web Correction",
+		"cal_CW Correction",
 		"Chem Type",
 		"Relative"
 	);
 
-	dtSubop << New Column( "CW Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :Cross Web Correction ) );
+	dtSubop << New Column( "cal_CW Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_CW Correction"n ) );
 	
 	//relative correction to evaluate the foil corrections by dose level
-	subLot2DblockerFunc( dtSubop, "CW Corrected Dose", "Foil", "Loop Average Dose", "Dose", "Slide Lot", "Foil Correction", "Chem Type", "Absolute" );
+	subLot2DblockerFunc( dtSubop, "cal_CW Corrected Dose", "Foil", "Loop Average Dose", "Dose", "Slide Lot", "cal_Foil Correction", "Chem Type", "Absolute" );
 	
-	dtSubop << New Column( "Foil Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :Foil Correction ) );
+	dtSubop << New Column( "cal_Foil Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_Foil Correction"n ) );
 	
 	//this is for informational purposes only and is used to later check the actual corrections vs. entitlement to know if we found any distressing discontinuities along the way
-	dtSubop << New Column( "Entitlement Sublot Dose", Numeric, Continuous, Set Formula( :CW Corrected Dose - :Foil Correction ) );
+	dtSubop << New Column( "Entitlement Sublot Dose", Numeric, Continuous, Set Formula( :"cal_CW Corrected Dose"n - :"cal_Foil Correction"n ) );
 
 	//now we're going to calculate the raw correction factors for cross web
 	//first step is to subset out the raw CW corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
 	dtSubop_cw = dtSubop << Summary(
-		Group( :Chem Type, :Slide Lot, :Cross Web, :Dose, :"Loop Average Dose"n, :"Cross Web Correction"n ),
+		Group( :"Chem Type"n, :"Slide Lot"n, :"Cross Web"n, :"Dose"n, :"Loop Average Dose"n, :"cal_CW Correction"n ),
 		Freq( "None" ),
 		Weight( "None" ),
 		Link to original data table( 0 )
@@ -1732,7 +1772,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	
 	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
 	//check that you applied the cross web correction right for this
-	dtSubop_cw << New Column( "Cross Web Dose", Numeric, Continuous, Set Formula( :Loop Average Dose - :Cross Web Correction ) );
+	dtSubop_cw << New Column( "Cross Web Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_CW Correction"n ) );
 	
 	//this is generating the slope and offset corrections by cross web position, slide lot, and chem type
 	linearFitadder( dtSubop_cw, "Cross Web Dose", "Cross Web", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
@@ -1783,14 +1823,14 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	//now we're going to calculate the correction factors for foils
 	//first step is to subset out the raw foil corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
 	dtSubop_foil = dtSubop << Summary(
-		Group( :Chem Type, :Slide Lot, :Foil, :Dose, :"Loop Average Dose"n, :"Foil Correction"n ),
+		Group( :Chem Type, :Slide Lot, :Foil, :Dose, :"Loop Average Dose"n, :"cal_Foil Correction"n ),
 		Freq( "None" ),
 		Weight( "None" ),
 		Link to original data table( 0 )
 	);
 
 	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
-	dtSubop_foil << New Column( "Foil Dose", Numeric, Continuous, Set Formula( :Loop Average Dose - :Foil Correction ) );
+	dtSubop_foil << New Column( "Foil Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_Foil Correction"n ) );
 
 
 	//this is generating the slope and offset corrections by foil position, slide lot, and chem type
@@ -1858,15 +1898,14 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
 		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
 	);
-	Show( dtFit );
-	Show( dtFit[1] );
+	//Show( dtFit );
+	//Show( dtFit[1] );
 	Wait( 0 );
 	
 	//////////////////////////////////////////////////////////////////////////////////////////////
 	////////The code for the variable cwInterptemp will be different for JMP 16 vs JMP 15. 15 requires  "Polynomial Fit Degree=3" whereas 16 supports the original code of  "Polynomial Fit Degree=3 Uncentered". Maybe a try/accept here to fix it?////////
 	//////////////////////////////////////////////////////////////////////////////////////////////
-	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-	Make Combined Data Table;
+	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
 	dtFit << Close Window;
 	
 	cwMasterall << Close Window;
@@ -1933,6 +1972,8 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSLExp, jsonloc},
 	dtCal3 << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
 	dtCal3 << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
 	
+	///// HERE IS WHERE THINGS LOOK REALLY ODD
+	/////
 	dtCalfinal = dtCal3 << Join(
 		With( cwSplit2 ),
 		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
@@ -2172,7 +2213,7 @@ inputCleanup = Function( {dialogOutput},
 		2,
 			here:calibrationPathway = "LYTES";
 			calibrationDataPath = dialogOutput["lytesCalDataPath"];
-			loopQualDataPath = dialogOutput["lytesLoopDataPath"];
+			loopQualDataPath = dialogOutput["lytesLoopFolder"];
 			expirationDataPath = dialogOutput["lytesExpirationDataPath"];
 			jsonFolderPath = dialogOutput["lytesJSONSaveFolder"];
 
@@ -2201,44 +2242,54 @@ inputCleanup = Function( {dialogOutput},
 
 prepCalData = Function( {calPathway, dataPath},
 	{default local}, 
-
+	/*
+	calPathway = "LYTES";
+	dataPath = calDataPath;
+	*/
 	//addin sages barcode function to this preparation
 	dt = Open( dataPath );
+	dt = calBarcodeParse(dt, "Barcode");
+	
 	Return( dt );
 
 );
 
 prepLoopData = Function( {calPathway, dataPath, calData},
 	{default local},
-
+	/*
+	calPathway = "LYTES";
+	dataPath = loopDataPath;
+	calData = calData;
+	*/
 	neededLoops = AssociativeArray(calData:"Loop Lot_DxRelease");
 	removefrom(neededLoops,"");
 	
 	//loopQualPath = "/D:/IDEXX/Lytes One Loop = One Lot - Documents/Documentation/CO3489 - QC for OLOL/4. Species Calibration/Species File Check/";
 	loopfileList = Files In Directory(dataPath,recursive);
 	
+	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
 	For(i=nitems(loopfileList),i>=1,i--,
 		If(
-			Contains(loopfileList[i], "Loop Qualification") |
+			/*Contains(loopfileList[i], "Loop Qualification") |
 			Contains(loopfileList[i], "NDE Count") |
 			Contains(loopfileList[i], "unchosen") |
-			Contains(loopfileList[i], "Sublot Corrected"),
+			Contains(loopfileList[i], "Sublot Corrected"),*/
+			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "somethinglongandobvious.jmp",
 			RemoveFrom(loopfileList,i)
 			,
-			//show(word(1,loopfileList[i],"/\"));
+			//show(word(1,loopfileList[i],"_"));
 			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
 			If(neededLoops[loop] == 0,
 				RemoveFrom(loopfileList,i)
 			)
 		);
-		
 	);
 	
 	loopFiles = {};
-	For(i=1,i<=nitems(fileList),i++,
+	For(i=1,i<=nitems(loopfileList),i++,
 		loopFiles[i] = Open(
-			loopQualPath||loopFiles[i],
-			private
+			dataPath||loopfileList[i],
+			//private
 		);
 	);
 	loopFiles1 = Remove(loopFiles,1);
@@ -2246,19 +2297,68 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 	If(
 		N Items( loopFiles ) == 1, 
 			loopQualTable = loopFiles[1];
-			Return(loopQualTable);
 		,
 		N Items( loopFiles ) > 1,
-			loopQualTable = loopFiles[1] << concatenate( looFiles1, create source column );
+			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
 			For( i = 1, i <= N Items( loopFiles ), i++,
 				Close( loopFiles[i], nosave )
 			);
-			Return(loopQualTable);
 		,
 		N Items( loopFiles ) == 0,
 			Print( "no loop data, please try again" );
 			Return(0);
 	);
+	
+	loopQualTable << New Column("AR",numeric,continuous,
+		Formula(
+			Match( :Dry Reads Used,
+				"6-7", :"DR Mean 6-7 offline_ar"n,
+				"9-10", :"DR Mean 9-10 offline_ar"n,
+				"9-10-11", :"DR Mean 9-10-11 offline_ar"n,
+				"10-11", :"DR Mean 10-11 offline_ar"n
+			)
+		)
+	);
+	loopQualTable:"AR"n << delete formula;
+	
+	Try(
+		IsScriptable(Column(loopQualTable,"Foil"));
+		loopQualTable:"Foil"n << Set Formula( :"Foil_LQ"n );
+		loopQualTable:"Foil"n << delete formula;
+		,
+		loopQualTable << New Column("Foil",
+			Formula( :"Foil_LQ"n )
+		);
+		loopQualTable:"Foil"n << delete formula;
+	);
+	loopQualTable:"Crossweb_LQ"n << Set Name("Cross Web");
+	
+	
+	//create summary of slide lot and loop lot
+	//add code to update the loopqual table with the slide lots from cal data (update with summary by loop lot)
+	cdSum = calData << Summary(
+		Group( :"Chem Type"n, :"Slide Lot"n, :"Loop Lot_DxRelease"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		private
+	);
+	cdSum:"Loop Lot_DxRelease"n << set data type("Character");
+	cdSum << delete columns("N Rows");
+	
+	loopQualTable << Update(
+		With(cdSum),
+		Match Columns(
+			:"Chem Type"n = :"Chem Type"n,
+			Transform Column(
+				"fullLL_LQ",
+				Formula( "4" || :"Loop Lot_LQ"n);
+			) = :"Loop Lot_DxRelease"n
+		)
+	);
+	Close(cdSum, nosave);
+	
+	Return(loopQualTable);
 
 );
 
@@ -2339,7 +2439,9 @@ prepExpiration = Function( {calPathway, dataPath},
 			assayCodes[:"ChemAbbr"n]
 		)
 	);
-	dt << delete columns({"ClipType", "ChemAbbr"});
+	dt:"chemcode"n << delete formula;
+	
+	dt << delete columns("ClipType", "ChemAbbr");
 
 	Return( dt );
 
@@ -2359,7 +2461,8 @@ If( Length( Include File List() ) == 1,
 			
 		opInputs = ionChemCalDialog();
 		If( opInputs == 0,
-			Stop(),
+			Stop()
+			,
 			datatables = inputCleanup( opInputs );
 			Match( calibrationPathway,
 				"LYTES", 
