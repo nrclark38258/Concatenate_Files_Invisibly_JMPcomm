@@ -7,7 +7,7 @@
 
 //------------------Revision History for both script and Help File--
 //
-//	1.0 NClark, SDarling, ZHelm, JFaller xxxxxx
+//	BETA1 1.0 NClark, SDarling, ZHelm, JFaller 021822
 //------------------------------------------------------------------
 
 Names Default To Here( 1 );
@@ -20,9 +20,9 @@ Names Default To Here( 1 );
 		,
 		u = Get Environment Variable("USERNAME");
 	);
-	addinID = "com.idexx.RoswellQCTools_LYTES_calibration";
+	addinID = "com.idexx.RoswellQCTools_Sublot_calibration";
 
-	minJMPver = "15.2";
+	minJMPver = "16.1";
 
 	//assaymidpoint
 	assayMidPoint = Associative Array(
@@ -148,7 +148,8 @@ Names Default To Here( 1 );
 
 //-----------/Variable Declarations-----------------------
 
-//INCLUDES GO HERE
+path = ConvertFilePath("");
+include(ConvertFilePath(path||"Utilities\utilities.jsl"));
 
 ////////////////////////////////////////
 //                                    //
@@ -527,7 +528,7 @@ subLotcharFunc = Function( {table, posCol, respCol, slideLotvar, chemTypecol, la
 			Link to original data table( 0 ),
 			Invisible
 		);
-		Column( table, posCol ) << set data type("Numeric");
+		//Column( table, posCol ) << set data type("Numeric");
 		posCount = Max( Column( table, posCol ) << Get Values );
 	
 		dtTempcount = New Table( "Arbritrary Positions", New Column( posCol, Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
@@ -1712,7 +1713,6 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	foilPostotal = 30;
 	defaultBin = 8;
 
-	dtCal:"Crossweb_BC"n << set name("Cross Web");
 	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
 	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
 	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
@@ -1972,8 +1972,6 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	dtCal3 << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
 	dtCal3 << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
 	
-	///// HERE IS WHERE THINGS LOOK REALLY ODD
-	/////
 	dtCalfinal = dtCal3 << Join(
 		With( cwSplit2 ),
 		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
@@ -2033,8 +2031,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	//crossWebmaster << Close Window; Table closed long before this step.
 	//foilMaster << Close Window; This closes the Data Table("Foil"). Which is called in a later step.
 	dtCalout2 << Close Window;
-	//dtCal << Close Window;
-	dtSub << Close Window;
+
 	////clean up all the tables that go into the JSON maker
 
 	//cwSplit2 = cross web table
@@ -2120,6 +2117,8 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 
 	dtCalfinal << Set Name( "Calibration Data" );
 	dtSubop << Set Name( "Loop Qual Data" );
+	dtCalfinal << show window(1);
+	dtSubop << show window(1);
 
 	////adding in the dose calculation columns to the loop qual table
 	/*If(
@@ -2199,10 +2198,15 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	//zzzzzz = lot range end for the event
 
 	dtCaloutlast << set name( dtCal << get name || "_base coefficients");
+	
+	dtCal << close window;
+	dtSub << close window;
 
 	//BUILDJSON(dtCaloutlast, cwSplit2, foilMasterall, dtSLExp, jsonloc);
 		//JSON building won't close any of these tables - currently
 	//return the necessary tables
+	
+	Return(dtCalfinal, dtSubop);
 	
 );
 
@@ -2249,6 +2253,8 @@ prepCalData = Function( {calPathway, dataPath},
 	//addin sages barcode function to this preparation
 	dt = Open( dataPath );
 	dt = calBarcodeParse(dt, "Barcode");
+	dt:"Crossweb_BC"n << set data type("Numeric");
+	dt:"Crossweb_BC"n << set name("Cross Web");
 	
 	Return( dt );
 
@@ -2325,12 +2331,15 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 		IsScriptable(Column(loopQualTable,"Foil"));
 		loopQualTable:"Foil"n << Set Formula( :"Foil_LQ"n );
 		loopQualTable:"Foil"n << delete formula;
+		loopQualTable:"Foil"n << set data type("Numeric");
 		,
 		loopQualTable << New Column("Foil",
 			Formula( :"Foil_LQ"n )
 		);
 		loopQualTable:"Foil"n << delete formula;
+		loopQualTable:"Foil"n << set data type("Numeric");
 	);
+	loopQualTable:"Crossweb_LQ"n << Set Data Type("Numeric");
 	loopQualTable:"Crossweb_LQ"n << Set Name("Cross Web");
 	
 	
@@ -2482,7 +2491,8 @@ If( Length( Include File List() ) == 1,
 						Stop();
 					,
 						lytesAssStitching( calData, loopData, expiration, jsonPath )
-					);,
+					);
+				,
 				"QSDMA",
 					Empty();//qsdmaAssStitching(datatables);
 			);

@@ -13,14 +13,14 @@
                 <jm:name>ROSWELL QC TOOLS</jm:name>
                 <jm:caption>Roswell QC Tools</jm:caption>
                 <jm:menu>
-                    <jm:name>LYTES</jm:name>
-                    <jm:caption>LYTES</jm:caption>
+                    <jm:name>MULTI-ASSAY</jm:name>
+                    <jm:caption>Multi-Assay</jm:caption>
 
                     <jm:command>
-                        <jm:name>CATALYST LYTES JMP SCRIPT CALIBRATION</jm:name>
-                        <jm:caption>Catalyst LYTES JMP Script Calibration v1.0</jm:caption>
-                        <jm:action type="path">$ADDIN_HOME(com.idexx.RoswellQCTools_LYTES_calibration)\CatalystLYTESJMPScriptCalibration.jsl</jm:action>
-                        <jm:tip>Calculate Cal Coeffs for LYTES Lots</jm:tip>
+                        <jm:name>CATALYST SUBLOT CALIBRATION</jm:name>
+                        <jm:caption>Catalyst Sublot Calibration v1.0</jm:caption>
+                        <jm:action type="path">$ADDIN_HOME(com.idexx.RoswellQCTools_Sublot_calibration)\CatalystSublotCalibration.jsl</jm:action>
+                        <jm:tip>Sublot Calibration for Catalyst Assays</jm:tip>
                         <jm:icon type="builtin">Nonlinear</jm:icon>
                     </jm:command>
 
