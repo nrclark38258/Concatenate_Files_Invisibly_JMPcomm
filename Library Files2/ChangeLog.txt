@@ -6,6 +6,12 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  21.0.9 NClark 022422
+//      -> TablePreparation
+//	    3.7.9 NClark 022422
+//	    	-> commented out reads.rd from poss cols array (function 2)
+//	    	-> added slide load position to poss cols array (function 28)
+//	    	-> Updated funct56 so that Slide Mfg Dose is used to create Panel Dose as a copy of that column to work with loop qual tooling
 //  21.0.8 NClark 021422
 //      -> TablePreparation
 //  	3.7.8 NClark 021422

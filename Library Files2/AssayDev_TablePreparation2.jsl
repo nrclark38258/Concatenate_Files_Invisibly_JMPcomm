@@ -6,6 +6,10 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.7.9 NClark 022422
+//		-> commented out reads.rd from poss cols array (function 2)
+//		-> added slide load position to poss cols array (function 28)
+//		-> Updated funct56 so that Slide Mfg Dose is used to create Panel Dose as a copy of that column to work with loop qual tooling
 //	3.7.8 NClark 021422
 //		-> updated funct51 and 52 to force column to become numeric / continuous
 //	3.7.7 NClark 021022
@@ -192,7 +196,7 @@ possColNames = Function({},{default local},
 			{"Timeseries RD",{2,"ReflDens_avg"}},
 			{"Reading :3",{2,"ReflDens_avg"}},
 			{"TYP3_READING",{2,"ReflDens_avg"}},
-			{"reads.rd",{2,"ReflDens_avg"}}, //KTS parser
+			//commented out as reads.rd always should come with reads.norm_refl {"reads.rd",{2,"ReflDens_avg"}}, //KTS parser
 			
 			//SW vesion (Instrument Software Version)
 			{"DEVICE_SOFTWARE_VERSION",{3,"Instrument Software Version"}}, //same SAS DxC1
@@ -365,6 +369,7 @@ possColNames = Function({},{default local},
 			{"Slide Load Position :3",{28,"Slide Load Order"}},
 			{"slide_load_order",{28,"Slide Load Order"}},
 			{"Slide Load Order",{28,"Slide Load Order"}},
+			{"Slide Load Position",{28,"Slide Load Order"}},
 
 			//(Algorithm Status)
 			{"RSLT_RESULTS_ALGORITHM_STATUS",{29,"Algorithm Status"}},
@@ -684,6 +689,8 @@ topColumns = Function({},{default Local},
 	53, Scalar
 	54, Dry Read Start
 	55, Dry Read End
+	56, Slide Mfg Columns
+	57, Assay Elapsed Time
 */
 funct1_5 = Function({dtName,colName,ops="n"},{dtName,dt,colName,parseColName,ops},
 	dt = dtName;
@@ -1398,6 +1405,17 @@ funct56 = Function({dtName},{dtName},
 			Try(Column(dtName, colList[i]) << set name(slideMfgNameArray[colList[i]]))
 		);
 	);
+
+	Try(
+		IsScriptable(Column(dtName,"Slide Mfg Dose"));
+		dtName << New Column("Panel Dose",
+			Formula(
+				:"Slide Mfg Dose"n
+			)
+		);
+		dtName:"Panel Dose"n << delete formula
+	);
+
 );
 
 funct57 = Function({dtName,colName},{dtName,colName},
