@@ -7,6 +7,21 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	BETA2 1.0 NClark 022522
+//		-> renamed preparation() to instIDpreparation() and defaulted intrument id column to "Instrument ID"
+//		-> updated buildJSONarray
+//			-> removed exiration from buildJSONarray parameters
+//			-> grab event info and lot range info from base coeffs filename
+//			-> updated the for each row to go by what the 1st word is not the uppercase version
+//			-> upaated the saving of the JSOn file to incorporate "lots" and today()
+//			-> added code to close the 3 tables, but commented out for now
+//		-> updated lytesAssStitching()
+//			-> prepare for JSON building for each table
+//			-> call actuall buildJSONarray()
+//		-> added three new functions to prepare tables for JSON work (finalizes columns and formatting for correct JSON formatting)
+//			-> jsonPrepBase()
+//			-> jsonPrepCW()
+//			-> jsonPrepFoil()
 //	BETA1 1.0 NClark, SDarling, ZHelm, JFaller 021822
 //------------------------------------------------------------------
 
@@ -203,7 +218,7 @@ factorFinder = Function( {number},
 
 //UNTESTED FUNCTIONS
 //nate created, needs to test
-preparation = Function( {tableName, instrumentIDcolumn}, {default local},
+instIDpreparation = Function( {tableName, instrumentIDcolumn = "Instrument ID"}, {default local},
 	
 	//variable shortening
 	instID = instrumentIDcolumn;
@@ -772,7 +787,7 @@ linearFitadder = Function( {table, respCol, posCol, fluidCol, slideLotvar, chemT
 
 
 //nate included, will cover UTs for function
-buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expirationTable, jsonSavePath},
+buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePath},
 	{default local}, 
 	///function should probably check to ensure first three are data tables and last is an associative array
 	// ... not a must have, but would be good practice
@@ -820,14 +835,21 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	//eventInfo = "event500";//maybe get from loop qual table name?
 	//lotRangeInEvent = "900-920";//maybe get from loop qual table name?
 	//jsonSavePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\cumulativeJSONtest\Build test99.99\";
-
+	/*
+	mainCurveTable = dtCaloutlast;
+	crosswebTable = cwSplit2;
+	foilTable = foilMasterall;
+	jsonSavePath = jsonloc;
+	*/
 	//variable size reduction
 	mainDT = mainCurveTable;
 	cwDT = crosswebTable;
 	fDT = foilTable;
-	lotRange = lotRangeInEvent;
 	jsonPath = jsonSavePath;
 	
+	eventNum = Word(1,mainDT << get name);
+	lotRange = Word(3,mainDT << get name);
+		
 	pathWords = Words( jsonPath, "/\" );
 	For( i = 1, i <= N Items( pathWords ), i++,
 		If( Contains( pathWords[i], "Build" ) > 0,
@@ -848,9 +870,10 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	For Each Row(
 		cwDT,
 		If( Uppercase( Word( 1, :"ID"n, "_" ) ) == "BOTH",
-			w = Uppercase( Word( 1, :"ID"n, "_" ) );
+			w = Word( 1, :"ID"n, "_" );
 			values = cwDT[Row(), 0];
 			:"ID"n = Substitute( :"ID"n, w, "ctdx" );
+			//show(w,values,:"ID"n);
 			cwDT << add rows( 1 );
 			cwDT[N Row( cwDT ), 0] = values;
 			cwDT:"ID"n[N Row( cwDT )] = Substitute( :"ID"n, w, "cat1" );
@@ -861,7 +884,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	For Each Row(
 		fDT,
 		If( Uppercase( Word( 1, :"ID"n, "_" ) ) == "BOTH",
-			w = Uppercase( Word( 1, :"ID"n, "_" ) );
+			w = Word( 1, :"ID"n, "_" );
 			values = fDT[Row(), 0];
 			:"ID"n = Substitute( :"ID"n, w, "ctdx" );
 			fDT << add rows( 1 );
@@ -923,7 +946,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	currentKey = mainArray << first;
 	For( i = 1, i <= N Items( mainArray ), i++,
 		subID = Substitute( currentKey, "_" || Word( Length( Words( currentKey, "_" ) ), currentKey, "_" ), "" );
-		Show( currentKey, subID );
+		//Show( currentKey, subID );
 		mainArray[currentKey]["crosswebs"] = cwArray[subID];
 		mainArray[currentKey]["foils"] = fArray[subID];
 		currentKey = mainArray << next( currentKey );
@@ -957,7 +980,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	
 	eventJSONexpr = As JSON Expr( finalChemArray );
 	//save finalChemArray for singular event
-	Save Text File( jsonPath || buildNum || "_" || eventInfo || "_" || lotRange || "_datetime.json", eventJSONexpr );
+	Save Text File( jsonPath || buildNum || "_" || eventNum || "_LOTS_" || lotRange || "_" || char(today()) || ".json", eventJSONexpr );
 	
 	For( i = 1, i <= N Items( jsonFiles ), i++,
 		tempJSONArray = Parse JSON( Load Text File( jsonPath || jsonFiles[i] ) );
@@ -976,6 +999,11 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, expiration
 	
 	//save final chem array as new master
 	Save Text File( jsonPath || "master_" || buildNum || ".json", jsonExpr );
+	
+	//later release will close these as their information is in the other tables and JSON
+	//Close(mainDT,nosave);
+	//Close(cwDT,nosave);
+	//Close(fDT,nosave);
 	
 	Return( eventJSONexpr, jsonExpr );
 );
@@ -2201,11 +2229,24 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	
 	dtCal << close window;
 	dtSub << close window;
-
-	//BUILDJSON(dtCaloutlast, cwSplit2, foilMasterall, dtSLExp, jsonloc);
+	
+	////MAY NEED TO DELETE CLIP LOT FROM EXP DATE SINCE IT WILL BE IN CAL DATA FROM DX RELEASE
+	dtCalFinal << Update(
+		With( dtSLExp ),
+		Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
+	);
+	Close(dtSLExp,nosave);
+	///preparation for JSON stuff (move into own function??)
+	jsonPrepBase(dtCalFinal,dtCaloutLast);
+	//
+	jsonPrepCW(cwSplit2);
+	//
+	jsonPrepFoil(foilMasterall);
+	//
+		
+	buildJSONarray(dtCaloutlast, cwSplit2, foilMasterall, jsonloc);
 		//JSON building won't close any of these tables - currently
 	//return the necessary tables
-	
 	Return(dtCalfinal, dtSubop);
 	
 );
@@ -2295,7 +2336,7 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 	For(i=1,i<=nitems(loopfileList),i++,
 		loopFiles[i] = Open(
 			dataPath||loopfileList[i],
-			//private
+			private
 		);
 	);
 	loopFiles1 = Remove(loopFiles,1);
@@ -2454,6 +2495,101 @@ prepExpiration = Function( {calPathway, dataPath},
 
 	Return( dt );
 
+);
+
+jsonPrepBase = Function({finalCalibrationData,baseCoeffs},{default local},
+	
+	finalCal = finalCalibrationData;
+	//expTbl = expirationTable;
+	
+	//--dtCaloutLast
+	dtCalFinalSumm = finalCal << Summary(
+		Group( :Assay, :Slide Lot, :cliplot, :Dry Read Start, :Dry Read End, :exp_date ),
+		Freq( "None" ),
+		Weight( "None" )
+	);
+	dtCalFinalSumm << delete columns("N Rows");
+	baseCoeffs << Update(
+		With( dtCalFinalSumm ),
+		Match Columns( :Assay = :Assay, :Slide Lot = :Slide Lot )
+	);
+	//baseCoeffs << Update(
+	//	With( expTbl ),
+	//	Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
+	//);
+	Close(dtCalFinalSumm,nosave);
+	//Close(dtSLExp,nosave);
+	
+	instIDpreparation(baseCoeffs);
+
+	baseCoeffs << New Column("species",Numeric,
+		<< set each value(99)
+	);
+	baseCoeffs << New Column("numWavelengths",Numeric,
+		<< set each value(1)
+	);
+	baseCoeffs:"Assay"n << set name("chemCode");
+	temp = baseCoeffs << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemCode ) || "_" || Char( :Slide Lot ) || "_" || Char( :species )
+		)
+	);
+	temp << delete formula;
+	baseCoeffs:"Slide Lot"n << set name("lot");
+	baseCoeffs:"Dry Read Start"n << set name("dryread_start");
+	baseCoeffs:"Dry Read End"n << set name("dryread_end");
+	baseCoeffs << Move Selected Columns({"ID"}, To First);
+	baseCoeffs << delete columns({"Inst Type"});
+	
+);
+
+jsonPrepCW = Function({crossWebTable},{default local},
+	
+	//--cwSplit2
+	crossWebTable << New Column("Inst Type",Character,
+		<< set each value("both")
+	);
+	temp = crossWebTable << New Column("chemcode",Numeric,
+		Formula(
+			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
+		)
+	);
+	temp << delete formula;
+	temp = crossWebTable << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
+		)
+	);
+	temp << delete formula;
+	crossWebTable:"Cross Web Start"n << set name("crossweb_start");
+	crossWebTable:"Cross Web End"n << set name("crossweb_end");
+	crossWebTable << Move Selected Columns({"ID"}, To First);
+	crossWebTable << delete columns({"Inst Type","Chem Type","Slide Lot","species","chemcode"});
+	
+);
+
+jsonPrepFoil = Function({foilTable},{default local},
+	
+	//--foilMasterAll
+	foilTable << New Column("Inst Type",Character,
+		<< set each value("both")
+	);
+	temp = foilTable << New Column("chemcode",Numeric,
+		Formula(
+			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
+		)
+	);
+	temp << delete formula;
+	temp = foilTable << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
+		)
+	);
+	temp << delete formula;
+	foilTable:"Foil"n << set name("foil");
+	foilTable << Move Selected Columns({"ID"}, To First);
+	foilTable << delete columns({"Inst Type","Chem Type","Sublot Position_Char","Slide Lot","species","chemcode"});
+	
 );
 
 ////////////////////////////////////////
