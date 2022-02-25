@@ -6,6 +6,13 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  21.0.10 NClark 022522
+//      -> TablePreparation
+//	    3.7.10 NClark 022522
+//	    	-> updated poss cols to have Species Name and Species ID to support function16 work
+//	    	-> refactored function 16 to work more cleaning with species information and if species cols come in completely empty
+//	    	-> added Slide Mfg Run Number to sort Run list in the uniqueIDs function
+//	    	-> cleaned up formula for sample type / cup in tablePrep() to better support data types and new Catalyst Log Viewer
 //  21.0.9 NClark 022422
 //      -> TablePreparation
 //	    3.7.9 NClark 022422

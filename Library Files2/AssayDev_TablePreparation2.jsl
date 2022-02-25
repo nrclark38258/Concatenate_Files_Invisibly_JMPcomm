@@ -6,6 +6,11 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.7.10 NClark 022522
+//		-> updated poss cols to have Species Name and Species ID to support function16 work
+//		-> refactored function 16 to work more cleaning with species information and if species cols come in completely empty
+//		-> added Slide Mfg Run Number to sort Run list in the uniqueIDs function
+//		-> cleaned up formula for sample type / cup in tablePrep() to better support data types and new Catalyst Log Viewer
 //	3.7.9 NClark 022422
 //		-> commented out reads.rd from poss cols array (function 2)
 //		-> added slide load position to poss cols array (function 28)
@@ -286,6 +291,8 @@ possColNames = Function({},{default local},
 			{"SPECIES",{16,"Species ID"}}, //same in cat1
 			{"species",{16,"Species ID"}},  //KTS parser
 			{"species_id",{16,"Species ID"}},  //KTS parser
+			{"Species Name",{16,"Species ID"}},
+			{"Species ID",{16,"Species ID"}},
 			
 			//Assay (character)
 			//IF MORE ARE ADDED HERE, FUNCTION 2_7_15 NEEDS TO BE UPDATED
@@ -966,12 +973,169 @@ funct14 = Function({dtName,colName},{dtName,dt,colName},
 	Column(dt, colName) << Set Name("Segment")
 );
 
-funct16 = Function({dtName,colName},{dtName,dt,colName},
-	dt = dtName;
-	columnArray = Associative Array(dt << Get Column Names(string));
-	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+funct16 = Function({dtName,colName},{default local},
 
+	//columnArray = Associative Array(dtName << Get Column Names(string));
+	allCols = dtName << get column names (string);
+	parseColName = Parse( Eval Insert( ":name(\!"^colName^\!" )" ) );
+	//sets up list of other possible columns that could be involved in function16
+	revColNames = reversePosColNames();
+	possSpp = revColNames["Species ID"];
+	RemoveFrom(possSpp,Contains(possSpp,colName));
+
+	//gets list of all other potential function16 columns (there should 0 or 1 pretty much every time)
+	crossoverlist = {};
+	For(i=1,i<=nitems(possSpp),i++,
+		If(Contains(allCols,possSpp[i]),insertinto(crossoverList,possSpp[i]))
+	);
+
+	currentAA = AssociativeArray(Column(dtName,colName));
+	//if the starting column is completely empty, delete it and move on
 	If(
+		nitems(currentAA) == 1 & (IsMissing(currentAA << first) | currentAA << first == ""),
+			dtName << delete columns(colName);
+			Return(1);
+	);
+	
+	If(
+		//if there are no crossover columns identify if the col has numeric or character values and make the other spp column
+		nitems(crossoverList) == 0,
+			If(IsMissing(Num(currentAA << first)),
+				//make species id
+				dtName << New Column("Species ID",Numeric,Nominal,
+					Formula(
+						Match(Uppercase(parseColName), "CANINE", 1, "FELINE", 0, "EQUINE", 2, "UNKNOWN", 3, "QC", 4, 999)
+					)
+				);
+				dtName:"Species ID"n << delete formula;
+				Column(dtName,colName) << set modeling type("Nominal");
+				Column(dtName,colName) << set name("Species Name");
+				,
+				//make species name
+				dtName << New Column("Species Name",Character,Nominal,
+					Formula(
+						Match(parseColName, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
+					)
+				);
+				dtName:"Species Name"n << delete formula;
+				Column(dtName,colName) << set modeling type("Nominal");
+				Column(dtName,colName) << set name("Species ID");
+			)
+		,
+		//if there is one crossover, see if it's empty. if so, proceed as above, otherwise
+		//identify which is character and numeric and the numeric one gets Species ID and the other gets Species Name
+		nitems(crossoverList) == 1,
+			crossAA = AssociativeArray(Column(dtName,crossoverList[1]));
+			If(
+				nitems(crossAA) == 1 & (IsMissing(crossAA << first) | crossAA << first == ""),
+					dtName << delete columns(crossoverList[1]);
+					If(IsMissing(Num(currentAA << first)),
+						//make species id
+						dtName << New Column("Species ID",Numeric,Nominal,
+							Formula(
+								Match(parseColName, "Canine", 1, "Feline", 0, "Equine", 2, "Unknown", 3, "QC", 4, 999)
+							)
+						);
+						dtName:"Species ID"n << delete formula;
+						Column(dtName,colName) << set modeling type("Nominal");
+						Column(dtName,colName) << set name("Species Name");
+						,
+						//make species name
+						dtName << New Column("Species Name",Character,Nominal,
+							Formula(
+								Match(parseColName, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
+							)
+						);
+						dtName:"Species Name"n << delete formula;
+						Column(dtName,colName) << set modeling type("Nominal");
+						Column(dtName,colName) << set name("Species ID");
+					);
+				,
+				nitems(crossoverList) == 1,
+					crossAA = AssociativeArray(Column(dtName,crossoverList[1]));
+					If(
+						nitems(crossAA) == 1 & (IsMissing(crossAA << first) | crossAA << first == ""),
+							dtName << delete columns(crossoverList[1]);
+							If(IsMissing(Num(currentAA << first)),
+								//make species id
+								dtName << New Column("Species ID",Numeric,Nominal,
+									Formula(
+										Match(parseColName, "Canine", 1, "Feline", 0, "Equine", 2, "Unknown", 3, "QC", 4, 999)
+									)
+								);
+								dtName:"Species ID"n << delete formula;
+								Column(dtName,colName) << set modeling type("Nominal");
+								Column(dtName,colName) << set name("Species Name");
+								,
+								//make species name
+								dtName << New Column("Species Name",Character,Nominal,
+									Formula(
+										Match(parseColName, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
+									)
+								);
+								dtName:"Species Name"n << delete formula;
+								Column(dtName,colName) << set modeling type("Nominal");
+								Column(dtName,colName) << set name("Species ID");
+							);
+						,
+						If(
+							//either uses 1st or 2nd key depending on total count to avoikd potential for missing values
+							//at top of the array
+							nitems(currentAA) == 1,
+								If(
+									IsMissing(Num(currentAA << first)),
+										Column(dtName,colName) << set modeling type("Nominal");
+										Column(dtName,colName) << set name("Species Name")
+									,
+									!IsMissing(Num(currentAA << first)),
+										Column(dtName,colName) << set modeling type("Nominal");
+										Column(dtName,colName) << set name("Species ID")
+								)
+							,
+							nitems(currentAA) > 1,
+								If(
+									IsMissing(Num(currentAA << Next(currentAA << first))),
+										Column(dtName,colName) << set modeling type("Nominal");
+										Column(dtName,colName) << set name("Species Name")
+									,
+									!IsMissing(Num(currentAA << Next(currentAA << first))),
+										Column(dtName,colName) << set modeling type("Nominal");
+										Column(dtName,colName) << set name("Species ID")
+								)
+						);
+						If(
+							//either uses 1st or 2nd key depending on total count to avoikd potential for missing values
+							//at top of the array
+							nitems(crossAA) == 1,
+								If(
+									IsMissing(Num(crossAA << first)),
+										Column(dtName,crossoverList[1]) << set modeling type("Nominal");
+										Column(dtName,crossoverList[1]) << set name("Species Name")
+									,
+									!IsMissing(Num(crossAA << first)),
+										Column(dtName,crossoverList[1]) << set modeling type("Nominal");
+										Column(dtName,crossoverList[1]) << set name("Species ID")
+								)
+							,
+							nitems(crossAA) > 1,
+								If(
+									IsMissing(Num(crossAA << Next(crossAA << first))),
+										Column(dtName,crossoverList[1]) << set modeling type("Nominal");
+										Column(dtName,crossoverList[1]) << set name("Species Name")
+									,
+									!IsMissing(Num(crossAA << Next(crossAA << first))),
+										Column(dtName,crossoverList[1]) << set modeling type("Nominal");
+										Column(dtName,crossoverList[1]) << set name("Species ID")
+								)
+						);
+					);
+			);
+		,
+		//more than one additional species column should never happen and shall not be supported
+		nitems(crossoverList) > 1,
+			Return(0);			
+	);
+	/*If(
 		IsMissing(Num(Column(dt,colName)[1])),
 		dt << New Column("Species ID", Numeric,
 			Formula(
@@ -995,7 +1159,7 @@ funct16 = Function({dtName,colName},{dtName,dt,colName},
 			columnARray["Species Name"] == 1,
 			Column(dt,colName) << set name("Species ID");
 		)
-	);
+	);*/
 
 );
 
@@ -1681,7 +1845,8 @@ uniqueIDs = Function({dtName,method},{default local},
 		"IVLS Run ID",
 		"Instrument ID",
 		"Instrument Run ID",
-		"Sample id"
+		"Sample id",
+		"Slide Mfg Run Number"
 	};
 	runIDarray = AssociativeArray(
 		{
@@ -2437,36 +2602,48 @@ tablePrep = Function({dtname,knownChemType=.},{default local},
 						);
 						Try(Column(dt,"Sample Type") << Delete formula);
 						Try(Column(dt,"Sample Cup") << Delete formula);
-					,
-						Column(dt,"Sample Type") << Set Name("Sample Type Orig");
-						dt << New Column("Sample Type",
-							Formula(
-								Match( :Sample Type Orig,
-									0, "Plasma",
-									1, "Serum",
-									2, "Wholeblood",
-									3, "Fecal",
-									4, "Urine",
-									6, "Other",
-									7, "Unknown",
-									8, "QC VetTrol",
-									9, "QC UPRO",
-									10, "QC PHRB",
-									11, "QC TT4",
-									"Not Listed"
+						,
+						If(Column(dt, "Sample Type") << get data type == "Character",
+							dt << New Column("Sample Cup",
+								Formula(
+									Match( Uppercase(:Sample Type),
+										"WHOLE BLOOD", "WBS",
+										"Sample Cup"
+									)
 								)
-							)
-						);
-						dt << New Column("Sample Cup",
-							Formula(
-								Match( :Sample Type Orig,
-									2, "WBS",
-									"Sample Cup"
+							);
+							Try(Column(dt,"Sample Cup") << Delete formula);
+							,
+							Column(dt,"Sample Type") << Set Name("Sample Type Orig");
+							dt << New Column("Sample Type",
+								Formula(
+									Match( :Sample Type Orig,
+										0, "Plasma",
+										1, "Serum",
+										2, "Wholeblood",
+										3, "Fecal",
+										4, "Urine",
+										6, "Other",
+										7, "Unknown",
+										8, "QC VetTrol",
+										9, "QC UPRO",
+										10, "QC PHRB",
+										11, "QC TT4",
+										"Not Listed"
+									)
 								)
-							)
-						);
-						Try(Column(dt,"Sample Type") << Delete formula);
-						Try(Column(dt,"Sample Cup") << Delete formula);
+							);
+							dt << New Column("Sample Cup",
+								Formula(
+									Match( :Sample Type Orig,
+										2, "WBS",
+										"Sample Cup"
+									)
+								)
+							);
+							Try(Column(dt,"Sample Type") << Delete formula);
+							Try(Column(dt,"Sample Cup") << Delete formula);
+						)
 					)
 					,
 					Try(
@@ -2474,15 +2651,20 @@ tablePrep = Function({dtname,knownChemType=.},{default local},
 						Column(dt,"Sample Cup") << Set Name("Sample Cup Orig");
 						dt << New Column("Sample Type",
 							Formula(
-								Match( :Sample Cup Orig,
+								Match( Uppercase(:Sample Cup Orig),
 									"WBS", "Wholeblood",
-									"Sample Cup", "Unknown"
+									"SAMPLE CUP", "Unknown",
+									"CUP", "Unknown"
 								)
 							)
 						);
 						dt << New Column("Sample Cup",
 							Formula(
-								:Sample Cup Orig
+								Match(uppercase(:Sample Cup Orig),
+									"CUP", "Sample Cup",
+									"WBS", "WBS",
+									"SAMPLE CUP", "Sample Cup"
+								)
 							)
 						);
 						Try(Column(dt,"Sample Type") << Delete formula);
