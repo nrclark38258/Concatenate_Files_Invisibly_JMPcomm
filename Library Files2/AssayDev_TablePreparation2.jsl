@@ -6,6 +6,11 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.7.11 NClark 030122
+//		-> updated funct16() to address when function called but column no longer exists because it was renamed the previous time
+//			function was called
+//		-> updated funct56() to create a Loop Lot column from Slide Mfg Loop Lot to mitigage issue with other tooling currently 
+//			requiring Loop Lot
 //	3.7.10 NClark 022522
 //		-> updated poss cols to have Species Name and Species ID to support function16 work
 //		-> refactored function 16 to work more cleaning with species information and if species cols come in completely empty
@@ -988,8 +993,9 @@ funct16 = Function({dtName,colName},{default local},
 	For(i=1,i<=nitems(possSpp),i++,
 		If(Contains(allCols,possSpp[i]),insertinto(crossoverList,possSpp[i]))
 	);
-
-	currentAA = AssociativeArray(Column(dtName,colName));
+	//wrap next line in try() in case 2 species columns present and 1st one causes all to be 'prepped' the 2nd will no longer
+	//exist when the function is called the 2nd time
+	Try(currentAA = AssociativeArray(Column(dtName,colName)), Return(0));
 	//if the starting column is completely empty, delete it and move on
 	If(
 		nitems(currentAA) == 1 & (IsMissing(currentAA << first) | currentAA << first == ""),
@@ -1579,6 +1585,15 @@ funct56 = Function({dtName},{dtName},
 		);
 		dtName:"Panel Dose"n << delete formula
 	);
+	Try(
+		IsScriptable(Column(dtName,"Slide Mfg Loop Lot"));
+		dtName << New Column("Loop Lot",
+			Formula(
+				:"Slide Mfg Loop Lot"n
+			)
+		);
+		dtName:"Loop Lot"n << delete formula
+	);
 
 );
 
@@ -1600,7 +1615,7 @@ updateColNames = Function({dtName},{default local},
 		,
 			functionCall = 0
 		);
-		//show(functionCall);
+		//show(functionCall,currentKey);
 		Match(functionCall,
 			0, Empty()
 			,

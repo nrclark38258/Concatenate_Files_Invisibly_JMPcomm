@@ -6,6 +6,13 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  21.0.11 NClark 030122
+//      -> TablePreparation
+//	    3.7.11 NClark 030122
+//	    	-> updated funct16() to address when function called but column no longer exists because it was renamed the previous time
+//	    		function was called
+//	    	-> updated funct56() to create a Loop Lot column from Slide Mfg Loop Lot to mitigage issue with other tooling currently 
+//	    		requiring Loop Lot
 //  21.0.10 NClark 022522
 //      -> TablePreparation
 //	    3.7.10 NClark 022522
