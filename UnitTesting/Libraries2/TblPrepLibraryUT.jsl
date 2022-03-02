@@ -44,7 +44,7 @@ updateColNames = ut test case("B_Updating ColNames Function")
 		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\NameChangeFunction.jmp",invisible);
 	));
 	
-generalColumnWork = ut test case("C_General Column Work")
+lotExtractionTC = ut test case("C_Lot Extractions")
 	<<Setup(Expr(
 		include(tpLibUT:toolPath);
 		
@@ -1189,6 +1189,255 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Spe
 	)
 );
 
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID one additional species column in table non-empty",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_one addtl spp col",
+			Add Rows(0),
+			New Column("placeholder",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			),
+			New Column("species_id",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			)
+		);
+		localTable1 = New Table("funct16Test_one addtl spp col2",
+			Add Rows(0),
+			New Column("species",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			),
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			)
+		);
+		
+		funct16(localTable,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,2) << get modeling type), ut equal to("Nominal"));
+		
+		funct16(localTable1,"placeholder");
+		ut assert that(Expr(ncol(localTable1)), ut equal to(2));
+		ut assert that(Expr(Column(localTable1,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable1,2) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable1,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable1,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable1,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable1,2) << get modeling type), ut equal to("Nominal"));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID one additional species column in table empty",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_one addtl spp col",
+			Add Rows(0),
+			New Column("placeholder",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			),
+			New Column("species_id",Numeric,Continuous,
+	
+			)
+		);
+		localTable1 = New Table("funct16Test_one addtl spp col2",
+			Add Rows(0),
+			New Column("species",Character,Ordinal,
+
+			),
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			)
+		);
+		
+		funct16(localTable,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,2) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		
+		funct16(localTable1,"placeholder");
+		ut assert that(Expr(ncol(localTable1)), ut equal to(2));
+		ut assert that(Expr(Column(localTable1,2) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable1,1) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable1,1) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable1,2) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "Other"}));
+		ut assert that(Expr(Column(localTable1,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable1,2) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable1,2) << get formula), ut empty());
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID no additional species column in table",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_no addtl spp col",
+			Add Rows(0),
+			New Column("placeholder",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			)
+		);
+		localTable1 = New Table("funct16Test_no addtl spp col2",
+			Add Rows(0),
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			)
+		);
+		
+		funct16(localTable,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,2) << get modeling type), ut equal to("Nominal"));
+		
+		funct16(localTable1,"placeholder");
+		ut assert that(Expr(ncol(localTable1)), ut equal to(2));
+		ut assert that(Expr(Column(localTable1,2) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable1,1) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable1,1) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable1,2) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "Other"}));
+		ut assert that(Expr(Column(localTable1,2) << get formula), ut empty());
+		ut assert that(Expr(Column(localTable1,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable1,2) << get modeling type), ut equal to("Nominal"));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID character case differences",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_no addtl spp col",
+			Add Rows(0),
+			New Column("placeholder",Character,Ordinal,
+				<< set values({"Feline", "canine", "EQuine", "UNKNOWN", "qC", "somethingelse"})
+			)
+		);
+		
+		funct16(localTable,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "canine", "EQuine", "UNKNOWN", "qC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,2) << get modeling type), ut equal to("Nominal"));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID 2 additional species column in table",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_one addtl spp col",
+			Add Rows(0),
+			New Column("placeholder",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			),
+			New Column("species_id",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			),
+			New Column("Species Name",Character,Nominal,
+				<< set values({"a","b","c","d","e","f"})
+			)
+		);
+		localTable1 = New Table("funct16Test_one addtl spp col2",
+			Add Rows(0),
+			New Column("species",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"})
+			),
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([0, 1, 2, 3, 4, 999])
+			),
+			New Column("Species Name",Character,Nominal,
+				<< set values({"a","b","c","d","e","f"})
+			)
+		);
+		
+		ret = funct16(localTable,"placeholder");
+		ut assert that(Expr(ret), ut equal to(0));
+		ut assert that(Expr(ncol(localTable)), ut equal to(3));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("placeholder"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("species_id"));
+		ut assert that(Expr(Column(localTable,3) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable,3) << get as matrix), ut equal to({"a","b","c","d","e","f"}));
+		ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
+		ut assert that(Expr(Column(localTable,2) << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(Column(localTable,3) << get modeling type), ut equal to("Nominal"));
+		
+		ret1 = funct16(localTable1,"placeholder");
+		ut assert that(Expr(ret1), ut equal to(0));
+		ut assert that(Expr(ncol(localTable1)), ut equal to(3));
+		ut assert that(Expr(Column(localTable1,1) << getname), ut equal to("species"));
+		ut assert that(Expr(Column(localTable1,2) << getname), ut equal to("placeholder"));
+		ut assert that(Expr(Column(localTable1,3) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable1,2) << get as matrix), ut equal to([0, 1, 2, 3, 4, 999]));
+		ut assert that(Expr(Column(localTable1,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC", "somethingelse"}));
+		ut assert that(Expr(Column(localTable1,3) << get as matrix), ut equal to({"a","b","c","d","e","f"}));
+		ut assert that(Expr(Column(localTable1,1) << get modeling type), ut equal to("Ordinal"));
+		ut assert that(Expr(Column(localTable1,2) << get modeling type), ut equal to("Continuous"));
+		ut assert that(Expr(Column(localTable1,3) << get modeling type), ut equal to("Nominal"));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID only spp col and empty",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_no addtl spp col",
+			Add Rows(3),
+			New Column("placeholder",Character,Ordinal,
+
+			),
+			New Column("random",
+				<< set values([1,2,3])
+			)
+		);
+		localTable1 = New Table("funct16Test_no addtl spp col2",
+			Add Rows(3),
+			New Column("placeholder",Numeric,Continuous,
+	
+			),
+			New Column("random",
+				<< set values([1,2,3])
+			)
+		);
+		
+		funct16(localTable,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(1));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("random"));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([1, 2, 3]));
+
+		
+		funct16(localTable1,"placeholder");
+		ut assert that(Expr(ncol(localTable)), ut equal to(1));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("random"));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([1, 2, 3]));
+		
+	)
+);
+
 ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct17 Chem Type",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
@@ -1345,7 +1594,9 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct23 IVL
 		
 		localTable = New Table("funct23Test",
 			Add Rows(0),
-			New Column("placeholder",Character,Nominal)
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([1, 2, 3])
+			)
 		);
 		
 		For(i=1,i<=nitems(possCols),i++,
@@ -1356,6 +1607,108 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct23 IVL
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("IVLS Run ID"));
 			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
 			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Numeric"));
+			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([1, 2, 3]));
+			
+		);
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct23 IVLS Run ID, char and empty",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		possCols = {
+			"IVLS_RUN_ID",
+			"NATIVE_IVLS_RUN_ID",
+			"DB_RUN_ID",
+			"DB Run ID",
+			"IVLS RunID",
+			"ivls_run_id"
+		};
+		
+		localTable = New Table("funct23Test",
+			Add Rows(0),
+			New Column("placeholder",Character,Nominal,
+				<< set values({"", "", ""})
+			)
+		);
+		
+		For(i=1,i<=nitems(possCols),i++,
+			Column(localTable,1) << set name(possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
+			
+			funct23(localTable,possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("IVLS Run ID"));
+			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
+			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Numeric"));
+			
+		);
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct23 IVLS Run ID, char and all same value",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		possCols = {
+			"IVLS_RUN_ID",
+			"NATIVE_IVLS_RUN_ID",
+			"DB_RUN_ID",
+			"DB Run ID",
+			"IVLS RunID",
+			"ivls_run_id"
+		};
+		
+		localTable = New Table("funct23Test",
+			Add Rows(0),
+			New Column("placeholder",Character,Nominal,
+				<< set values({"a", "a", "a"})
+			)
+		);
+		
+		For(i=1,i<=nitems(possCols),i++,
+			Column(localTable,1) << set name(possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
+			
+			funct23(localTable,possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("IVLS Run ID"));
+			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
+			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Character"));
+			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"a", "a", "a"}));
+			
+		);
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct23 IVLS Run ID, char not empty",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		possCols = {
+			"IVLS_RUN_ID",
+			"NATIVE_IVLS_RUN_ID",
+			"DB_RUN_ID",
+			"DB Run ID",
+			"IVLS RunID",
+			"ivls_run_id"
+		};
+		
+		localTable = New Table("funct23Test",
+			Add Rows(0),
+			New Column("placeholder",Character,Nominal,
+				<< set values({"1","2","3"})
+			)
+		);
+		
+		For(i=1,i<=nitems(possCols),i++,
+			Column(localTable,1) << set name(possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
+			
+			funct23(localTable,possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("IVLS Run ID"));
+			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
+			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Character"));
+			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"1","2","3"}));
 			
 		);
 	)
@@ -2621,7 +2974,7 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct51 Ass
 		
 		localTable = New Table("funct51Test",
 			Add Rows(0),
-			New Column("placeholder",Numeric,Continuous)
+			New Column("placeholder",Character,Nominal)
 		);
 		
 		For(i=1,i<=nitems(possCols),i++,
@@ -2630,6 +2983,8 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct51 Ass
 			
 			funct51(localTable,possCols[i]);
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Assay Gain"));
+			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Continuous"));
+			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Numeric"));
 			
 		);
 	)
@@ -2649,7 +3004,7 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct52 Ass
 		
 		localTable = New Table("funct52Test",
 			Add Rows(0),
-			New Column("placeholder",Numeric,Continuous)
+			New Column("placeholder",Character,Nominal)
 		);
 		
 		For(i=1,i<=nitems(possCols),i++,
@@ -2658,6 +3013,8 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct52 Ass
 			
 			funct52(localTable,possCols[i]);
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Assay Offset"));
+			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Continuous"));
+			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Numeric"));
 			
 		);
 	)
@@ -2743,6 +3100,172 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct55 Dry
 		);
 	)
 );
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct56 Slide Mfg Renames (cat1 only)",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct56_Test",
+			Add Rows(3),
+			New Column("Random1",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.at",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("Slide Mfg Loop Lot",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.operator",Character,Nominal,
+				set values({"Nate","Nate","Nate"})
+			),
+			New Column("slide_manufacturing_run_data.panel_dose",Numeric,Continuous,
+			
+			),
+			New Column("Random3",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("slide_manufacturing_run_data.newcolumnnoname",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.software_version",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("slide_manufacturing_run_data.slide_mfg_script_name",Character,Nominal,
+
+			),
+			New Column("assay_calibration_source",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("assay_calibration_timestamp",Character,Nominal,
+				set values({"6", "7", "8"})
+			)
+			
+		);
+		
+		funct56(localTable);
+		ut assert that(Expr(ncol(localTable)), ut equal to(10));
+		ut assert that(Expr(Column(localTable,1) << get name), ut equal to("Random1"));
+		ut assert that(Expr(Column(localTable,2) << get name), ut equal to("Slide Mfg Run Start"));
+		ut assert that(Expr(Column(localTable,3) << get name), ut equal to("Slide Mfg Loop Lot"));
+		ut assert that(Expr(Column(localTable,4) << get name), ut equal to("Slide Mfg Operator"));
+		ut assert that(Expr(Column(localTable,5) << get name), ut equal to("Random3"));
+		ut assert that(Expr(Column(localTable,6) << get name), ut equal to("slide_manufacturing_run_data.newcolumnnoname"));
+		ut assert that(Expr(Column(localTable,7) << get name), ut equal to("Slide Mfg Software Version"));
+		ut assert that(Expr(Column(localTable,8) << get name), ut equal to("Assay Calibration Source"));
+		ut assert that(Expr(Column(localTable,9) << get name), ut equal to("Assay Calibration DateTime"));
+		ut assert that(Expr(Column(localTable,10) << get name), ut equal to("Loop Lot"));
+		
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,3) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,4) << get as matrix), ut equal to({"Nate","Nate","Nate"}));
+		ut assert that(Expr(Column(localTable,5) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,6) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,7) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,8) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,9) << get as matrix), ut equal to({"6", "7", "8"}));
+		ut assert that(Expr(Column(localTable,10) << get as matrix), ut equal to([3, 4, 5]));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct56 Slide Mfg Renames Panel Dose Column",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct56_Test",
+			Add Rows(3),
+			New Column("slide_manufacturing_run_data.panel_dose",Numeric,Continuous,
+				set values([3, 4, 5])
+			)
+			
+		);
+		
+		funct56(localTable);
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << get name), ut equal to("Slide Mfg Dose"));
+		ut assert that(Expr(Column(localTable,2) << get name), ut equal to("Panel Dose"));
+		
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct56 Slide Mfg Renames Loop Lot Column",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct56_Test",
+			Add Rows(3),
+			New Column("slide_manufacturing_run_data.loop_lot",Numeric,Continuous,
+				set values([3, 4, 5])
+			)
+			
+		);
+		
+		funct56(localTable);
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << get name), ut equal to("Slide Mfg Loop Lot"));
+		ut assert that(Expr(Column(localTable,2) << get name), ut equal to("Loop Lot"));
+		
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct56 Slide Mfg Renames Panel Dose Column when empty/no Slide Mfg Dose",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct56_Test",
+			Add Rows(3),
+			New Column("slide_manufacturing_run_data.panel_dose",Numeric,Continuous,
+				
+			),
+			New Column("placeholder",Numeric,Continuous,
+				set values([6,7,9])
+			)
+			
+		);
+		
+		funct56(localTable);
+		ut assert that(Expr(ncol(localTable)), ut equal to(1));
+		ut assert that(Expr(Column(localTable,1) << get name), ut equal to("placeholder"));
+		
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([6,7,9]));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct57 Elapsed Time",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		possCols = {
+			"results_calculated.elapsed_time"
+		};
+		
+		localTable = New Table("funct57Test",
+			Add Rows(0),
+			New Column("placeholder",Numeric,Continuous)
+		);
+		
+		For(i=1,i<=nitems(possCols),i++,
+			Column(localTable,1) << set name(possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
+			
+			funct57(localTable,possCols[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Assay Elapsed Time"));
+			
+		);
+	)
+);
+
 
 	////////////////////////////////////////////////
 	//          updateColNames functions          //
@@ -2850,7 +3373,7 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_ReflDens
 			"Reading :3",
 			"Timeseries RD",
 			"TYP3_READING",
-			"reads.rd"
+			"reads.rd" //no longer needed, but augmented test below to be sure this no longer works
 		};
 		
 		possColsNRFunc15 = {
@@ -2888,9 +3411,15 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_ReflDens
 			
 			updateColNames(localTable);
 			
-			ut assert that(Expr(ncol(localTable)), ut equal to(1));
-			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("ReflDens_avg"));
-			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([0.2, 0.6, 0.8]));
+			If(possColsRDFunc2[i] == "reads.rd",
+				ut assert that(Expr(ncol(localTable)), ut equal to(1));
+				ut assert that(Expr(Column(localTable,1) << getname), ut equal to("reads.rd"));
+				ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([0.2, 0.6, 0.8]))
+				,
+				ut assert that(Expr(ncol(localTable)), ut equal to(1));
+				ut assert that(Expr(Column(localTable,1) << getname), ut equal to("ReflDens_avg"));
+				ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([0.2, 0.6, 0.8]))
+			);
 
 		);
 
@@ -2922,7 +3451,6 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_ReflDens
 		
 	)
 );
-
 
 ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Instrument Software Version_callFunction3",
 	Expr(
@@ -3222,20 +3750,25 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Species 
 		//also only need to check that the proper function is called, so no need for numeric/name present, etc
 		possCols = {
 			"Species",
-			"SPECIES_NAME",
+			//"SPECIES_NAME",
 			"SPECIES",
 			"species",
-			"species_id"
+			"species_id",
+			"Species ID"//,
+			//"Species Name"
 		};
-		localTable = New Table("funct16Test",
-			Add Rows(0),
-			New Column("placeholder",Numeric,Continuous,
-				<< set values([0,1,2,3,4])
-			)
-		);
+		possColsSppName = {
+			"SPECIES_NAME",
+			"Species Name"
+		};
 		
 		For(i=1, i<=nitems(possCols),i++,
-			
+			localTable = New Table("funct16Test",
+				Add Rows(0),
+				New Column("placeholder",Numeric,Continuous,
+					<< set values([0,1,2,3,4])
+				)
+			);
 			Column(localTable,1) << set name(possCols[i]);
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
 			
@@ -3246,8 +3779,67 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Species 
 			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([0, 1, 2, 3, 4]));
 			ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC"}));
 			ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+			ut assert that(Expr(Column(localTable,1) << getmodelingtype), ut equal to("Nominal"));
+			ut assert that(Expr(Column(localTable,2) << getmodelingtype), ut equal to("Nominal"));
+			localTable << close window
+		);
+		
+		For(i=1, i<=nitems(possColsSppName),i++,
+			localTable = New Table("funct16Test",
+				Add Rows(0),
+				New Column("placeholder",Character,Ordinal,
+					<< set values({"Feline", "Canine", "Equine", "Unknown", "QC"})
+				)
+			);
+			Column(localTable,1) << set name(possColsSppName[i]);
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possColsSppName[i]));
 			
+			updateColNames(localTable);
+			
+			ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species ID"));
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+			ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4]));
+			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC"}));
+			ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+			ut assert that(Expr(Column(localTable,1) << getmodelingtype), ut equal to("Nominal"));
+			ut assert that(Expr(Column(localTable,2) << getmodelingtype), ut equal to("Nominal"));
+			localTable << close window
 		)	
+	)
+);
+
+ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Species ID&Species Name_callFunction16 Clean Call and Fail When two spp cols present(and both get renamed)",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
+		//currently the only occurrances of 'Species Name' are correct and character so don't need to be checked
+		//also only need to check that the proper function is called, so no need for numeric/name present, etc
+
+		localTable = New Table("funct16Test",
+			Add Rows(0),
+			New Column("species",Character,Ordinal,
+				<< set values({"Feline", "Canine", "Equine", "Unknown", "QC"})
+			),
+			New Column("placeholder",Numeric,Continuous,
+				<< set values([0,1,2,3,4])
+			),
+			New Column("species_id",Numeric,Continuous,
+				<< set values([0,1,2,3,4])
+			)
+		);
+		
+		updateColNames(localTable);
+		
+		ut assert that(Expr(ncol(localTable)), ut equal to(3));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("placeholder"));
+		ut assert that(Expr(Column(localTable,3) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC"}));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([0, 1, 2, 3, 4]));
+		ut assert that(Expr(Column(localTable,3) << get as matrix), ut equal to([0, 1, 2, 3, 4]));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
+		ut assert that(Expr(Column(localTable,1) << getmodelingtype), ut equal to("Nominal"));
+		ut assert that(Expr(Column(localTable,3) << getmodelingtype), ut equal to("Nominal"));
+		
 	)
 );
 
@@ -3411,7 +4003,9 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_IVLS Run
 		
 		localTable = New Table("updateCol_funct23Test",
 			Add Rows(0),
-			New Column("placeholder",Character,Nominal)
+			New Column("placeholder",numeric,continuous,
+				<< set values([1, 2, 3])
+			)
 		);
 		
 		For(i=1, i<=nitems(possCols),i++,
@@ -3424,6 +4018,7 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_IVLS Run
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("IVLS Run ID"));
 			ut assert that(Expr(Column(localTable,1) << get modeling type), ut equal to("Ordinal"));
 			ut assert that(Expr(Column(localTable,1) << get data type), ut equal to("Numeric"));
+			ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([1, 2, 3]));
 
 		)	
 	)
@@ -3468,7 +4063,8 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Slide Lo
 			"Slide Load Position :2",
 			"Slide Load Position :3",
 			"slide_load_order",
-			"Slide Load Order"
+			"Slide Load Order",
+			"Slide Load Position"
 		};
 		
 		localTable = New Table("updateCol_funct28Test",
@@ -4116,13 +4712,108 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Dry Read
 	)
 );
 
+ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Slide Mfg_callFunction56",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct56_Test",
+			Add Rows(3),
+			New Column("Random1",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.at",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("Slide Mfg Loop Lot",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.operator",Character,Nominal,
+				set values({"Nate","Nate","Nate"})
+			),
+			New Column("slide_manufacturing_run_data.panel_dose",Numeric,Continuous,
+			
+			),
+			New Column("Random3",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("slide_manufacturing_run_data.newcolumnnoname",Numeric,Continuous,
+				set values([3, 4, 5])
+			),
+			New Column("slide_manufacturing_run_data.software_version",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("slide_manufacturing_run_data.slide_mfg_script_name",Character,Nominal,
+
+			),
+			New Column("assay_calibration_source",Character,Nominal,
+				set values({"3", "4", "5"})
+			),
+			New Column("assay_calibration_timestamp",Character,Nominal,
+				set values({"6", "7", "8"})
+			)
+			
+		);
+		
+		updateColNames(localTable);
+		ut assert that(Expr(ncol(localTable)), ut equal to(10));
+		ut assert that(Expr(Column(localTable,1) << get name), ut equal to("Random1"));
+		ut assert that(Expr(Column(localTable,2) << get name), ut equal to("Slide Mfg Run Start"));
+		ut assert that(Expr(Column(localTable,3) << get name), ut equal to("Slide Mfg Loop Lot"));
+		ut assert that(Expr(Column(localTable,4) << get name), ut equal to("Slide Mfg Operator"));
+		ut assert that(Expr(Column(localTable,5) << get name), ut equal to("Random3"));
+		ut assert that(Expr(Column(localTable,6) << get name), ut equal to("slide_manufacturing_run_data.newcolumnnoname"));
+		ut assert that(Expr(Column(localTable,7) << get name), ut equal to("Slide Mfg Software Version"));
+		ut assert that(Expr(Column(localTable,8) << get name), ut equal to("Assay Calibration Source"));
+		ut assert that(Expr(Column(localTable,9) << get name), ut equal to("Assay Calibration DateTime"));
+		ut assert that(Expr(Column(localTable,10) << get name), ut equal to("Loop Lot"));
+		
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,3) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,4) << get as matrix), ut equal to({"Nate","Nate","Nate"}));
+		ut assert that(Expr(Column(localTable,5) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,6) << get as matrix), ut equal to([3, 4, 5]));
+		ut assert that(Expr(Column(localTable,7) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,8) << get as matrix), ut equal to({"3", "4", "5"}));
+		ut assert that(Expr(Column(localTable,9) << get as matrix), ut equal to({"6", "7", "8"}));
+		ut assert that(Expr(Column(localTable,10) << get as matrix), ut equal to([3, 4, 5]));
+		
+	)
+);
+
+ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Assay Elapsed Time_callFunction57",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
+		possColList = {
+			"results_calculated.elapsed_time"
+		};
+		table2 = New Table( "assayelapsedtime_funct57Test",
+			Add Rows( 5 ),
+			New Column( "placeholder",
+				Character,
+				"Nominal"
+			),
+			private
+		);
+		
+		For(i=1, i<=nitems(possColList),i++,
+			
+			Column(table2,1) << set name(possColList[i]);
+			ut assert that(Expr(Column(table2,1) << getname), ut equal to(possColList[i]));
+			updateColNames(table2);
+			ut assert that(Expr(Column(table2,1) << getname), ut equal to("Assay Elapsed Time"));			
+		)
+				
+	)
+);
+
 	////////////////////////////////////////////////
-	//         Lot Extractions (Foil, Sublot, etc)//
+	//    Lot Extractions (Foil, Sublot, etc)     //
 	////////////////////////////////////////////////
 tpLibUT:utGroup = "C";
 tpLibUT:utGroupTest = 0;
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_111",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_111",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4144,7 +4835,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			New Column( "Slide Sublot",
 				Numeric,
@@ -4164,7 +4855,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_011",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_011",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4180,7 +4871,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			New Column( "Slide Sublot",
 				Numeric,
@@ -4195,13 +4886,13 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 		
 		ut assert that(Expr(ncol(table2)), ut equal to(3));
 		ut assert that(Expr(Column(table2,3) << getname), ut equal to("Foil"));
-		ut assert that(Expr(Column(table2,"Foil") << get as matrix ), ut equal to([21, 84, 45]));
+		ut assert that(Expr(Column(table2,"Foil") << get as matrix ), ut equal to([-99, -99, -99]));
 		ut assert that(Expr(Column(table2,"Foil") << get formula), ut empty());
 		
 	)
 );
 	
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_000",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_000",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4235,7 +4926,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 	
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_100",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_100",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4262,7 +4953,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 		ut assert that(Expr(Column(table4,2) << getname), ut equal to("Slide Lot"));
 		ut assert that(Expr(Column(table4,3) << getname), ut equal to("Slide Sublot"));
 		ut assert that(Expr(Column(table4,4) << getname), ut equal to("Foil"));
-		ut assert that(Expr(Column(table4,"Slide Lot") << get as matrix ), ut equal to([152621, 531684, 598845]));
+		ut assert that(Expr(Column(table4,"Slide Lot") << get as matrix ), ut equal to([1526, 5316, 5988]));
 		ut assert that(Expr(Column(table4,"Slide Sublot") << get as matrix ), ut equal to([32, 52, 21]));
 		ut assert that(Expr(Column(table4,"Foil") << get as matrix ), ut equal to([21, 84, 45]));
 		ut assert that(Expr(Column(table4,"Slide Lot") << get formula), ut empty());
@@ -4272,7 +4963,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 	
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_010",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_010",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4288,7 +4979,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			private
 		);
@@ -4299,9 +4990,9 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 		ut assert that(Expr(Column(table5,1) << getname), ut equal to("Slide Lot"));
 		ut assert that(Expr(Column(table5,2) << getname), ut equal to("Slide Sublot"));
 		ut assert that(Expr(Column(table5,3) << getname), ut equal to("Foil"));
-		ut assert that(Expr(Column(table5,"Slide Lot") << get as matrix ), ut equal to([152621, 531684, 598845]));
+		ut assert that(Expr(Column(table5,"Slide Lot") << get as matrix ), ut equal to([1526, 5316, 5988]));
 		ut assert that(Expr(Column(table5,"Slide Sublot") << get as matrix ), ut equal to([-99, -99, -99]));
-		ut assert that(Expr(Column(table5,"Foil") << get as matrix ), ut equal to([21, 84, 45]));
+		ut assert that(Expr(Column(table5,"Foil") << get as matrix ), ut equal to([-99, -99, -99]));
 		ut assert that(Expr(Column(table5,"Slide Lot") << get formula), ut empty());
 		ut assert that(Expr(Column(table5,"Slide Sublot") << get formula), ut empty());
 		ut assert that(Expr(Column(table5,"Foil") << get formula), ut empty());
@@ -4309,7 +5000,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_001",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_001",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4343,7 +5034,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_110",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_110",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4365,7 +5056,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			private
 		);
@@ -4386,7 +5077,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_101",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil, Sublot, Lot Extraction_101",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4421,6 +5112,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 		ut assert that(Expr(Column(table5,3) << getname), ut equal to("Slide Lot"));
 		ut assert that(Expr(Column(table5,4) << getname), ut equal to("Foil"));
 		ut assert that(Expr(Column(table5,"Slide Sublot") << get as matrix ), ut equal to([32, 52, 21]));
+		ut assert that(Expr(Column(table5,"Slide Lot") << get as matrix ), ut equal to([1526,5316, 5988]));
 		ut assert that(Expr(Column(table5,"Foil") << get as matrix ), ut equal to([21, 84, 45]));
 		ut assert that(Expr(Column(table5,"Slide Lot") << get formula), ut empty());
 		ut assert that(Expr(Column(table5,"Foil") << get formula), ut empty());
@@ -4428,7 +5120,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Foil,
 	)
 );
 
-ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot Extraction_Foil already present",
+ut test(lotExtractionTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot Extraction_Foil already present",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		/*Reference
@@ -4450,7 +5142,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot E
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			New Column( "Slide Sublot",
 				Numeric,
@@ -4488,7 +5180,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot E
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			New Column( "Foil",
 				Numeric,
@@ -4510,7 +5202,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot E
 				Numeric,
 				"Continuous",
 				Format( "Best", 12 ),
-				Set Values( [152621,531684, 598845] )
+				Set Values( [1526,5316, 5988] )
 			),
 			New Column( "Foil",
 				Numeric,
@@ -4591,6 +5283,7 @@ ut test(generalColumnWork, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Lot E
 	)
 );
 	
+
 	////////////////////////////////////////////////
 	//           wl Stacking Functions            //
 	////////////////////////////////////////////////
@@ -4883,7 +5576,7 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
 		baseCols = base << get column names( string );
-		
+
 		ut assert that(Expr(comp[2] << Are Data Different), ut equal to(0));
 		ut assert that(Expr(comp[2] << Get columns properties differences), ut empty());
 		ut assert that(Expr(comp[2] << Get columns attributes differences), ut empty());
@@ -5694,7 +6387,9 @@ ut test(dateTimeTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_instMethod o
 ///Reported test result formula from Jesse
 ///Dilution / Dilution type rename for CatOne
 ///DIlution type match for CatDx?
-///
+//
+
+
 
 
 /////////////////////////////////////////////////////////////
