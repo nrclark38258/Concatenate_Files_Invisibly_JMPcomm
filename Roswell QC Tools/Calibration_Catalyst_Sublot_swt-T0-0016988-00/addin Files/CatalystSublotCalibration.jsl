@@ -11,6 +11,8 @@
 //			-> added SDMALoopQualPrep, SDMAPanelPrep, SDMAPatientPrep, SDMAInstPrep functions.
 //			-> updated ionChemCalDialog to support .XLSX extensions.
 //			-> updated the Main to support SDMA functionality.
+//			-> updated expirationprep to support SDMA.
+//			-> added JSON prep functions for SDMA. Included in stitching function.
 //	BETA2 1.0 NClark 022522
 //		-> renamed preparation() to instIDpreparation() and defaulted intrument id column to "Instrument ID"
 //		-> updated buildJSONarray
@@ -2417,11 +2419,92 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 );
 
 prepExpiration = Function( {calPathway, dataPath},
-	{default local}, 
-
+	{default local},
+	
 	//def will need to be updated for QSDMA - that path will be a list of one to many files
 	//do the updates to the expiration data fomratting here
+	If(calPathway == "SDMA"
+		,
+		datatables = {};
+		listofthings = parse(dataPath);
+		//loop through to open the data tables needed for analysis.
+		For(i=1,i<=nitems(listofthings),i++,
+			
+			datatables[i] = Open(
+				listofthings[i],
+				Worksheets( "Sheet1" ),
+				Use for all sheets( 1 ),
+				Concatenate Worksheets( 0 ),
+				Create Concatenation Column( 0 ),
+				Worksheet Settings(
+					1,
+					Has Column Headers( 1 ),
+					Number of Rows in Headers( 1 ),
+					Headers Start on Row( 1 ),
+					Data Starts on Row( 2 ),
+					Data Starts on Column( 1 ),
+					Data Ends on Row( 0 ),
+					Data Ends on Column( 0 ),
+					Replicated Spanned Rows( 1 ),
+					Replicated Spanned Headers( 0 ),
+					Suppress Hidden Rows( 1 ),
+					Suppress Hidden Columns( 1 ),
+					Suppress Empty Columns( 1 ),
+					Treat as Hierarchy( 0 ),
+					Multiple Series Stack( 0 ),
+					Import Cell Colors( 0 ),
+					Limit Column Detect( 0 ),
+					Column Separator String( "-" )
+				),
+				Invisible
+			);
+			
+			//process each file if needed
+			
+		);
 
+		datatables1 = Remove(datatables,1);
+
+		Try(
+			concatTable = datatables[1] << Concatenate(
+				datatables1
+			);
+			For(i=1,i<=nitems(datatables),i++,
+				Close(datatables[i],nosave);
+			);
+			,
+			concatTable = datatables[1];
+		);
+
+		//modify the concatenated tables to have just batch and expiration date and delete the empty rows inside Batch.
+		concatTable << Select Columns(:"Batch"n, :"Exp. Date"n);
+		concatTable << Invert Column Selection();
+		concatTable << Delete Columns();
+		concatTable << Select where(is missing(:"Batch"n));
+		concatTable << Delete Rows();
+
+		//format the date per what's needed for the JSON
+		concatTable:"Exp. Date"n << Format(
+				"Custom",
+				Formula(
+					Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+						1, "0" || Char( Month( value ) ),
+						2, Char( Month( value ) )
+					) || "." || Match( Length( Char( Day( value ) ) ),
+						1, "0" || Char( Day( value ) ),
+						2, Char( Day( value ) )
+					)
+				),
+				10,
+				0
+			);
+
+		//set the column names to the necessary values.	
+		concatTable:"Exp. Date"n << set name("exp_date");
+		concatTable:"Batch"n << set name("slide_lot");
+
+		Return(concatTable);
+		,
 	// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
 	//.... ClipLot becomes cliplot ExpirationDate become exp_date
 	//.... delete clip type
@@ -2447,61 +2530,60 @@ prepExpiration = Function( {calPathway, dataPath},
 		*/
 	//.... make date column character to be properly maintained in array and to JSON
 
-	assayCodes = assayTypes();
+		assayCodes = assayTypes();
 
-	dt = Open(
-		dataPath,
-		Import Settings(
-			End Of Line( CRLF, CR, LF ),
-			End Of Field( Comma, CSV( 1 ) ),
-			Strip Quotes( 0 ),
-			Use Apostrophe as Quotation Mark( 0 ),
-			Use Regional Settings( 0 ),
-			Scan Whole File( 1 ),
-			Treat empty columns as numeric( 0 ),
-			CompressNumericColumns( 0 ),
-			CompressCharacterColumns( 0 ),
-			CompressAllowListCheck( 0 ),
-			Labels( 1 ),
-			Column Names Start( 1 ),
-			Data Starts( 2 ),
-			Lines To Read( "All" ),
-			Year Rule( "20xx" )
-		)
-	);
-	dt:ExpirationDate << Format(
-		"Custom",
-		Formula(
-			Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
-				1, "0" || Char( Month( value ) ),
-				2, Char( Month( value ) )
-			) || "." || Match( Length( Char( Day( value ) ) ),
-				1, "0" || Char( Day( value ) ),
-				2, Char( Day( value ) )
+		dt = Open(
+			dataPath,
+			Import Settings(
+				End Of Line( CRLF, CR, LF ),
+				End Of Field( Comma, CSV( 1 ) ),
+				Strip Quotes( 0 ),
+				Use Apostrophe as Quotation Mark( 0 ),
+				Use Regional Settings( 0 ),
+				Scan Whole File( 1 ),
+				Treat empty columns as numeric( 0 ),
+				CompressNumericColumns( 0 ),
+				CompressCharacterColumns( 0 ),
+				CompressAllowListCheck( 0 ),
+				Labels( 1 ),
+				Column Names Start( 1 ),
+				Data Starts( 2 ),
+				Lines To Read( "All" ),
+				Year Rule( "20xx" )
 			)
-		),
-		10,
-		0
+		);
+		dt:ExpirationDate << Format(
+			"Custom",
+			Formula(
+				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+					1, "0" || Char( Month( value ) ),
+					2, Char( Month( value ) )
+				) || "." || Match( Length( Char( Day( value ) ) ),
+					1, "0" || Char( Day( value ) ),
+					2, Char( Day( value ) )
+				)
+			),
+			10,
+			0
+		);
+		dt:"ExpirationDate"n << set name("exp_date");
+		dt:"Lot"n << set name("slide_lot");
+		dt:"ClipLot"n << set name("cliplot");
+		dt:"exp_date"n << set data type("Character");
+
+		dt << New Column("chemcode",
+			Formula(
+				assayCodes[:"ChemAbbr"n]
+			)
+		);
+		dt:"chemcode"n << delete formula;
+		
+		dt << delete columns("ClipType", "ChemAbbr");
+
+		Return( dt );
 	);
-	dt:"ExpirationDate"n << set name("exp_date");
-	dt:"Lot"n << set name("slide_lot");
-	dt:"ClipLot"n << set name("cliplot");
-	dt:"exp_date"n << set data type("Character");
-
-	dt << New Column("chemcode",
-		Formula(
-			assayCodes[:"ChemAbbr"n]
-		)
-	);
-	dt:"chemcode"n << delete formula;
-	
-	dt << delete columns("ClipType", "ChemAbbr");
-
-	Return( dt );
-
 );
 
-//need a way to convert loop lot to slide lot in this prep step.
 SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 	//dt_Loop = current data table();
 	//DXrelease = "/C:/Users/sdarling/OneDrive - IDEXX/Projects/Cal Tool Development/qsdmaCalTestFiles_NewParser/QSDMA Product Tracking Board Rev II.xlsm";
@@ -2535,7 +2617,7 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 			Column Separator String( "-" )
 		)
 	);
-	dt:"Loop Lot Number"n << Set Data Type(Numeric) << Set Modeling Type("Continuous");
+	//dt:"Loop Lot Number"n << Set Data Type(Numeric) << Set Modeling Type("Continuous");
 
 	loopsum = dt_Loop << Summary(
 		Group(:"Slide Mfg Loop Lot"n),
@@ -2544,34 +2626,40 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 		Invisible
 	);
 
-	looplotnum = loopsum:"Slide Mfg Loop Lot"n[1];
+	Summarize(loopsum, looplotnum = By(:"Slide Mfg Loop Lot"n));
+	//show(looplotnum);
+	
+	For(i=1, i<=nitems(looplotnum), i++,
+		dt << select where(:"Loop Lot Number"n == looplotnum[i]);
+	);
 
-	close(loopsum, nosave);
-
-	dt << select where(:"Loop Lot Number"n == looplotnum);
-	dt << Select Columns(:Slide Lot Number, :Loop Lot Number);
+	dt << Select Columns(:"Slide Lot Number"n, :"Loop Lot Number"n);
 
 	loopslideconfig = dt << Subset(
 		Selected Rows(1),
 		Selected columns only(1),
 		Invisible
 	);
+	
 	close(dt, nosave);
-
+	close(loopsum, nosave);
+	
 	loopslideconfig << select where(:"Slide Lot Number"n == "N/A");
 	loopslideconfig << delete rows();
 	loopslideconfig << Set Name("Loop Lot to Slide Lot");
+	loopslideconfig:"Loop Lot Number"n << Set Data Type("Numeric") << Set Modeling Type("Continuous");
 	
 	dt_Loop:"Slide Lot"n << Set Name("Slide Lot_Original");
 	
-	slidelotnum = loopslideconfig:"Slide Lot Number"n[1];
-	looplotnum = loopslideconfig:"Loop Lot Number"n[1];
-	dt_Loop << New Column("Slide Lot_DX Release", Character, Nominal, Set Each Value(slidelotnum));
-	dt_Loop << New Column("Loop Lot_DX Release", Numeric, Continuous, Set Each Value(looplotnum));
-	dt_Loop << New Column("Slide Lot", Numeric, Nominal, Set Formula(num(:"Slide Lot_DX Release"n)));
-	dt_Loop:"Slide Lot"n << Delete Formula;
+	dt_Loop << Update(
+		With( loopslideconfig ),
+		Match Columns( :"Slide Mfg Loop Lot"n = :"Loop Lot Number"n ),
+		Add Columns from Update Table( :"Slide Lot Number"n )
+	);
 	
 	close(loopslideconfig, nosave);
+	
+	dt_Loop:"Slide Lot Number"n << Set Name("Slide Lot") << Set Data Type("Numeric") << Set Modeling Type("Continuous");
 	
 	//selecting the rows that are Grubb's outliers, barcodes that can't be read, or excluded for another purpose.
 	dt_Loop << Row Selection(
@@ -2603,6 +2691,7 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 	
 	dt_Sublot << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
 	Column( dt_Sublot, "Script AR" ) << Delete Formula;
+	close(dt_Loop, nosave);
 	
 	Return(dt_Sublot);
 );
@@ -2676,12 +2765,12 @@ SDMAInstPrep = Function({platformPath}, {Default Local},
 	Return(dt_InstTune);
 );
 
-sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {default local},
+sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Expiration}, {default local},
 	//testing variables
-	//dt_Cal = Data Table("PQ1_Panel_justResults.jmp");
-	//dt_Loop = Data Table("4149201_justResults_wRunsheet");
-	//dt_FineTune = Data Table("PQ1_Patient_JustResults_wRunSheet_postprocess");
-	//dt_InstTune = Data Table("PQ1_Platform_justResults");
+	//dt_Panel = Data Table("PQ1_PanelCal_LogViewer_justResults_runsheet.jmp");
+	//dt_Loop = Data Table("PQ1_Catalyst Log Viewer_edits_justResults_wRunsheet_processed.jmp");
+	//dt_FineTune = Data Table("PQ1_CalPatient_LogViewer_justResults_runsheet.jmp");
+	//dt_InstTune = Data Table("PQ1_CalPlatform_justresults.jmp");
 	//dt_looptoslide = "";
 	//barcodeCol = "Barcode";
 	//doseCol = "Panel Dose";
@@ -2702,14 +2791,16 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 		Mean( :Blocked AR ),
 		Freq( "None" ),
 		Weight( "None" ),
-		Link to original data table( 0 )
+		Link to original data table( 0 ),
+		Invisible
 	);
 	
 	dtSubsum2 = dtSubsum1 << Summary( 
 		Group( :Slide Lot, :Chem Type ), 
 		Freq( "None" ), 
 		Weight( "None" ), 
-		Link to original data table( 0 ) 
+		Link to original data table( 0 ),
+		Invisible
 	);
 	
 	splineFit = dtSubsum1 << Bivariate(
@@ -2869,7 +2960,8 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 		Mean( :Cross Web Corrected Dose ),
 		Freq( "None" ),
 		Weight( "None" ),
-		Link to original data table( 0 )
+		Link to original data table( 0 ),
+		Invisible
 	);
 	
 	//algorithm to remove the panel closest to 30. one of the target levels is 30 and that's the one we don't want. thus it should be closer.
@@ -3144,7 +3236,21 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	dt_Basecurve << Close Window;
 	dt_Basecurvefinal << Set Name("Base Curve");
 	
-	/////////////base curve table clean up for JSON tool
+	BaseFinal = SDMAjsonPrepBase(dt_Basecurvefinal, dt_expiration);
+	FoilFinal = SDMAjsonPrepFoil(dt_Foil);
+	CWFinal = SDMAjsonPrepCW(dt_Crossweb);
+	
+	close(dt_expiration, nosave);
+	close(dt_Sublot, nosave);
+	close(dtSublot2mean, nosave);
+	
+	Return(BaseFinal, FoilFinal, CWFinal);
+	
+);
+
+SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
+	//dt_Basecurvefinal = DataTable("Base Curve");
+	//dt_expiration = DataTable("Untitled 479");
 	
 	Column( dt_Basecurvefinal, "Asymptote" ) << Set Name( "a" );
 	Column( dt_Basecurvefinal, "Scale" ) << Set Name( "b" );
@@ -3161,8 +3267,14 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	dt_Basecurvefinal << New Column( "chemCode", Numeric, Nominal, Set Formula( If( :Chem Type == "SDMA", 4, Emtpy() ) ) );	
 	dt_Basecurvefinal << New Column( "dryread_start", Numeric, Continuous );
 	dt_Basecurvefinal << New Column( "dryread_end", Numeric, Continuous );
-	dt_Basecurvefinal << New Column( "exp_date", Numeric, Continuous );
 	Column( dt_Basecurvefinal, "Slide Lot" ) << Set Name( "lot" );
+	dt_expiration:"slide_lot"n << Set Data Type("Character") << Set Modeling Type("Nominal");
+	dt_Basecurvefinal << Update(
+		With(dt_expiration),
+		Match Columns( :lot = :slide_lot),
+		Add Columns from Update Table( :exp_date ),
+		Replace Columns in Maine Table( None )
+	);
 	dt_Basecurvefinal << New Column( "ID",
 		Character,
 		Nominal,
@@ -3183,7 +3295,11 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "lot", "Species" );
 	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
 	
-	//////transform the foil corrections to the low bit number type
+	return(dt_Basecurvefinal);
+);
+
+SDMAjsonPrepFoil = Function({dt_Foil}, {Default Local},
+		//////transform the foil corrections to the low bit number type
 	dt_Foil << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset * 10000, 0 ) / 10000 ) );
 	dt_Foil << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain * 10000, 0 ) / 10000 ) );
 
@@ -3221,11 +3337,14 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	dtFoil << Move Selected Columns("ID"n, To first );
 	Column( dtFoil, "Foil" ) << Set Name( "foil" );
 	dtFoil << Set Name("Foil");
+	close(dt_Platform, nosave);
 	
-	dtSublot2mean << Close Window;
-	
-	//////transform the crossweb curve to the parameterized input for the cal file
-	
+	Return(dtFoil);
+);
+
+SDMAjsonPrepCW = Function({dt_Crossweb}, {Default Local},
+
+
 	dt_Crossweb << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
 	dt_Crossweb << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
 
@@ -3264,21 +3383,6 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	);
 
 	cwSplit1 << Close Window;
-
-	/*
-	Column( cwSplit2, "Cross Web End" ) << Set Data Type( "Numeric" );
-	Column( cwSplit2, "Cross Web Start" ) << Set Data Type( "Numeric" );
-	Column( cwSplit2, "Slide Lot" ) << Set Data Type( "Numeric" );
-
-	Column( cwSplit2, "Intercept CW Offset Spline" ) << Set Name( "e" );
-	Column( cwSplit2, "Cross Web CW Offset Spline" ) << Set Name( "f" );
-	Column( cwSplit2, "Cross Web^2 CW Offset Spline" ) << Set Name( "g" );
-	Column( cwSplit2, "Cross Web^3 CW Offset Spline" ) << Set Name( "h" );
-	Column( cwSplit2, "Intercept CW Gain Spline" ) << Set Name( "a" );
-	Column( cwSplit2, "Cross Web CW Gain Spline" ) << Set Name( "b" );
-	Column( cwSplit2, "Cross Web^2 CW Gain Spline" ) << Set Name( "c" );
-	Column( cwSplit2, "Cross Web^3 CW Gain Spline" ) << Set Name( "d" );
-	*/
 	
 	Column( cwSplit2, "Intercept Cross Web Offset" ) << Set Name( "e" );
 	Column( cwSplit2, "Cross Web Cross Web Offset" ) << Set Name( "f" );
@@ -3293,6 +3397,14 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	cwSplit2 << Set Name( "Cross Web" );
 	Column( cwSplit2, "Cross Web End" ) << Set Name( "crossweb_end" );
 	Column( cwSplit2, "Cross Web Start" ) << Set Name( "crossweb_start" );
+	
+	
+	dt_Platform = New Table( "Inst Temp",
+		<<Add Rows( 2 ),
+		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
+		Invisible
+	);
+	wait(0.1);
 	
 	cwSplit3 = cwSplit2 << Join( With( dt_Platform ), Cartesian Join );
 	cwSplit3 << New Column( "ID",
@@ -3314,19 +3426,14 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune}, {defa
 	
 	dt_Platform << Close Window;
 	cwSplit2 << Close Window;
-	dt_Sublot << Close Window;
 	
 	cwSplit3 << Delete Columns( "Slide Lot", "Chem Type", "Inst Type");
 	cwSplit3 << Move Selected Columns("ID"n, To first );
 	cwSplit3 << Set Name("Cross Web");
 	
 	dt_Crossweb = cwSplit3;
-	
-	//Return Crossweb Parameters, Foil Parameters, and Curve Parameters.
-	Return(dt_Crossweb, dtFoil, dt_Basecurvefinal)
-	
+	Return(dt_Crossweb);
 );
-
 
 jsonPrepBase = Function({finalCalibrationData,baseCoeffs},{default local},
 	
@@ -3475,14 +3582,13 @@ If( Length( Include File List() ) == 1,
 					calData = SDMAPanelPrep(calDataPath);
 					platformData = SDMAInstPrep(platformDataPath);
 					patientData = SDMAPatientPrep(patientDataPath);
-					
+					expirationData = prepExpiration( "SDMA", expirationPath );
 					If( calData == 0 | loopData == 0 | platformData == 0 | patientData == 0,
 						Close All( data tables, nosave );
 						Stop();
 					,
-						sdmaAssStitching( calData, loopData, patientData, platformData )
+						sdmaAssStitching( calData, loopData, patientData, platformData, expirationData )
 					);
-					
 			);
 		);
 	,
