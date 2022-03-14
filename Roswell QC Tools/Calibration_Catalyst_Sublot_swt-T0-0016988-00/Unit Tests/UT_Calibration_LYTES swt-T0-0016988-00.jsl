@@ -1,10 +1,27 @@
-//////OPS PHBR Calibration jslHamcrest Unit Tests//////
-lytesCalUT = New Namespace("PHBRcalUnitTest");
+//////OLOL Catalyst Sublot Calibration jslHamcrest Unit Tests//////
+t1=today();
+lytesCalUT = New Namespace("sublotCalUnitTest");
 lytesCalUT:saveFile = 0;
 lytesCalUT:savePath = "C:\Users\nclark\Desktop/";
-lytesCalUT:reportName = "00_swt-T6-0016233-00_v1.0x_UnitTestReport.txt";
+lytesCalUT:reportName = "00_swt-T0-0016988-00_v1.0x_UnitTestReport.txt";
 
-lytesCalUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Calibration_LYTES swt-T0-0016988-00\CatalystLYTESJMPScriptCalibration.jsl";
+//lytesCalUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Calibration_LYTES swt-T0-0016988-00\CatalystLYTESJMPScriptCalibration.jsl";
+
+///////////////////////////////////////////////
+////////UPDATE YOUR VARIABLES NATE!////////////
+///////////////////////////////////////////////
+Match(
+	Get Environment Variable("USERNAME"),
+		"nclark",
+		lytesCalUT:toolPath = "/D:/JSL Development/Official JMP Addin Working/Calibration_LYTES swt-T0-0016988-00/CatalystLYTESJMPScriptCalibration.jsl";
+		lytesCalUT:filePath = "/D:/JSL Development/Official JMP Addin Working/UnitTesting/LoopQualification_Catalyst swt-T0-0017075-00_UT/Files/";
+		,
+		"sdarling",
+		lytesCalUT:toolPath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Roswell QC Tools/Calibration_Catalyst_Sublot_swt-T0-0016988-00/addin Files/CatalystSublotCalibration.jsl";
+		lytesCalUT:filePath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Roswell QC Tools/Calibration_Catalyst_Sublot_swt-T0-0016988-00/Unit Tests/Files/";
+		
+);
+
 
 Match(lytesCalUT:saveFile,
 	1, ut global reporter = New Object("ut collecting reporter")
@@ -107,8 +124,8 @@ ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starti
 		uName = Get Environment Variable("username");
 
 		ut assert that(Expr(u), ut equal to(uName));
-		ut assert that(Expr(addinID), ut equal to("com.idexx.RoswellQCTools_LYTES_calibration"));
-		ut assert that(Expr(minJMPver), ut equal to("15.2"));
+		ut assert that(Expr(addinID), ut equal to("com.idexx.RoswellQCTools_Sublot_calibration"));
+		ut assert that(Expr(minJMPver), ut equal to("16.1"));
 
 	));
 ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starting assay Arrays", 
@@ -159,10 +176,10 @@ ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starti
 				},
 				{"42", Associative Array(
 						{
-							{"int", 68.7983321009125},
-							{"lin", -0.829932786809422},
-							{"quad", 0.0156680172085102},
-							{"cub", -0.0000434008565567936}		
+							{"int", 80.2669819780055},
+							{"lin", -1.01470981530239},
+							{"quad", 0.0162340428546581},
+							{"cub", -0.0000421742221477125}	
 						}
 					)
 				},
@@ -186,10 +203,10 @@ ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Starti
 				},
 				{"NA", Associative Array(
 						{
-							{"int", 68.7983321009125},
-							{"lin", -0.829932786809422},
-							{"quad", 0.0156680172085102},
-							{"cub", -0.0000434008565567936}		
+							{"int", 80.2669819780055},
+							{"lin", -1.01470981530239},
+							{"quad", 0.0162340428546581},
+							{"cub", -0.0000421742221477125}		
 						}
 					)
 				}
