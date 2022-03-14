@@ -6,6 +6,9 @@
 //Tool Calibrates QSDMA lots
 
 //------------------Revision History for both script and Help File--
+//		  1.2 SDarling 030822
+//			-> added into SDMAjsonPrepBase to include naming the table with event (if relevant) and lot number range.
+//			-> added buildJSONarray into SDMA workflow. Is missing lot information currently.
 //  BETA3 1.1 SDarling 030122
 //			-> updated calFitfunc to support JMP16 column deletions.
 //			-> added SDMALoopQualPrep, SDMAPanelPrep, SDMAPatientPrep, SDMAInstPrep functions.
@@ -834,9 +837,10 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	// json Save path
 	
 	/*
-	mainCurveTable = Datatable("QSDMA Master Curve Table for 10_72_112221");
-	crosswebTable = Datatable("QSDMA crosswebs");
-	foilTable = Datatable("QSDMA foils");
+	mainCurveTable = Datatable("Event100_Base Curve_1001-1001");
+	crosswebTable = Datatable("Cross Web");
+	foilTable = Datatable("Foil");
+	jsonSavePath = "C:\Users\sdarling\OneDrive - IDEXX\Projects\Cal Tool Development\qsdmaCalTestFiles_currentmethod\PQ2\Build 10.73\";
 	*/
 	//buildInfo = ;//maybe get from json Path?
 	//eventInfo = "event500";//maybe get from loop qual table name?
@@ -3252,7 +3256,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	close(dtSublot2mean, nosave);
 	
 	//currently does not close the base/foil/cw tables.
-	//buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
+	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
 	
 	//Return the analysis tables.
 	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
@@ -3278,6 +3282,15 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
 	dt_Basecurvefinal << New Column( "chemCode", Numeric, Nominal, Set Formula( If( :Chem Type == "SDMA", 4, Emtpy() ) ) );	
 	dt_Basecurvefinal << New Column( "dryread_start", Numeric, Continuous );
 	dt_Basecurvefinal << New Column( "dryread_end", Numeric, Continuous );
+	
+	//get the min and max lot numbers for table naming
+	Summarize(dt_Basecurvefinal, lot_list = by(:"Slide Lot"n));
+	//using for each which is JMP 16 only
+	For Each( {value, index}, lot_list, lot_list[index] = num(value) );
+	Min_lot = Char(Min(lot_list));
+	Max_lot = Char(Max(lot_list));
+	
+	
 	Column( dt_Basecurvefinal, "Slide Lot" ) << Set Name( "lot" );
 	dt_expiration:"slide_lot"n << Set Data Type("Character") << Set Modeling Type("Nominal");
 	dt_Basecurvefinal << Update(
@@ -3305,6 +3318,9 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
 	Column( dt_Basecurvefinal, "chemCode" ) << Delete Formula;
 	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "lot", "Species" );
 	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
+	
+	//will need to make event more dynamic. idk if this is relevant to QSDMA or not... *insert shrug here*
+	dt_BaseCurvefinal << Set Name("Event100" || " BaseCurve " || Min_lot || "-" || Max_lot );
 	
 	return(dt_Basecurvefinal);
 );
