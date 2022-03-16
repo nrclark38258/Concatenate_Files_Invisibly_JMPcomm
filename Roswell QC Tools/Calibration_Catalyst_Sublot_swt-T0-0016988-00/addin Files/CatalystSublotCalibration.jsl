@@ -6,7 +6,7 @@
 //Tool Calibrates QSDMA lots
 
 //------------------Revision History for both script and Help File--
-//		  1.2 SDarling 030822
+//	BETA4 1.0 SDarling 030822
 //			-> added into SDMAjsonPrepBase to include naming the table with event (if relevant) and lot number range.
 //			-> added buildJSONarray into SDMA workflow. Is missing lot information currently.
 //			-> added logic to force dose numeric, continuous in SDMALoopQualPrep and SDMAPanelPrep functions.
@@ -15,7 +15,10 @@
 //			-> changed subLot2DblockerFunc to include slide lot information for formula calculations.
 //			-> modified ionChemCalDialog to accept a folder location instead of JMP file for QSDMA loop qual.
 //			-> updated dialogOutput to be qsdmaLoopFolder output to create the loopQualDataPath for QSDMA.
-//  BETA3 1.1 SDarling 030122
+//			-> updated SDMAjsonPrepCW to set crossweb_end and crossweb_start to numeric nominal instead of character.
+//			-> reintroduced lot to SDMAjsonPrepBase output table.
+//			-> set expiration date to character in prepExpiration.
+//  BETA3 1.0 SDarling 030122
 //			-> updated calFitfunc to support JMP16 column deletions.
 //			-> added SDMALoopQualPrep, SDMAPanelPrep, SDMAPatientPrep, SDMAInstPrep functions.
 //			-> updated ionChemCalDialog to support .XLSX extensions.
@@ -2489,22 +2492,22 @@ prepExpiration = Function( {calPathway, dataPath},
 
 		//format the date per what's needed for the JSON
 		concatTable:"Exp. Date"n << Format(
-				"Custom",
-				Formula(
-					Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
-						1, "0" || Char( Month( value ) ),
-						2, Char( Month( value ) )
-					) || "." || Match( Length( Char( Day( value ) ) ),
-						1, "0" || Char( Day( value ) ),
-						2, Char( Day( value ) )
-					)
-				),
-				10,
-				0
-			);
+			"Custom",
+			Formula(
+				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+					1, "0" || Char( Month( value ) ),
+					2, Char( Month( value ) )
+				) || "." || Match( Length( Char( Day( value ) ) ),
+					1, "0" || Char( Day( value ) ),
+					2, Char( Day( value ) )
+				)
+			),
+			10,
+			0
+		);
 
 		//set the column names to the necessary values.	
-		concatTable:"Exp. Date"n << set name("exp_date");
+		concatTable:"Exp. Date"n << set name("exp_date") << set data type("Character");
 		concatTable:"Batch"n << set name("slide_lot");
 
 		Return(concatTable);
@@ -3298,7 +3301,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	close(dtSublot2mean, nosave);
 	
 	//currently does not close the base/foil/cw tables.
-	//buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
+	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
 	
 	//Return the analysis tables.
 	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
@@ -3358,7 +3361,7 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
 	Column( dt_Basecurvefinal, "species" ) << Delete Formula;
 	//Column( dt_Basecurvefinal, "hidden" ) << Delete Formula;
 	Column( dt_Basecurvefinal, "chemCode" ) << Delete Formula;
-	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "lot", "Species" );
+	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "Species" );
 	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
 	
 	//will need to make event more dynamic. idk if this is relevant to QSDMA or not... *insert shrug here*
@@ -3466,7 +3469,8 @@ SDMAjsonPrepCW = Function({dt_Crossweb}, {Default Local},
 	cwSplit2 << Set Name( "Cross Web" );
 	Column( cwSplit2, "Cross Web End" ) << Set Name( "crossweb_end" );
 	Column( cwSplit2, "Cross Web Start" ) << Set Name( "crossweb_start" );
-	
+	cwSplit2:"crossweb_end"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
+	cwSplit2:"crossweb_start"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
 	
 	dt_Platform = New Table( "Inst Temp",
 		<<Add Rows( 2 ),
