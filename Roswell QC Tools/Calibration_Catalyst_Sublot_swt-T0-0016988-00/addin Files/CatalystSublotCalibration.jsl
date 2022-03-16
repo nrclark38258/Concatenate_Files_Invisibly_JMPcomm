@@ -9,6 +9,12 @@
 //		  1.2 SDarling 030822
 //			-> added into SDMAjsonPrepBase to include naming the table with event (if relevant) and lot number range.
 //			-> added buildJSONarray into SDMA workflow. Is missing lot information currently.
+//			-> added logic to force dose numeric, continuous in SDMALoopQualPrep and SDMAPanelPrep functions.
+//			-> modified SDMALoopQualPrep to be able to do multiple slide lots with multiple loop qual events.
+//			-> added logic to bring recode chem type from QSDMA to SDMA in SDMAPlatformPrep function.
+//			-> changed subLot2DblockerFunc to include slide lot information for formula calculations.
+//			-> modified ionChemCalDialog to accept a folder location instead of JMP file for QSDMA loop qual.
+//			-> updated dialogOutput to be qsdmaLoopFolder output to create the loopQualDataPath for QSDMA.
 //  BETA3 1.1 SDarling 030122
 //			-> updated calFitfunc to support JMP16 column deletions.
 //			-> added SDMALoopQualPrep, SDMAPanelPrep, SDMAPatientPrep, SDMAInstPrep functions.
@@ -708,9 +714,10 @@ subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, sli
 				Continuous,
 				Set Formula(
 					Col Mean(
-						parseColNameresponse - Col Mean( parseColNameresponse, parseColNameblocker, parseColNamedose ),
+						parseColNameresponse - Col Mean( parseColNameresponse, parseColNameblocker, parseColNamedose, parseColNamecoating ),
 						parseColNamesublotx,
-						parseColNamedose
+						parseColNamedose,
+						parseColNamecoating
 					)
 				)
 			);
@@ -720,7 +727,7 @@ subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, sli
 			table << New Column( Char( outputCol ),
 				Numeric,
 				Continuous,
-				Set Formula( Col Mean( parseColNameresponse - parseColNameblocker, parseColNamesublotx, parseColNamedose ) )
+				Set Formula( Col Mean( parseColNameresponse - parseColNameblocker, parseColNamesublotx, parseColNamedose, parseColNamecoating ) )
 			);
 			Column( table, Char( outputCol ) ) << Delete Formula;,
 		Throw()
@@ -1331,7 +1338,7 @@ ionChemCalDialog = Function({},{default local},
 			lyteJSON = lytesJSONSaveFolder << get text;
 			
 			qCal = qsdmaCalDataPath << get text;
-			qLoop = qsdmaLoopDataPath << get text;
+			qLoop = qsdmaLoopFolder << get text;
 			qPFT = qsdmaPlatformFTDataPath << get text;
 			qSFT = qsdmaSpeciesFTDataPath << get text;
 			qLoopMatch = qsdmaLoopMatchDataPath << get text;
@@ -1377,8 +1384,8 @@ ionChemCalDialog = Function({},{default local},
 				Right(qCal, 4) == ".jmp" & 
 				IsFile(qCal) &
 				
-				Right(qLoop, 4) == ".jmp" & 
-				IsFile(qLoop) &
+				Is Directory Writable(qLoop) &
+				(Right(qLoop,1) == "/" | Right(qLoop,1) == "\") &
 				
 				Right(qPFT, 4) == ".jmp" & 
 				IsFile(qPFT) &
@@ -1567,26 +1574,18 @@ ionChemCalDialog = Function({},{default local},
 						HListBox(
 							TextBox("Select Location of ", << set font size(10)),
 							TextBox("Loop Qual ", << set font style("Bold"), << set font size(10)),
-							TextBox(".jmp file", << set font size(10))
+							TextBox("head folder", << set font size(10))
 						),
 						H List Box(
-							qsdmaLoopDataPath = TextEditBox("",
+							qsdmaLoopFolder = TextEditBox("",
 								<< set width(300),
 							),
 							TextBox("  "),
 							buttonbox("",
 								<< Set Icon( "WinFileOpen" ),
 								<< set script(
-									file = Pick File(
-										,
-										,
-										{"All Files|jmp"},
-										1,
-										0,
-										,
-										//Multiple
-									);
-									qsdmaLoopDataPath << set text(file);
+									dir = Pick Directory();
+									qsdmaLoopFolder << set text(dir);
 								);
 							);
 						),
@@ -2277,7 +2276,7 @@ inputCleanup = Function( {dialogOutput},
 		3,
 			here:calibrationPathway = "QSDMA";
 			calibrationDataPath = dialogOutput["qsdmaCalDataPath"];
-			loopQualDataPath = dialogOutput["qsdmaLoopDataPath"];
+			loopQualDataPath = dialogOutput["qsdmaLoopFolder"];
 			expirationDataPath = dialogOutput["qsdmaExpirationDataPath"]; //will be list for QSDMA
 			jsonFolderPath = dialogOutput["qsdmaJSONSaveFolder"];
 			platformFineTuneDataPath = dialogOutput["qsdmaPlatformFTDataPath"];
@@ -2589,14 +2588,13 @@ prepExpiration = Function( {calPathway, dataPath},
 	);
 );
 
-SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
-	//dt_Loop = current data table();
-	//DXrelease = "/C:/Users/sdarling/OneDrive - IDEXX/Projects/Cal Tool Development/qsdmaCalTestFiles_NewParser/QSDMA Product Tracking Board Rev II.xlsm";
-	//generating the loop lot to slide lot information to the loop qual table.
-	dt_Loop = Open(loopPath);
-	
+SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default local},
+	//loopQualDataPath = "/C:/Users/sdarling/Box/Roswell QSDMA Testing and Analysis/SDMA Loop Qual/Loop Lots/";
+	//calData = Data Table("PAN01_Panel_justResults_Runsheet.jmp");
+	//DXrelease = "/C:/Users/sdarling/OneDrive - IDEXX/Projects/Cal Tool Development/Trial Event/Build 10.75/Event PAN01/QSDMA Product Tracking Board Rev II.xlsm";
+
 	dt = Open(
-		loopslideDataPath,
+		DXrelease,
 		Worksheets( "SDMA" ),
 		Use for all sheets( 1 ),
 		Concatenate Worksheets( 0 ),
@@ -2622,21 +2620,11 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 			Column Separator String( "-" )
 		)
 	);
-	//dt:"Loop Lot Number"n << Set Data Type(Numeric) << Set Modeling Type("Continuous");
 
-	loopsum = dt_Loop << Summary(
-		Group(:"Slide Mfg Loop Lot"n),
-		Freq("None"),
-		Weight("None"),
-		Invisible
-	);
+	Summarize(calData, neededlots = By(:"Slide Lot"n));
+	//show(neededLots);
 
-	Summarize(loopsum, looplotnum = By(:"Slide Mfg Loop Lot"n));
-	//show(looplotnum);
-	
-	For(i=1, i<=nitems(looplotnum), i++,
-		dt << select where(:"Loop Lot Number"n == looplotnum[i]);
-	);
+	dt << select where(Contains(neededLots, :"Slide Lot Number"n));
 
 	dt << Select Columns(:"Slide Lot Number"n, :"Loop Lot Number"n);
 
@@ -2645,18 +2633,67 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 		Selected columns only(1),
 		Invisible
 	);
-	
+
 	close(dt, nosave);
-	close(loopsum, nosave);
-	
-	loopslideconfig << select where(:"Slide Lot Number"n == "N/A");
-	loopslideconfig << delete rows();
+
 	loopslideconfig << Set Name("Loop Lot to Slide Lot");
+	
+	
+	//array required switching loop lot number to numeric as the header of the folders are coming in numeric. From the DX release, this comes in as a character nominal. Switching it here for usage. We could have also switched loop to be character instead. This was the easiest for now as I change it anyway for joining into the loop qual table, where loop lot number is numeric continuous already.
 	loopslideconfig:"Loop Lot Number"n << Set Data Type("Numeric") << Set Modeling Type("Continuous");
 	
-	dt_Loop:"Slide Lot"n << Set Name("Slide Lot_Original");
+	neededLoops = AssociativeArray(loopslideconfig:"Loop Lot Number");
+	removefrom(neededLoops,"");
+
+	loopfileList = Files In Directory(loopQualDataPath,recursive);
+
+	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
+	For(i=nitems(loopfileList),i>=1,i--,
+		If(
+			/*Contains(loopfileList[i], "Loop Qualification") |
+			Contains(loopfileList[i], "NDE Count") |
+			Contains(loopfileList[i], "unchosen") |
+			Contains(loopfileList[i], "Sublot Corrected"),*/
+			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
+			RemoveFrom(loopfileList, i)
+			,
+			//show(word(1,loopfileList[i],"_"));
+			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
+			If(neededLoops[loop] == 0,
+				removefrom(loopfileList,i)
+			);
+		);
+	);
 	
-	dt_Loop << Update(
+	show(loopfileList);
+	
+	loopFiles = {};
+	For(i=1,i<=nitems(loopfileList),i++,
+		loopFiles[i] = Open(
+			loopQualDataPath||loopfileList[i],
+			//private
+		);
+	);
+	loopFiles1 = Remove(loopFiles,1);
+	
+	If(
+		N Items( loopFiles ) == 1, 
+			loopQualTable = loopFiles[1];
+		,
+		N Items( loopFiles ) > 1,
+			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
+			For( i = 1, i <= N Items( loopFiles ), i++,
+				Close( loopFiles[i], nosave )
+			);
+		,
+		N Items( loopFiles ) == 0,
+			Print( "no loop data, please try again" );
+			Return(0);
+	);
+	
+	loopQualTable:"Slide Lot"n << Set Name("Slide Lot_Original");
+	
+	loopQualTable << Update(
 		With( loopslideconfig ),
 		Match Columns( :"Slide Mfg Loop Lot"n = :"Loop Lot Number"n ),
 		Add Columns from Update Table( :"Slide Lot Number"n )
@@ -2664,10 +2701,10 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 	
 	close(loopslideconfig, nosave);
 	
-	dt_Loop:"Slide Lot Number"n << Set Name("Slide Lot") << Set Data Type("Numeric") << Set Modeling Type("Continuous");
+	loopQualTable:"Slide Lot Number"n << Set Name("Slide Lot") << Set Data Type("Numeric") << Set Modeling Type("Continuous");
 	
 	//selecting the rows that are Grubb's outliers, barcodes that can't be read, or excluded for another purpose.
-	dt_Loop << Row Selection(
+	loopQualTable << Row Selection(
 		Select where( 
 			:"Exclusion Rationale"n == "NDE - Grubb's"
 			|
@@ -2677,10 +2714,10 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 		)
 	);
 	
-	dt_Loop << Invert Row Selection();
+	loopQualTable << Invert Row Selection();
 	
 	//creating a subset with the exclusions out.
-	dt_Sublot = dt_Loop << Subset( 
+	dt_Sublot = loopQualTable << Subset( 
 		Selected Rows(1),
 		Selected Columns(0) 
 	);
@@ -2691,12 +2728,12 @@ SDMALoopQualPrep = Function({loopPath, DXrelease}, {default local},
 	dt_Sublot:"Foil_LQ"n << set name("Foil");
 	dt_Sublot:"Foil"n << Data Type( Numeric ) << Set Modeling Type( Nominal );
 	
-	dt_Sublot << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( :"Panel Dose"n ) );
+	dt_Sublot << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(:"Panel Dose"n) ) );
 	Column( dt_Sublot, "Script Dose Val" ) << Delete Formula;
 	
 	dt_Sublot << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
 	Column( dt_Sublot, "Script AR" ) << Delete Formula;
-	close(dt_Loop, nosave);
+	close(loopQualTable, nosave);
 	
 	Return(dt_Sublot);
 );
@@ -2713,7 +2750,7 @@ SDMAPanelPrep = Function({calPath}, {default local},
 	dt_Panel:"Foil_BC"n << set name("Foil");
 	dt_Panel:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
 	
-	dt_Panel << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( Try("Panel Dose (µg/dL)_RS"n, "Panel Dose (ug/dL)_RS"n )));
+	dt_Panel << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(Try("Panel Dose (µg/dL)_RS"n, "Panel Dose (ug/dL)_RS"n ))));
 		Column( dt_Panel, "Script Dose Val" ) << Delete Formula;
 	
 	dt_Panel << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
@@ -2751,8 +2788,16 @@ SDMAPatientPrep = Function({patientPath}, {Default Local},
 );
 
 SDMAInstPrep = Function({platformPath}, {Default Local},
+	//dt_InstTune = current data table();
 	
 	dt_InstTune = Open(platformPath);
+	
+	dt_InstTune << Recode Column(
+		dt_InstTune:"Chem Type"n,
+		{Map Value( _rcOrig, {"QSDMA", "SDMA"}, Unmatched( _rcNow ) )},
+		Update Properties( 1 ),
+		Target Column( :Chem Type )
+	);
 	
 	//what's the point of this column?
 	dt_InstTune << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
@@ -2771,15 +2816,12 @@ SDMAInstPrep = Function({platformPath}, {Default Local},
 );
 
 sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Expiration, jsonloc}, {default local},
-	//testing variables
-	//dt_Panel = Data Table("PQ1_PanelCal_LogViewer_justResults_runsheet.jmp");
-	//dt_Loop = Data Table("PQ1_Catalyst Log Viewer_edits_justResults_wRunsheet_processed.jmp");
-	//dt_FineTune = Data Table("PQ1_CalPatient_LogViewer_justResults_runsheet.jmp");
-	//dt_InstTune = Data Table("PQ1_CalPlatform_justresults.jmp");
-	//dt_looptoslide = "";
-	//barcodeCol = "Barcode";
-	//doseCol = "Panel Dose";
-	//arCol = "Corrected AR";
+	/*testing variables
+	dt_Panel = calData;
+	dt_Loop = loopData;
+	dt_FineTune = patientData;
+	dt_InstTune = platformData;
+	*/
 	
 	dt_Cal = dt_Panel;
 	dt_Sublot = dt_Loop;
@@ -3256,7 +3298,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	close(dtSublot2mean, nosave);
 	
 	//currently does not close the base/foil/cw tables.
-	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
+	//buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
 	
 	//Return the analysis tables.
 	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
@@ -3605,8 +3647,8 @@ If( Length( Include File List() ) == 1,
 					loopslideDataPath = datatables[7];
 					//show(loopslideDataPath);
 					//prepping the data tables individually to bring together.
-					loopData = SDMALoopQualPrep(loopDataPath, loopslideDataPath);
 					calData = SDMAPanelPrep(calDataPath);
+					loopData = SDMALoopQualPrep(loopDataPath, calData, loopslideDataPath);
 					platformData = SDMAInstPrep(platformDataPath);
 					patientData = SDMAPatientPrep(patientDataPath);
 					expirationData = prepExpiration( "SDMA", expirationPath );
