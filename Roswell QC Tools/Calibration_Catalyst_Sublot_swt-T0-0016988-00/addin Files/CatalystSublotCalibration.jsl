@@ -3,10 +3,19 @@
 //IDEXX Laboratories, Inc.
 //Westbrook, ME 04092
 
-//Tool Calibrates QSDMA lots
+//Tool Calibrates for LYTES and QSDMA lots
 
 //------------------Revision History for both script and Help File--
 //
+//	BETA5 1.0 NClark 032222
+//		-> added seePrivateTables variable (boolean to trigger the showing of private tables)
+//		-> added unprivatizeTable() function which, when executed will show a private table of choice (assuming boolean is 1)
+//		-> implemented unprivatizeTable() function whenever a table is created in 'private' mode
+//			-> this should allow the user to change the boolean to 1 in teh variable and when the code is run, the private tables will be shown without having to comment/uncomment them all indivitually
+//		-> updated prepLoopData() function so the files pulled end in "processed.jmp"
+//		-> updated prepLoopData() function so the extracted loop is character to match the neededLoops data types
+//		-> updated prepExpiration() function on the non SDMA path to update 'Lot 2' to slide_lot and not 'Lot'
+//		-> updated prepExpiration() function so the non SDMA path is explicit to LYTES
 //	BETA4 1.0 NClark 031822
 //		-> updated prepExpiration() to work with actual .xlsm file formatting in their "summary" worksheet
 //		-> updated ionChemCalDialog() to set up the expiration date to come from an .xlsm (instead of .xlsx) file and on validate updated to match
@@ -183,6 +192,11 @@ Names Default To Here( 1 );
 	);
 
 	outlierLimitCount = 2;
+
+	seePrivateTables = 0;
+	/*example use
+		createdTable = unprivatizeTable(seePrivateTables, createdTable);
+	*/
 
 //-----------/Variable Declarations-----------------------
 
@@ -388,6 +402,14 @@ calBarcodeParse = Function({tablename, barcodecol}, {default local},
 	return(tablename);	
 );
 
+unprivatizeTable = Function({bool,tableName},{default local},
+	If(bool == 1,
+		tableName << New Data View;
+		Return(tableName)
+		,
+		Return(tableName)
+	)
+);
 
 	/////////////////////////////////////////
 	//       Main functions                //
@@ -1082,6 +1104,7 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 		Report( platform )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
 		Make Combined Data Table( private( 1 ) )
 	);
+	dt_3p_uncorrected = unprivatizeTable(seePrivateTables, dt_3p_uncorrected);
 	platform << close window;
 	//dt_3p_uncorrected:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
 	
@@ -1094,11 +1117,13 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 		output table name( "cal curves by lot" ),
 		private
 	);
+	dt_final_curves = unprivatizeTable(seePrivateTables, dt_final_curves);
 	Close( dt_3p_uncorrected, no save );
 	
 	Summarize( table, a = by( parseAssayCol ) );
 	// first, set up table with dose levels
 	dt_dose_levels = New Table( "dose quantiles table", private );
+	dt_dose_levels = unprivatizeTable(seePrivateTables, dt_dose_levels);
 	dt_dose_levels << Add Rows( N Items( a ) * 101 ); //101 per assay present. we expect 3 always, but in case there isn't
 	dt_dose_levels << Delete Columns( {"Column 1"} );
 	dt_dose_levels << New Column( assayCol, character, nominal, values( Sort List( Repeat( a, 101 ) ) ) );
@@ -1121,6 +1146,7 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 		output table name( "full dose levels" ),
 		private
 	);
+	dt_full_dose_levels = unprivatizeTable(seePrivateTables, dt_full_dose_levels);
 	Close( dt_dose_levels, no save );
 	
 	// add AR and new concentration columns:
@@ -1155,6 +1181,7 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 		Make Combined Data Table( private( 1 ) ),
 		Report( platform )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table( private( 1 ) )
 	);
+	dt_new_curves = unprivatizeTable(seePrivateTables, dt_new_curves);
 	platform << close window;
 	//dt_new_curves:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
 
@@ -2338,11 +2365,12 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 			Contains(loopfileList[i], "NDE Count") |
 			Contains(loopfileList[i], "unchosen") |
 			Contains(loopfileList[i], "Sublot Corrected"),*/
-			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "somethinglongandobvious.jmp",
+			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
 			RemoveFrom(loopfileList,i)
 			,
 			//show(word(1,loopfileList[i],"_"));
-			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
+			//neededloops will be character
+			loop = word(1,loopfileList[i],"_"); //surfs the folder names from Head
 			If(neededLoops[loop] == 0,
 				RemoveFrom(loopfileList,i)
 			)
@@ -2355,6 +2383,7 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 			dataPath||loopfileList[i],
 			private
 		);
+		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
 	);
 	loopFiles1 = Remove(loopFiles,1);
 	
@@ -2410,6 +2439,7 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 		Link to original data table( 0 ),
 		private
 	);
+	cdSum = unprivatizeTable(seePrivateTables, cdSum);
 	cdSum:"Loop Lot_DxRelease"n << set data type("Character");
 	cdSum << delete columns("N Rows");
 	
@@ -2515,6 +2545,7 @@ prepExpiration = Function( {calPathway, dataPath},
 
 		Return(concatTable);
 		,
+		calPathway == "LYTES",
 		// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
 		//.... ClipLot becomes cliplot ExpirationDate become exp_date
 		//.... delete clip type
@@ -2584,7 +2615,7 @@ prepExpiration = Function( {calPathway, dataPath},
 			0
 		);
 		dt:"ExpirationDate"n << set name("exp_date");
-		dt:"Lot"n << set name("slide_lot");
+		dt:"Lot 2"n << set name("slide_lot");
 		dt:"ClipLot"n << set name("cliplot");
 		dt:"exp_date"n << set data type("Character");
 
@@ -2690,8 +2721,9 @@ SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default loc
 	For(i=1,i<=nitems(loopfileList),i++,
 		loopFiles[i] = Open(
 			loopQualDataPath||loopfileList[i],
-			//private
+			private
 		);
+		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
 	);
 	loopFiles1 = Remove(loopFiles,1);
 	

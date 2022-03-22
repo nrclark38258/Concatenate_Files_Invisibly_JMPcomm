@@ -15,8 +15,8 @@
           <jm:name>MULTI-ASSAY</jm:name>
           <jm:caption>Multi-Assay</jm:caption>
           <jm:command>
-            <jm:name>BETA3_CATALYST SUBLOT CALIBRATION V1.0</jm:name>
-            <jm:caption>Beta3_Catalyst Sublot Calibration v1.0</jm:caption>
+            <jm:name>CATALYST SUBLOT CALIBRATION V1.0</jm:name>
+            <jm:caption>Catalyst Sublot Calibration v1.0</jm:caption>
             <jm:action type="path">$ADDIN_HOME(com.idexx.RoswellQCTools_Sublot_calibration)\CatalystSublotCalibration.jsl</jm:action>
             <jm:tip>Sublot Calibration for Catalyst Assays</jm:tip>
             <jm:icon type="builtin">Nonlinear</jm:icon>
