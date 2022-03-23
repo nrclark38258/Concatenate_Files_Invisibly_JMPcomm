@@ -6,6 +6,10 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  22.0.0 NClark 032322
+//      -> TablePreparation
+//	    3.8.0 NClark 032322
+//	    	-> updated funct16() to address when spp column is numeric but is named Species Name
 //  21.0.11 NClark 030122
 //      -> TablePreparation
 //	    3.7.11 NClark 030122

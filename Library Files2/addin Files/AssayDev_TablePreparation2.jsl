@@ -6,6 +6,8 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.8.0 NClark 032322
+//		-> updated funct16() to address when spp column is numeric but is named Species Name
 //	3.7.11 NClark 030122
 //		-> updated funct16() to address when function called but column no longer exists because it was renamed the previous time
 //			function was called
@@ -1018,14 +1020,14 @@ funct16 = Function({dtName,colName},{default local},
 				Column(dtName,colName) << set name("Species Name");
 				,
 				//make species name
+				Column(dtName,colName) << set modeling type("Nominal");
+				Column(dtName,colName) << set name("Species ID");
 				dtName << New Column("Species Name",Character,Nominal,
 					Formula(
-						Match(parseColName, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
+						Match(:"Species ID"n, 1, "Canine", 0, "Feline", 2, "Equine", 3, "Unknown", 4, "QC", "Other")
 					)
 				);
 				dtName:"Species Name"n << delete formula;
-				Column(dtName,colName) << set modeling type("Nominal");
-				Column(dtName,colName) << set name("Species ID");
 			)
 		,
 		//if there is one crossover, see if it's empty. if so, proceed as above, otherwise

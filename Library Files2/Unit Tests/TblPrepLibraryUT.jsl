@@ -4,7 +4,7 @@ tpLibUT:saveFile = 0;
 tpLibUT:savePath = "C:/Users/nclark/desktop/TestUnitFiles/";
 tpLibUT:reportName = "testReport.txt";
 
-tpLibUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Library Files2\AssayDev_TablePreparation2.jsl";
+tpLibUT:toolPath = "D:\JSL Development\Official JMP Addin Working\Library Files2\addin Files\AssayDev_TablePreparation2.jsl";
 //baUT:toolPath = "R:\Systems_Chemistry_Engineering\Tools\Official JMP Addin Development\Official JMP Addin Working\Assay Development\Bile Acids\AR Calculator\RDBile_ARCalculation.jsl";
 
 Match(tpLibUT:saveFile,
@@ -34,14 +34,14 @@ tpLibUT:tableCompare = Function({actual, expected},{default local},
 nameChanges = ut test case("A_Renaming Columns")
 	<<Setup(Expr(
 		include(tpLibUT:toolPath);
-		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\BasicNameChange.jmp",invisible); //needed to be invisible for the functions to work
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\BasicNameChange.jmp",invisible); //needed to be invisible for the functions to work
 		
 	));
 	
 updateColNames = ut test case("B_Updating ColNames Function")
 	<<Setup(Expr(
 		include(tpLibUT:toolPath);
-		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\NameChangeFunction.jmp",invisible);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\NameChangeFunction.jmp",invisible);
 	));
 	
 lotExtractionTC = ut test case("C_Lot Extractions")
@@ -53,22 +53,22 @@ lotExtractionTC = ut test case("C_Lot Extractions")
 wlStacking = ut test case("D_Wavelength Stack")
 	<<Setup(Expr(
 		include(tpLibUT:toolPath);
-		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_All3Pairs.jmp",invisible); //needed to be invisible for the functions to work
-		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_Only1Pair.jmp",invisible);
-		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_MisMatch.jmp",invisible);
-		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_NoCols.jmp",invisible);
-		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_DiffNums.jmp",invisible);
-		table6 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\wl_Only2Pairs.jmp",invisible);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_All3Pairs.jmp",invisible); //needed to be invisible for the functions to work
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_Only1Pair.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_MisMatch.jmp",invisible);
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_NoCols.jmp",invisible);
+		table5 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_DiffNums.jmp",invisible);
+		table6 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_Only2Pairs.jmp",invisible);
 	));
 
 uniqueIDs = ut test case("E_Unique Identifiers")
 	<<Setup(Expr(
 		include(tpLibUT:toolPath);
-		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\uniqueIDsSortCols1.jmp",invisible); //needed to be invisible for the functions to work
-		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\uniqueIDsSortCols2.jmp",invisible);
-		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\uniqueIDsSortCols3.jmp",invisible);
-		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\uniqueIDsNoCols.jmp",invisible);
-		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\uniqueIDsSortWithSortCol.jmp",invisible);
+		table1 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\uniqueIDsSortCols1.jmp",invisible); //needed to be invisible for the functions to work
+		table2 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\uniqueIDsSortCols2.jmp",invisible);
+		table3 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\uniqueIDsSortCols3.jmp",invisible);
+		table4 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\uniqueIDsNoCols.jmp",invisible);
+		table5 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\uniqueIDsSortWithSortCol.jmp",invisible);
 	));
 
 fullFuncionality = ut test case("F_TablePrepFunction")
@@ -1434,6 +1434,28 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Spe
 		ut assert that(Expr(ncol(localTable)), ut equal to(1));
 		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("random"));
 		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([1, 2, 3]));
+		
+	)
+);
+
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct16 Species ID spp is numeric, but named Species Name",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		localTable = New Table("funct16Test_spp is numeric, spp name not present",
+			Add Rows(0),
+			New Column("Species Name",Numeric,Continuous,
+				<< set values([0,1,2,3,4])
+			)
+		);
+		
+		funct16(localTable,"Species Name");
+		ut assert that(Expr(ncol(localTable)), ut equal to(2));
+		ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Species ID"));
+		ut assert that(Expr(Column(localTable,2) << getname), ut equal to("Species Name"));
+		ut assert that(Expr(Column(localTable,1) << get as matrix), ut equal to([0, 1, 2, 3, 4]));
+		ut assert that(Expr(Column(localTable,2) << get as matrix), ut equal to({"Feline", "Canine", "Equine", "Unknown", "QC"}));
+		ut assert that(Expr(Column(localTable,2) << get formula), ut empty());
 		
 	)
 );
@@ -5516,8 +5538,8 @@ tpLibUT:utGroupTest = 0;
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS_base",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_c1_SAS.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_c1_SAS.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_c1_SAS.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_c1_SAS.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5534,8 +5556,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS_base_multWL",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_c1_SAS_multWL.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_c1_SAS_multWL.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_c1_SAS_multWL.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_c1_SAS_multWL.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5552,8 +5574,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS_Base with Sublot",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\c1Base_withSublot.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\c1Prepped_withSublot.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\c1Base_withSublot.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\c1Prepped_withSublot.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5570,8 +5592,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS_base",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_SAS.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_SAS.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5588,8 +5610,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS_multWL",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_SAS_multWL.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_SAS_multWL.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_SAS_multWL.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_SAS_multWL.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5606,8 +5628,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS_multWL_wlNotMissing",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_SAS_notMissingWL2.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_SAS_notMissingWL2.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_SAS_notMissingWL2.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_SAS_notMissingWL2.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5624,8 +5646,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS_Base with Sublot",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\cdxBase_withSublot.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\cdxPrepped_withSublot.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\cdxBase_withSublot.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\cdxPrepped_withSublot.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5642,8 +5664,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_SAS
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_oldParser_base",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_Parser.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_Parser.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_Parser.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_Parser.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5660,8 +5682,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_old
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_oldParser_multWL",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_Parser_multWL.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_Parser_multWL.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_Parser_multWL.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_Parser_multWL.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5680,8 +5702,8 @@ ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_DX_old
 ut test(fullFuncionality, "DX_BI",
 	Expr(
 		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_SAS.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_SAS.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
 		
 		tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5701,8 +5723,8 @@ ut test(fullFuncionality, "DX_BI",
 ut test(fullFuncionality, "C1_BI",
 	Expr(
 		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Base_dx_SAS.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_dx_SAS.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Prepped_dx_SAS.jmp",invisible);
 		
 		tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -5722,8 +5744,8 @@ ut test(fullFuncionality, "C1_BI",
 ut test(fullFuncionality, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_C1_BA uniqueSort_WL first",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
-		base = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\C1_BA_newSort.jmp",invisible);
-		expected = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Libraries2\Files\tblPrep\C1_BA_newSort_correct.jmp",invisible);
+		base = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\C1_BA_newSort.jmp",invisible);
+		expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\C1_BA_newSort_correct.jmp",invisible);
 		expCols = expected << get column names( string );
 		base = tablePrep(base);
 		comp = tpLibUT:tableCompare(base,expected);
@@ -6388,8 +6410,6 @@ ut test(dateTimeTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_instMethod o
 ///Dilution / Dilution type rename for CatOne
 ///DIlution type match for CatDx?
 //
-
-
 
 
 /////////////////////////////////////////////////////////////
