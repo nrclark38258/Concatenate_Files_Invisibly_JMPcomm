@@ -6,7 +6,11 @@
 //Tool Calibrates for LYTES and QSDMA lots
 
 //------------------Revision History for both script and Help File--
-//
+//	BETA6 1.0 SDarling 032322
+//		->updated lytesAssStitching to add cubic curve to create concentrations instead of using the original 3P fit.
+//		->updated sdmaAssStitching to include a variable for event number that comes from the panel table. all tables will have this in the 2nd slot. Error checking opportunity?
+//		->updated SDMAjsonPrepBase to have event as an input.
+//		->left open the Patient Offset and Platform Offset tables for user viewing. Named these tables with Event # and Patient/Instrument Offset.
 //	BETA5 1.0 NClark 032222
 //		-> added seePrivateTables variable (boolean to trigger the showing of private tables)
 //		-> added unprivatizeTable() function which, when executed will show a private table of choice (assuming boolean is 1)
@@ -2092,12 +2096,48 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 		Replace Columns in Main Table( None )
 	);
 
-	Column( dtCalfinal, "Base Concentration" ) << Suppress Eval( 0 );
+	dtCalfinal << delete columns("Base Concentration", "Sub Lot Corrected Dose", "Sub Lot Adjusted Dose");
+
+	dtCalfinal << new column(
+		"Base Concentration Char",
+		Character,
+		Nominal,
+		Formula(
+			p=((3*:"Slope"n)/:"Cubic"n - (:"Quadratic"n/:"Cubic"n)^2)/3;
+			q=(2*(:"Quadratic"n/:"Cubic"n)^3 - ((9*:"Quadratic"n*:"Slope"n)/:"Cubic"n)/:"Cubic"n + (27*(:"Intercept"n-:"AR"n)/:"Cubic"n))/27;
+			newD=(p/3)^3 + (q/2)^2;
+			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
+
+			If(newD>=0,
+				u=Root((-q/2 + (newD)^0.5),3);
+				v=Root((-q/2 - (newD)^0.5),3);
+				y1=u+v;
+				x1=y1 - (:"Quadratic"n/:"Cubic"n)/3;
+				char(x1),
+				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
+				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
+				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
+				x1=y1-(:"Quadratic"n/:"Cubic"n)/3;
+				x2=y2-(:"Quadratic"n/:"Cubic"n)/3;
+				x3=y3-(:"Quadratic"n/:"Cubic"n)/3;
+				char(x1)||" "||char(x2)||" "||char(x3)
+			);
+		);
+	);
+
+	dtCalfinal:"Base Concentration Char"n << delete formula;
+
+	dtCalfinal << New Column( "Base Concentration",
+		Numeric,
+		Continuous,
+		Set Formula( num(:"Base Concentration Char"n) )
+	);
+
+	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
 	
 	////////////////////////////////////////////////////////////////////////////
 
 	//column name cleanup in the calibration data table
-	dtCalfinal << Delete Column( "Sub Lot Adjusted Dose" );
 	Column( dtCalfinal, "Sub Lot Corrected Dose" ) << Set Name( "Calc Dose" );	
 	
 	//crossWebmaster << Close Window; Table closed long before this step.
@@ -2872,10 +2912,15 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	dt_Loop = loopData;
 	dt_FineTune = patientData;
 	dt_InstTune = platformData;
+	dt_Expiration = expirationData;
 	*/
 	
 	dt_Cal = dt_Panel;
 	dt_Sublot = dt_Loop;
+	
+	//get the event number from the cal data table
+	Caltablename = dt_Cal << get name;
+	Eventnum = "Event" || Word(2, Caltablename, "_");
 	
 	//QSDMA specific fitting routine settings
 	lamda = 100;
@@ -3335,12 +3380,16 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	dt_Platform << Close Window;
 	dt_Temp << Close Window;
 	dt_Temp2 << Close Window;
-	dt_FineTuneout << Close Window;
-	dt_Insttunesummary << Close Window;
+	//dt_FineTuneout << Close Window;
+	dt_FineTuneout << Set Name(Eventnum || " Patient Offset");
+	dt_FineTuneout << Show Window(1);
+	//dt_Insttunesummary << Close Window;
+	dt_Insttunesummary << Set Name(Eventnum || " Platform Offset");
+	dt_Insttunesummary << Show Window(1);
 	dt_Basecurve << Close Window;
 	dt_Basecurvefinal << Set Name("Base Curve");
 	
-	BaseFinal = SDMAjsonPrepBase(dt_Basecurvefinal, dt_expiration);
+	BaseFinal = SDMAjsonPrepBase(dt_Basecurvefinal, dt_expiration, Eventnum);
 	FoilFinal = SDMAjsonPrepFoil(dt_Foil);
 	CWFinal = SDMAjsonPrepCW(dt_Crossweb);
 	
@@ -3356,7 +3405,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	
 );
 
-SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
+SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration, eventnum}, {default local},
 	//dt_Basecurvefinal = DataTable("Base Curve");
 	//dt_expiration = DataTable("Untitled 479");
 	
@@ -3413,7 +3462,7 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration}, {default local},
 	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
 	
 	//will need to make event more dynamic. idk if this is relevant to QSDMA or not... *insert shrug here*
-	dt_BaseCurvefinal << Set Name("Event100" || " BaseCurve " || Min_lot || "-" || Max_lot );
+	dt_BaseCurvefinal << Set Name(eventnum || " BaseCurve " || Min_lot || "-" || Max_lot );
 	
 	return(dt_Basecurvefinal);
 );
