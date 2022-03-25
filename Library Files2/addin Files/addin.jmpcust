@@ -8,7 +8,7 @@
 
 			<jm:command namesDefaultToHere="1">
 				<jm:name>com.idexx.assayDevLibraries2</jm:name>
-				<jm:caption>Libraries2 Revision r22.0</jm:caption>
+				<jm:caption>Libraries2 Revision r22.1</jm:caption>
 			</jm:command>
 
       </jm:menu>

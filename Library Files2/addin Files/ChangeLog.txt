@@ -6,6 +6,12 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  22.1.0 NClark 032522
+//      -> TablePreparation
+//	    3.9.0 NClark 032522
+//	    	-> Updated possCols() so Timeseries Pt is Timeseries pt
+//	    	-> Updated funct49() to change the name to Timeseries pt
+//	    	-> Updated wlStack() to address better handling of calculated chems and slight updates to how columns filled with new Catalyst Log Viewer
 //  22.0.0 NClark 032322
 //      -> TablePreparation
 //	    3.8.0 NClark 032322

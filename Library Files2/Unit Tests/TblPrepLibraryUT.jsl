@@ -59,6 +59,8 @@ wlStacking = ut test case("D_Wavelength Stack")
 		table4 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_NoCols.jmp",invisible);
 		table5 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_DiffNums.jmp",invisible);
 		table6 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\wl_Only2Pairs.jmp",invisible);
+		table7 = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\Base_wlStack_DxCatLogView_multWL_and error.jmp",invisible);
+		table7Expected = Open("D:\JSL Development\Official JMP Addin Working\Library Files2\Unit Tests\Files\tblPrep\CorrectRowSummary_wlStack_DxCatLogView_multWL_and error.jmp",invisible);
 	));
 
 uniqueIDs = ut test case("E_Unique Identifiers")
@@ -2932,7 +2934,7 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct48 Sli
 	)
 );
 
-ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct49 Timeseries Pt",
+ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct49 Timeseries pt",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
 		
@@ -2951,7 +2953,7 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct49 Tim
 			ut assert that(Expr(Column(localTable,1) << getname), ut equal to(possCols[i]));
 			
 			funct49(localTable,possCols[i]);
-			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Timeseries Pt"));
+			ut assert that(Expr(Column(localTable,1) << getname), ut equal to("Timeseries pt"));
 			
 		);
 	)
@@ -4532,7 +4534,7 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Slide Su
 	)
 );
 
-ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Timeseries Pt_callFunction49",
+ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Timeseries pt_callFunction49",
 	Expr(
 		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;		
 		possColList = {
@@ -4552,7 +4554,7 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Timeseri
 			Column(table2,1) << set name(possColList[i]);
 			ut assert that(Expr(Column(table2,1) << getname), ut equal to(possColList[i]));
 			updateColNames(table2);
-			ut assert that(Expr(Column(table2,1) << getname), ut equal to("Timeseries Pt"));			
+			ut assert that(Expr(Column(table2,1) << getname), ut equal to("Timeseries pt"));			
 		)
 				
 	)
@@ -5379,7 +5381,7 @@ ut test(wlStacking, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Stacking Col
 		table = wlStack(table1,rdCols,wlCols);
 		Summarize(table,a=By(:Wavelength));
 		
-		ut assert that(Expr(nrow(table)), ut equal to(2909));
+		ut assert that(Expr(nrow(table)), ut equal to(2899));
 		ut assert that(Expr(Column(table,9)<<get name), ut equal to("ReflDens_avg"));
 		ut assert that(Expr(Column(table,10)<<get name), ut equal to("Wavelength"));
 		ut assert that(Expr(Column(table,10)<<get modeling type), ut equal to("Ordinal"));
@@ -5396,11 +5398,42 @@ ut test(wlStacking, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Stacking Col
 		
 		table = wlStack(table6,rdCols,wlCols);
 		
-		ut assert that(Expr(nrow(table)), ut equal to(1614));
+		ut assert that(Expr(nrow(table)), ut equal to(1604));
 		ut assert that(Expr(Column(table,9)<<get name), ut equal to("ReflDens_avg"));
 		ut assert that(Expr(Column(table,10)<<get name), ut equal to("Wavelength"));
 	)
 );
+
+ut test(wlStacking, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_Stacking Cols_CDx CatLogViewer_calcChemsAnd Error",
+	Expr(
+		tpLibUT:utGroupTest = tpLibUT:utGroupTest + 1;
+		
+		/*This test surrounds a bug with some Catalyst Dx data parsed with the new Catalyst Log Viewer (KTS parser) where
+		the 2nd wavelength was 0 and not missing, Chem Type was not a present column yet, there were calculated chemistries,
+		and an 19th load error with no RD data at all, but a WL listed for the first WL. Test is based on proper row count per
+		chem(type and code) per run id for properly completed preparation*/
+			
+		rdCols = {"ReflDens_avg","ReflDens_avg_2"};
+		wlCols = {"Wavelength","Wavelength_2"};
+		
+		table = wlStack(table7,rdCols,wlCols);
+		tableSumm = table << Summary(
+			Group( :"IVLS Run ID"n, :"Assay"n ),
+			Freq( "None" ),
+			Weight( "None" )
+		);
+		//tableSumm << save("C:/users/nclark/desktop/D5test.jmp");
+		comp = tpLibUT:tableCompare(tableSumm,table7Expected);
+		
+		ut assert that(Expr(comp[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(comp[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(comp[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(comp[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(comp[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+	)
+);
+
+
 
 //Need add test for function(s) within tablePrepFunction
 
@@ -6410,6 +6443,7 @@ ut test(dateTimeTC, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_instMethod o
 ///Dilution / Dilution type rename for CatOne
 ///DIlution type match for CatDx?
 //
+
 
 
 /////////////////////////////////////////////////////////////

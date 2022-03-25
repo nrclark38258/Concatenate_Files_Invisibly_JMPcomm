@@ -6,6 +6,10 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	3.9.0 NClark 032522
+//		-> Updated possCols() so Timeseries Pt is Timeseries pt
+//		-> Updated funct49() to change the name to Timeseries pt
+//		-> Updated wlStack() to address better handling of calculated chems and slight updates to how columns filled with new Catalyst Log Viewer
 //	3.8.0 NClark 032322
 //		-> updated funct16() to address when spp column is numeric but is named Species Name
 //	3.7.11 NClark 030122
@@ -531,7 +535,7 @@ possColNames = Function({},{default local},
 			{"Sublot",{48,"Slide Sublot"}},
 
 			//Timeseries Pt
-			{"reads.index",{49,"Timeseries Pt"}}, //KTS Parser catone
+			{"reads.index",{49,"Timeseries pt"}}, //KTS Parser catone
 
 			//False Light
 			{"false_light",{50,"False Light"}}, //KTS Parser catone
@@ -1500,7 +1504,7 @@ funct48 = Function({dtName,colName},{dtName,colName},
 
 funct49 = Function({dtName,colName},{dtName,colName},
 
-	Column(dtName, colName) << Set Name("Timeseries Pt")
+	Column(dtName, colName) << Set Name("Timeseries pt")
 );
 
 funct50 = Function({dtName,colName},{dtName,colName},
@@ -1829,9 +1833,10 @@ wlStack = Function({dtName,rdList,wlList},{default local},
 	
 	dtStack << delete columns("Label","Label 2");
 	
-	dtStack << Select Where(IsMissing(:Wavelength) & :Chem Type != "ALB/GLOB" & :Chem Type != "BUN/CREA" & :Chem Type != "GLOB" & :Chem Type != "Na/K" & :Chem Type != "OSM CALC") << delete rows;
-	
+	//dtStack << Select Where(IsMissing(:Wavelength) & :Chem Type != "ALB/GLOB" & :Chem Type != "BUN/CREA" & :Chem Type != "GLOB" & :Chem Type != "Na/K" & :Chem Type != "OSM CALC") << delete rows;
+	dtStack << select duplicate rows() << delete rows;
 	dtStack << Select Where(:"ReflDens_avg"n == 0) << delete rows;
+	dtStack << Select Where(IsMissing(:"ReflDens_avg"n) & :"Wavelength"n == 0) << delete rows;
 
 	Return(dtStack);
 );
