@@ -6,6 +6,9 @@
 //Tool Calibrates for LYTES and QSDMA lots
 
 //------------------Revision History for both script and Help File--
+//	BETA7 1.0 SDarling 033022
+//		-> updated SDMAjsonPrepBase to turn lot into numeric at the end for JSON input.
+//		- updated sdmaAssStitching to create the final calc dose column in the panel data table.
 //	BETA6 1.0 SDarling 032322
 //		->updated lytesAssStitching to add cubic curve to create concentrations instead of using the original 3P fit.
 //		->updated sdmaAssStitching to include a variable for event number that comes from the panel table. all tables will have this in the 2nd slot. Error checking opportunity?
@@ -3154,13 +3157,26 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	Wait( 0 );
 	Column( dtSublot2mean, "Foil Gain" ) << Delete Formula;
 	
+	//add foil params to loop qual table and cal table
 	dt_Sublot_New << Update(
 		With( dtSublot2mean ),
 		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
 		Add Columns from Update Table( :Foil Offset, :Foil Gain )
 	);
 	
+	dt_Cal << Update(
+		With( dtSublot2mean ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Add Columns from Update Table( :Foil Offset, :Foil Gain )
+	);
+	
 	dt_Sublot_New << New Column( "Final Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
+
+	dt_Cal << New Column( "Final Calc Dose",
+		Numeric,
+		Continuous,
+		Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset + :Foil Offset )
+	);
 
 	dt_Foil = dtSublot2mean;
 	dt_Crossweb = paramsFinal;
@@ -3453,6 +3469,7 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration, eventnum}, {defau
 		)
 	);
 	
+	Column( dt_Basecurvefinal, "lot") << Set Data Type("Numeric") << Set Modeling Type("Nominal");
 	Column( dt_Basecurvefinal, "ID" ) << Delete Formula;
 	Column( dt_Basecurvefinal, "numWavelengths" ) << Delete Formula;
 	Column( dt_Basecurvefinal, "species" ) << Delete Formula;
