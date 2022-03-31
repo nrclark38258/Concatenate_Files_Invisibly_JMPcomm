@@ -8,12 +8,12 @@
 //------------------Revision History for both script and Help File--
 //	BETA7 1.0 SDarling 033022
 //		-> updated SDMAjsonPrepBase to turn lot into numeric at the end for JSON input.
-//		- updated sdmaAssStitching to create the final calc dose column in the panel data table.
+//		-> updated sdmaAssStitching to create the final calc dose column in the panel data table.
 //	BETA6 1.0 SDarling 032322
-//		->updated lytesAssStitching to add cubic curve to create concentrations instead of using the original 3P fit.
-//		->updated sdmaAssStitching to include a variable for event number that comes from the panel table. all tables will have this in the 2nd slot. Error checking opportunity?
-//		->updated SDMAjsonPrepBase to have event as an input.
-//		->left open the Patient Offset and Platform Offset tables for user viewing. Named these tables with Event # and Patient/Instrument Offset.
+//		-> updated lytesAssStitching to add cubic curve to create concentrations instead of using the original 3P fit.
+//		-> updated sdmaAssStitching to include a variable for event number that comes from the panel table. all tables will have this in the 2nd slot. Error checking opportunity?
+//		-> updated SDMAjsonPrepBase to have event as an input.
+//		-> left open the Patient Offset and Platform Offset tables for user viewing. Named these tables with Event # and Patient/Instrument Offset.
 //	BETA5 1.0 NClark 032222
 //		-> added seePrivateTables variable (boolean to trigger the showing of private tables)
 //		-> added unprivatizeTable() function which, when executed will show a private table of choice (assuming boolean is 1)
@@ -435,6 +435,7 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 	fitType = the fit form specific to the assay*/
 	
 	/*
+	dtCal = Current Data Table();
 	table = dtCal;
 	posCol = "Cross Web";
 	respCol = "AR";

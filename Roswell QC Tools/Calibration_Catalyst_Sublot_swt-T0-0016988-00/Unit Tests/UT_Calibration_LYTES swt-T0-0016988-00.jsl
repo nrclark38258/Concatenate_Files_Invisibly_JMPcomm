@@ -84,25 +84,27 @@ quickFunctionsTC = ut test case("B_Easy Function Tests")
 jsonObjTC = ut test case("C_Creating JSON Object")
 	<<Setup(Expr(
 		Include(lytesCalUT:toolPath);
-		filePath = "D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\";
-		table1 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_MainCurves.jmp",invisible);
-		table2 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_crosswebs.jmp",invisible);
-		table3 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_foils.jmp",invisible);
-		table4 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_MainCurves_addRemoveCols.jmp",invisible);
-		table5 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_crosswebs_addRemoveCols.jmp",invisible);
-		table6 = Open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\basicTest_foils_addRemoveCols.jmp",invisible);
+		filePath = lytesCalUT:filePath;
+		table1 = Open(lytesCalUT:filePath||"basicTest_MainCurves.jmp",invisible);
+		table2 = Open(lytesCalUT:filePath||"basicTest_crosswebs.jmp",invisible);
+		table3 = Open(lytesCalUT:filePath||"basicTest_foils.jmp",invisible);
+		table4 = Open(lytesCalUT:filePath||"basicTest_MainCurves_addRemoveCols.jmp",invisible);
+		table5 = Open(lytesCalUT:filePath||"basicTest_crosswebs_addRemoveCols.jmp",invisible);
+		table6 = Open(lytesCalUT:filePath||"basicTest_foils_addRemoveCols.jmp",invisible);
 	));
 
 calfitTC = ut test case("D_calFitfunc")
 	<< setup(expr(
 		include(lytesCalUT:toolPath);
-		tablename = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_input_NA_Master.jmp",invisible)
+		tablename = open(lytesCalUT:filePath||"calFitfunc_input_NA_Master.jmp",invisible);
+		sdma_table = open(lytesCalUT:filePath||"calFitfunc_input_SDMA_Panel.jmp", invisible);
+		sdma_linear_table = open(lytesCalUT:filePath||"calFitfunc_input_SDMA_Linear_Normal.jmp", invisible);
 	));
 
 sublotcharTC = ut test case("E_subLotcharFunc")
 	<< setup(expr(
 		include(lytesCalUT:toolPath);
-		tablename = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\Subset of NA Master Sub Lot Table Concept_100321.jmp",invisible);
+		tablename = open(lytesCalUT:filePath||"Subset of NA Master Sub Lot Table Concept_100321.jmp",invisible);
 	));
 
 /////////////////////////////////////////////////////////////
@@ -342,15 +344,15 @@ ut test(jsonObjTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_full JS
 lytesCalUT:utGroup = "D";
 lytesCalUT:utGroupTest = 0;
 
-ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output 3P Table Compare",
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_NA_3P_Master",
 	expr(
 	
 		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
 		
 		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_3P_Fit_Pre.jmp", lytesCalUT:saveFile);
 		
-		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_3P_NA.jmp",invisible);
-		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "3P", "Master");
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_3P_NA.jmp",invisible);
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master");
 		
 		expected_table_cols = expected_table << get column names(string);
 		actual_table_cols = actual_table << get column names(string);
@@ -376,15 +378,15 @@ ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output 3
 	)
 );
 
-ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Rodbard Table Compare",
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_NA_Rodbard_Master",
 	expr(
 	
 		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
 		
 		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Rodbard_Fit_Pre.jmp", lytesCalUT:saveFile);
 		
-		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Rodbard_NA.jmp");
-		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Rodbard", "Master");
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_Rodbard_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "Rodbard", "Master");
 		
 		expected_table_cols = expected_table << get column names(string);
 		actual_table_cols = actual_table << get column names(string);
@@ -410,15 +412,15 @@ ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output R
 	)
 );
 
-ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Quad Table Compare",
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_NA_Quad_Master",
 	expr(
 	
 		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
 		
 		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Quad_Fit_Pre.jmp", lytesCalUT:saveFile);
 		
-		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Quad_NA.jmp");
-		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Quad", "Master");
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_Quad_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "Quad", "Master");
 		
 		expected_table_cols = expected_table << get column names(string);
 		actual_table_cols = actual_table << get column names(string);
@@ -444,15 +446,15 @@ ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Q
 	)
 );
 
-ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Linear Table Compare",
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_NA_Linear_Master",
 	expr(
 	
 		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
 		
 		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Linear_Fit_Pre.jmp", lytesCalUT:saveFile);
 		
-		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Linear_NA.jmp");
-		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Linear", "Master");
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_Linear_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "Linear", "Master");
 		
 		expected_table_cols = expected_table << get column names(string);
 		actual_table_cols = actual_table << get column names(string);
@@ -478,15 +480,15 @@ ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output L
 	)
 );
 
-ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output Cubic Table Compare",
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_NA_Cubic_Master",
 	expr(
 	
 		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
 		
 		lytesCalUT:saveTable(tablename, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Cubic_Fit_Pre.jmp", lytesCalUT:saveFile);
 		
-		expected_table = open("D:\JSL Development\Official JMP Addin Working\UnitTesting\Calibration_LYTES swt-T0-0016988-00_UT\Files\calFitfunc_output_Cubic_NA.jmp");
-		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Chem Type", "Cubic", "Master");
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_Cubic_NA.jmp");
+		actual_table = calFitfunc(tablename, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "Cubic", "Master");
 		
 		expected_table_cols = expected_table << get column names(string);
 		actual_table_cols = actual_table << get column names(string);
@@ -511,6 +513,80 @@ ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Output C
 	
 	)
 );
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMA_3P_Master",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(sdma_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMA_3P_Input.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_3P_SDMA.jmp");
+		lytesCalUT:saveTable(expected_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMA_3P_Expected.jmp", lytesCalUT:saveFile);
+		actual_table = calFitfunc(sdma_table, "Cross Web", "Script AR", "Script Dose Val", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(actual_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"calFitfunc_3P_SDMA_post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+ut test(calfitTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMA_Linear_Normal",
+	expr(
+	
+		lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+		
+		lytesCalUT:saveTable(sdma_linear_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMA_3P_Pre.jmp", lytesCalUT:saveFile);
+		
+		expected_table = open(lytesCalUT:filePath||"calFitfunc_output_Linear_Normal_SDMA.jmp");
+		lytesCalUT:saveTable(expected_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMA_Linear_Expected.jmp", lytesCalUT:saveFile);
+
+		actual_table = calFitfunc(sdma_linear_table, "Cross Web", "Target Dose", "Master Curve", "Slide Lot", "Chem Type", "Inst Type", "Linear", "Normal");
+		
+		expected_table_cols = expected_table << get column names(string);
+		actual_table_cols = actual_table << get column names(string);
+
+		compare_tables = lytesCalUT:tableCompare(actual_table, expected_table);
+
+		/*ut assert that(Expr(compare_tables[1]["Data"][textbox(1)] << get text), ut equal to("There is no difference in data"));
+		ut assert that(Expr(compare_tables[1]["Column Attributes and Properties"][textbox(1)] << get text), ut equal to("There is no difference in columns' attributes or properties."));
+		ut assert that(Expr(compare_tables[1]["Tables Info"][2][TextBox(1)] << get text), ut equal to(""));// usually "" but some major differences may make this have a value
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(4)] << child), ut empty());// not empty if unmatched cols present
+		ut assert that(Expr(compare_tables[1]["Tables Info"][ListBox(5)] << child), ut empty());// empty unless some levels of difference found
+		ut assert that(Expr(expected_table_cols), ut equal to(actual_table_cols));*/
+		
+		//the below may work better than the above through diff JMP versions
+		ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+		ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+		ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+		
+		lytesCalUT:saveTable(actual_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"calFitfunc_Linear_SDMA_post.jmp", lytesCalUT:saveFile);
+	
+	)
+);
+
+
+
 
 /////////////////////////////////////////////////////////////
 //                                                         //
