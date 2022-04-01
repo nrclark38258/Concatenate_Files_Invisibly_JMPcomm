@@ -7,6 +7,7 @@
 
 //------------------Revision History for both script and Help File--
 //	BETA7 1.0 SDarling 033022
+//		-> updated buildJSONarray to include a process variable to distingush the master json from SDMA and Lytes.
 //		-> updated SDMAjsonPrepBase to turn lot into numeric at the end for JSON input.
 //		-> updated sdmaAssStitching to create the final calc dose column in the panel data table.
 //	BETA6 1.0 SDarling 032322
@@ -841,7 +842,7 @@ linearFitadder = Function( {table, respCol, posCol, fluidCol, slideLotvar, chemT
 
 
 //nate included, will cover UTs for function
-buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePath},
+buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePath, processvar},
 	{default local}, 
 	///function should probably check to ensure first three are data tables and last is an associative array
 	// ... not a must have, but would be good practice
@@ -917,7 +918,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	allJSONfiles = Files In Directory( jsonPath );
 	If( N Items( allJSONfiles ) == 0,
 		jsonFiles = {},
-		masterLocale = Contains( allJSONfiles, "master_" || buildNum || ".json" );
+		masterLocale = Contains( allJSONfiles, processvar || "_master_" || buildNum || ".json" );
 		jsonFiles = Remove( allJSONfiles, masterLocale );
 	);
 		
@@ -1053,7 +1054,7 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	jsonExpr = As JSON Expr( finalChemArray );
 	
 	//save final chem array as new master
-	Save Text File( jsonPath || "master_" || buildNum || ".json", jsonExpr );
+	Save Text File( jsonPath || processvar ||"_master_" || buildNum || ".json", jsonExpr );
 	
 	//later release will close these as their information is in the other tables and JSON
 	//Close(mainDT,nosave);
@@ -2332,7 +2333,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	jsonPrepFoil(foilMasterall);
 	//
 		
-	buildJSONarray(dtCaloutlast, cwSplit2, foilMasterall, jsonloc);
+	buildJSONarray(dtCaloutlast, cwSplit2, foilMasterall, jsonloc, "Lytes");
 		//JSON building won't close any of these tables - currently
 	//return the necessary tables
 	Return(dtCalfinal, dtSubop);
@@ -3415,7 +3416,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	close(dtSublot2mean, nosave);
 	
 	//currently does not close the base/foil/cw tables.
-	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc);
+	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc, "SDMA4");
 	
 	//Return the analysis tables.
 	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
