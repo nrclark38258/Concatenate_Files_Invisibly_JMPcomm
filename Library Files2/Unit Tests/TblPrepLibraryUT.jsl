@@ -1584,7 +1584,7 @@ ut test(nameChanges, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_funct22 AR"
 			"Result :4",
 			"RSLT_RESULTS_ANALYZER_RESPONSE",
 			"TYP4_RESULT",
-			"results.analyte_response"
+			"results.analyzer_response"
 		};
 		
 		localTable = New Table("funct22Test",
@@ -3991,7 +3991,7 @@ ut test(updateColNames, tpLibUT:utGroup||Char(tpLibUT:utGroupTest+1)||"_AR_callF
 			"Result :4",
 			"RSLT_RESULTS_ANALYZER_RESPONSE",
 			"TYP4_RESULT",
-			"results.analyte_response"
+			"results.analyzer_response"
 		};
 		
 		localTable = New Table("updateCol_funct22Test",

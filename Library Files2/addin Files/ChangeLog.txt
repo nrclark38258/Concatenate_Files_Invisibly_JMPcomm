@@ -6,6 +6,12 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  22.2.0 NClark 040522
+//      -> TablePreparation
+//	    4.0.0 NClark 040522
+//	    	-> Fixed typo for results.analyzer_response (was analyte)
+//      -> Overall
+//      Added offlineAlgorithm folder with .dll support .jsl (currently v1.2)
 //  22.1.0 NClark 032522
 //      -> TablePreparation
 //	    3.9.0 NClark 032522

@@ -6,6 +6,8 @@
 Names Default To Here( 1 );
 //------------------Revision History for script---------------------
 //
+//	4.0.0 NClark 040522
+//		-> Fixed typo for results.analyzer_response (was analyte)
 //	3.9.0 NClark 032522
 //		-> Updated possCols() so Timeseries Pt is Timeseries pt
 //		-> Updated funct49() to change the name to Timeseries pt
@@ -348,7 +350,7 @@ possColNames = Function({},{default local},
 			{"Result :4",{22,"AR"}},
 			{"RSLT_RESULTS_ANALYZER_RESPONSE",{22,"AR"}},
 			{"TYP4_RESULT",{22,"AR"}},
-			{"results.analyte_response",{22,"AR"}},
+			{"results.analyzer_response",{22,"AR"}},
 
 			//(IVLS Run ID)
 			{"IVLS_RUN_ID",{23,"IVLS Run ID"}},
