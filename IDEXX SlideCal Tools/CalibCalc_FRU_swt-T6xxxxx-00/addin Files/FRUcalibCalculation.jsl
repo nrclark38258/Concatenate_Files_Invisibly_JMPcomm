@@ -1,0 +1,785 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+//Tool calibrates the FRU assay mimicing the cal wizard and adding the IPOC adjustments
+
+//------------------Revision History for both script and Help File--
+//
+//	BETA1 1.0 NClark 040622
+//
+//------------------------------------------------------------------
+
+Names Default to here(1);
+
+//-----------Variable Declarations (above Main for easy access)--
+
+	If(HostIs("MAC"),
+		u = Get Environment Variable("USER");
+		,
+		u = Get Environment Variable("USERNAME");
+	);
+	addinID = "com.idexx.IDEXXSlideCalTools_FRU";
+	betaLimitwk = 4;
+	minJMPver = "16.1";
+	
+	slopeCorr = 1.14;
+	intCorr = -70;
+	
+	seePrivateTables = 0;
+	/*example use
+		createdTable = unprivatizeTable(seePrivateTables, createdTable);
+	*/
+
+//-----------/Variable Declarations-----------------------
+
+path = ConvertFilePath("");
+include(ConvertFilePath(path||"Utilities\utilities.jsl"));
+
+////////////////////////////////////////
+//                                    //
+//            Functions               //
+//                                    //
+////////////////////////////////////////
+
+	/////////////////////////////////////////
+	//       Support functions             //
+	/////////////////////////////////////////
+	
+betaTestCheck = Function({betaTimeWk,state = "",buildDate=0},{default local},
+	//state and buildDate parameters only used for testing purposes
+	If(state != "" & buildDate != 0, //assumes beta inacted and builddate number will be used
+		If(IsMissing(Num(buildDate)),Today(),Num(buildDate));//defaults to build date of today if improper builddate used
+		if(
+			Today() > (buildDate + InWeeks(betaTimeWk)), passBeta = 0, passBeta = 1
+		);
+		expDate = buildDate + InWeeks(betaTimeWk);
+		,
+		//Will pass if Beta in date OR if addin not in Beta (TEST) phases
+		path = ConvertFilePath(GetDefaultDirectory());
+		//customMetadata_aa = Include( "D:\JSL Development\Official JMP Addin Working\Loop Qual swt-xxx-yyy\customMetadata.jsl" );
+		customMetadata_aa = Include( path||"customMetadata.jsl" );
+		state = customMetadata_aa["state"];
+		buildDate = customMetadata_aa["buildDate"];
+		If(
+			state == "TEST",
+			if(
+				Today() > (buildDate + InWeeks(betaTimeWk)), passBeta = 0, passBeta = 1
+			);
+			expDate = buildDate + InWeeks(betaTimeWk);
+			,
+			passBeta = 1;
+			expDate = buildDate + InWeeks(betaTimeWk);
+		);
+	);
+	Return(passBeta,expDate)
+);
+
+betaFailWindow = Function({expirationDate},{default local},
+	longDate = MDYHMS(expirationDate);
+	New Window( "Beta Version Expired",
+		<< Modal,
+		Text Box( "Beta expired on "||longDate, 
+			<< Set Font Style( "bold" ), 
+			<< Set Font Size( 12 ) 
+		),
+		Text Box( "Please contact author for new release", 
+			<< Set Font Size( 12 ) 
+		),
+		Text Box( "" ), 
+		Button Box( "OK" ),
+	);
+);
+	
+checkVersion = Function( {minVer},
+	{default local},
+	currVer = JMP Version();
+	currWords = words(currVer,".");
+	minWords = words(minVer,".");
+	minBackHalf = If(nitems(minWords)==1,"0",concatitems(minWords[2::nitems(minWords)],""));
+	backHalf = If(nitems(currWords)==1,"0",concatitems(currWords[2::nitems(currWords)],""));
+	newNumVer = Num(currWords[1]||"."||backHalf);
+	newMinVer = Num(minWords[1]||"."||minBackHalf);
+	
+	If(newNumVer >= newMinVer, Return(1),Return(0));
+);
+
+wrongVer = Function( {maxVer},
+	{Default Local},
+	New Window( "Requires JMP " || Char( maxVer ),
+		<<Modal,
+		Text Box( "This addin requires the used of JMP " || Char( maxVer ) || "+" ),
+		Button Box( "OK" )
+	)
+);
+
+unprivatizeTable = Function({bool,tableName},{default local},
+	If(bool == 1,
+		tableName << New Data View;
+		Return(tableName)
+		,
+		Return(tableName)
+	)
+);
+
+	/////////////////////////////////////////
+	//       Main functions                //
+	/////////////////////////////////////////
+	
+fruCalInputDialog = Function({},{default local},
+	nw = New Window("Operator inputs",
+		//show Menu(0),
+		//show toolbars(0),
+		<< modal,
+		<< on validate(
+			/*
+			Because the edit boxes can't be edited, and the windows button controls what
+			can be selected, the only thing to be validated is that the variables are not
+			empty, which would be ""
+			*/
+			
+			fruRawdataPath << get text != "" &
+			savDataPath << get text != "" 
+			
+		),
+		<< return result,
+		V List Box(
+		//TextBox("", << set font size(10)),
+			PanelBox("",
+				TextBox("Enter or navigate to each location and click 'Ok' to continue", << set wrap(800), << set font style("Bold"), << set font size(10)),
+				TextBox("", << set font size(5)),
+				HListBox(
+					TextBox("Navigate to the ", << set font size(10)),
+					TextBox("Raw calibration data ", << set font style("Bold"), << set font size(10)),
+					TextBox(".jmp file", << set font size(10))
+				),
+				H List Box(
+					bb1 = BorderBox(Sides(15),<< Set Background Color("Gray"),
+						H List Box(
+							fruRawTB1 = TextBox("",
+								<< set width(260)
+							),
+							fruRawdataPath = TextEditBox(
+								<< set width(0),
+								<< hide
+							)
+						)
+					),
+					TextBox("  "),
+					buttonbox("",
+						<< Set Icon( "WinFileOpen" ),
+						<< set script(
+							file = Pick File(
+								"Navigate to the Catalyst DX data from calibration",
+								,
+								{"All files|jmp"},
+								1,
+								0,
+								,
+								//Multiple
+							);
+							fruRawTB1 << set text(Char(file));
+							fruRawdataPath << set text(Char(file));
+							bb1 << set background color("Light Gray");
+						);
+					);
+				);,
+				TextBox("", << set font size(5)),
+				HListBox(
+					TextBox("Navigate to the ", << set font size(10)),
+					TextBox("SAV data ", << set font style("Bold"), << set font size(10)),
+					TextBox(".jmp file", << set font size(10))
+				),
+				H List Box(
+					bb2 = BorderBox(Sides(15),<< Set Background Color("Gray"),
+						H List Box(
+							savDataTB2 = TextBox("",
+								<< set width(260)
+							),
+							savDataPath = TextEditBox(
+								<< set width(0),
+								<< hide
+							)
+						)
+					),
+					TextBox("  "),
+					buttonbox("",
+						<< Set Icon( "WinFileOpen" ),
+						<< set script(
+							file = Pick File(
+								"Navigate to the Catalyst One data from calibration",
+								,
+								{"All files|jmp"},
+								1,
+								0,
+								,
+								//Multiple
+							);
+							savDataTB2 << set text(Char(file));
+							savDataPath << set text(Char(file));
+							bb2 << set background color("Light Gray")
+						);
+					);
+				)
+				,
+				TextBox("", << set font size(5)),
+				H List Box(
+					ButtonBox("Ok"),
+					ButtonBox("Cancel")
+				)
+			)
+		)
+	);
+
+	If(nw["Button"] == -1, Return(0), Return(nw));
+);
+
+dataCount = Function({dataTable},{default local},
+	/*
+	dataTable = okData;
+	*/	
+	dtSumm = dataTable << Summary(
+		Group( :"BUILDID"n, :"CHEMABBR"n, :"CHEMCODE"n, :"CURVENUMBER"n, :"SPECIES"n, :"SPECFLUIDID"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		//private
+	);
+	//dtSumm = unprivatizeTable(seePrivateTables, dtSumm);
+	
+	counts = dtSumm:"N Rows"n << get as matrix;
+	Close(dtSumm,nosave);
+	
+	If(min(counts) < 30, Return(0), Return(1));
+	
+);
+
+dataCountDialog = Function( {}, {Default Local},
+	New Window( "Not Enough Data",
+		<<Modal,
+		Text Box( "Raw Data has Lots/Species/Fluid with " ),
+		Text Box( "less than 30 Reps" ),
+		Button Box( "OK" )
+	)
+);
+
+curvePointInterp = Function({tableName,crvPtCalc,crvPtMtrx,yCol,xCol,curvePtCol,curveNumCol,fit,final = 0},{default local},
+	/*
+	tableName = currentdatatable();
+	curvePtCol = "CurvePtNum";
+	crvPtMtrx = [1,2,3,4,5];
+	fit = "Cubic";
+	curveNumCol = "CURVEID";
+	yCol = "Final AR";
+	xCol = "SAV";
+	crvPtCalc = 6; // this is the point we are interpolating for
+	*/
+	tableName << Select Where(AsColumn(curvePtCol) != crvPtMtrx[1]);
+	For(i=2,i<=nrow(crvPtMtrx),i++,
+		tableName << Select Where(AsColumn(curvePtCol) != crvPtMtrx[i], current selection("restrict"));
+	);
+	tableName << exclude(1);
+	
+	parseYcol = Parse(EvalInsert(":\!"^ycol^\!"n"));
+	parseXcol = Parse(EvalInsert(":\!"^xcol^\!"n"));
+	parseCrvCol = Parse(EvalInsert(":\!"^curveNumCol^\!"n"));
+	Summarize(tableName,curveCount = By(parseCrvCol));
+	//need to add for JMP15 as only one lot crashed program when 'Group' done JMP17 fixes, unsure about JMP16
+	fitCurve = If(nitems(curveCount) > 1,
+		Match(Uppercase(fit),
+			"LINEAR",
+				tableName << Fit Curve( Y( parseYcol ), X(parseXcol ), Group( parseCrvCol ), Fit Linear({Save Prediction Formula()}), invisible );
+			,
+			"QUADRATIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Group( parseCrvCol ), Fit Quadratic({Save Prediction Formula()}), invisible );
+			,
+			"CUBIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Group( parseCrvCol ), Fit Cubic({Save Prediction Formula()}), invisible );
+		);
+		,
+		nitems(curveCount) == 1,
+		Match(Uppercase(fit),
+			"LINEAR",
+				tableName << Fit Curve( Y( parseYcol ), X(parseXcol ), Fit Linear({Save Prediction Formula()}), invisible );
+			,
+			"QUADRATIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Fit Quadratic({Save Prediction Formula()}), invisible );
+			,
+			"CUBIC",
+				tableName << Fit Curve( Y(parseYcol ), X( parseXcol ), Fit Cubic({Save Prediction Formula()}), invisible );
+		)
+	);
+	Match(final,
+		0,
+			fitCurve << close window;
+			ptNames = char(crvPtMtrx);
+			substituteinto(ptNames,"[","");
+			substituteinto(ptNames,"]","");
+			substituteinto(ptNames," ","");
+			fitShort = Match(Uppercase(fit),
+				"LINEAR", "lin"
+				,
+				"QUADRATIC", "quad"
+				,
+				"CUBIC", "cub"
+			);
+			
+			lastCol = Column(tableName,ncol(tableName)) << set name("CP"||char(crvPtCalc)||"_CP"||ptNames||"("||fitShort||")");
+			
+			For Each Row(tableName,If(AsColumn(curvePtCol) == crvPtCalc, AsColumn(yCol) = AsColumn(lastCol << get name)));
+			tableName << clear row states;
+			Return(1)
+		,
+		1,
+			coeffTable = Report( fitCurve )["Parameter Estimates"][Table Box( 1 )] << Make Combined Data Table(invisible);
+			fitCurve << close window;
+			For(i=ncol(coeffTable),i>=1,i--,
+				name = Column(coeffTable,i) << get name;
+				If(name == "Parameter" | name == "Group" | name == "Estimate",
+					Empty()
+					,
+					coeffTable << delete columns(name)
+				)
+			);
+			If(nitems(curveCount) > 1,
+				finalCoeffs = coeffTable << Split(
+					Split By( :"Parameter"n ),
+					Split( :"Estimate"n ),
+					Group( :"Group"n ),
+					Sort by Column Property,
+					private
+				);
+				finalCoeffs = unprivatizeTable(seePrivateTables, finalCoeffs);
+				coeffTable << close window;
+				,
+				finalCoeffs = coeffTable << Split(
+					Split By( :"Parameter"n ),
+					Split( :"Estimate"n ),
+					Sort by Column Property,
+					private
+				);
+				finalCoeffs = unprivatizeTable(seePrivateTables, finalCoeffs);
+				coeffTable << close window;
+				finalCoeffs << New Column("Group",Numeric,<< set each value(num(curveCount[1])));
+			);
+			
+			Column(tableName,ncol(tableName)) << set name("Final Curve");
+			tableName << clear row states;
+			Return(finalCoeffs)
+	);
+	
+);
+
+savJoin = Function({datatable, savPath}, {default local},
+	/*
+	datatable = okData;
+	savData = currentdatatable();
+	*/
+	savData = Open(savPath);
+	
+	savData << selectwhere(:"CHEMCODE"n != 16) << delete rows();
+	
+	datatable << Update(
+		With( savData ),
+		Match Columns( :"SPECFLUIDID"n = :"SPECFLUIDID"n ),
+		Add Columns from Update Table( :"SAV"n )
+	);
+	
+	Close(savData, nosave);
+	
+	Return(datatable);
+	
+);
+
+addPoints = Function({datatable,speciesName}, {default local},
+	/*
+	datatable = calDataAll;
+	speciesName = "all";s
+	*/
+	datatable:"CURVEID"n << Lock( 0 );
+	datatable:"SAV"n << Lock( 0 );
+	Summarize(datatable,curveCount = By(:"CURVEID"));
+	For(i=1,i<=nitems(curveCount),i++,
+		Match(Uppercase(speciesName),
+			"ALL",
+			For(j=5,j<12,j++,
+				conc = Match(j,
+					5,100
+					,
+					6,625
+					,
+					7,250
+					,
+					8,300
+					,
+					9,600
+					,
+					10,700
+					,
+					11,400
+					,
+					12,500
+				);
+				datatable << Add Rows({:"CURVEID"n = curveCount[i], :"CurvePtNum"n = j, :"SAV"n = conc})
+			);
+			For Each Row(datatable, If(:"SAV"n == 100, :"Final AR"n =0.000204 ));
+			,
+			"FELINE",
+			For(j=5,j<12,j++,
+				conc = Match(j,
+					5,100
+					,
+					6,650
+					,
+					7,350
+					,
+					8,400
+					,
+					9,450
+					,
+					10,500
+					,
+					11,700
+					,
+					12,900
+				);
+				datatable << Add Rows({:"CURVEID"n = curveCount[i], :"CurvePtNum"n = j, :"SAV"n = conc})
+			);
+			For Each Row(datatable, If(:"SAV"n == 100, :"Final AR"n =0.0002 ));
+		);
+	); 
+	
+);
+  
+calDataPrep = Function({rawPath, savPath},{default local},
+	/*
+ 	rawPath = rawCalDataPath;
+ 	savPath = savDataPath;
+ 	*/
+	
+	dt = Open(rawPath,private);
+	dt = unprivatizeTable(seePrivateTables, dt);
+	
+	okData = dt << select where(:"BRCNAME"n == "OK") << Subset(
+		Selected Rows( 1 ),
+		Selected columns only( 0 ),
+		private
+	);
+	okData = unprivatizeTable(seePrivateTables, okData);
+	
+	If( dataCount(okData) == 0,
+		Close(dt,nosave);
+		Close(okData,nosave);
+		dataCountDialog();
+		Return(0)
+	);
+	
+	okData = savJoin(okData,savPath);
+	
+	temp = okData << New Column("CURVEID",
+		Formula(
+			:"BUILDID"n ||"_"|| :"CHEMABBR"n ||"_"|| Char(:"CHEMCODE"n) ||"_"|| Char(:"CURVENUMBER"n)
+		)
+	);
+	temp << delete formula;
+	
+	calData1 = okData << Summary(
+		Group( :"CURVEID"n, :"SPECFLUIDID"n, :"SPECIES"n, :"SAV"n ),
+		Mean( :"AR"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		private
+	);
+	calData1 = unprivatizeTable(seePrivateTables, calData1);
+	
+	temp = calData1 << New Column("CurvePtNum",
+		Formula(
+			If( Length( Char( :"SPECFLUIDID"n ) ) < 5,
+				4
+				,
+				Num( Right( Char( :"SPECFLUIDID"n ), 1 ) )
+			)
+		)
+	);
+	temp << delete formula;
+	
+	temp = calData1 << New Column("Final AR",
+		Formula(
+			:"Mean(AR)"n
+		)
+	);
+	temp << delete formula;
+	
+	calDataAll = calData1 << Select Where( :"SPECIES"n == "All" ) << Subset(
+		Selected Rows( 1 ),
+		Selected columns only( 0 ),
+		private
+	);
+	calDataAll = unprivatizeTable(seePrivateTables, calDataAll);
+	
+	calDataFeline = calData1 << Select Where( :"SPECIES"n == "Feline" ) << Subset(
+		Selected Rows( 1 ),
+		Selected columns only( 0 ),
+		private
+	);
+	calDataFeline = unprivatizeTable(seePrivateTables, calDataFeline);
+	
+	addPoints(calDataAll,"All");
+	addPoints(calDataFeline,"Feline");
+	
+	Close(dt, nosave);
+	Close(calData1, nosave);
+	
+	Return(okData, calDataAll, calDataFeline);
+	
+);
+
+calWizardCal = Function({datatable,speciesName}, {default local},
+	/*
+	datatable = calStartTbls[2];
+	speciesName = "All";
+	datatable = calDataFeline;
+	speciesName = "feline";
+	*/
+	Match(Uppercase(speciesName),
+		"ALL",
+		curvePointInterp(datatable,6,[1,2,3,4,5],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,7,[2,3,5],"Final AR","SAV","CurvePtNum","CURVEID","quadratic");
+		curvePointInterp(datatable,8,[1,3,5,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,9,[1,3,5,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,10,[1,3,5,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,11,[6,9,10],"Final AR","SAV","CurvePtNum","CURVEID","linear");
+		curvePointInterp(datatable,12,[6,9,10],"Final AR","SAV","CurvePtNum","CURVEID","linear");
+
+		wizardCoeffs = curvePointInterp(datatable,.,[1,3,5,6,7,8,9,10,11,12],"Final AR","SAV","CurvePtNum","CURVEID","cubic",1);
+		wizardCoeffs << New Column("Species",Character, << set each value("All"));
+		,
+		"FELINE",
+		curvePointInterp(datatable,6,[1,3,4],"Final AR","SAV","CurvePtNum","CURVEID","quadratic");
+		curvePointInterp(datatable,7,[1,3,4,6],"Final AR","SAV","CurvePtNum","CURVEID","quadratic");
+		curvePointInterp(datatable,8,[1,2,3,4,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,9,[1,2,3,4,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,10,[1,2,3,4,6,7],"Final AR","SAV","CurvePtNum","CURVEID","cubic");
+		curvePointInterp(datatable,11,[4,7,8,9,10],"Final AR","SAV","CurvePtNum","CURVEID","linear");
+		curvePointInterp(datatable,12,[4,6,9,10,11],"Final AR","SAV","CurvePtNum","CURVEID","linear");
+
+		wizardCoeffs = curvePointInterp(datatable,.,[4,5,6,7,8,9,10,12],"Final AR","SAV","CurvePtNum","CURVEID","cubic",1);
+		wizardCoeffs << New Column("Species",Character, << set each value("Feline"));
+	);
+	
+	Return(datatable, wizardCoeffs);
+	
+);
+
+cartesianJoin = Function({allCoeffs, felineCoeffs}, {default local},
+	/*
+	allCoeffs = DataTable("Untitled 151");
+	felineCoeffs = DataTable("Untitled 153");
+	*/
+	doseTable = New Table( "Dose Values",
+		Add Rows( 1500 ),
+		New Column( "Dose Vals",
+			Numeric,
+			"Continuous",
+			Format( "Best", 12 ),
+			Set Values(
+				1::1500
+			)
+		),
+		private
+	);
+	doseTable = unprivatizeTable(seePrivateTables, doseTable);
+	cjAll = allCoeffs << Join(
+		With( doseTable ),
+		Cartesian Join,
+		Output Table( "All" ),
+		private
+	);
+	cjFe = felineCoeffs << Join(
+		With( doseTable ),
+		Cartesian Join,
+		Output Table( "All" ),
+		private
+	);
+	cjAll = unprivatizeTable(seePrivateTables, cjAll);
+	cjFe = unprivatizeTable(seePrivateTables, cjFe);
+	
+	finalJoin = cjAll << concatenate(cjFe);
+	
+	Close(doseTable,nosave);
+	Close(cjAll,nosave);
+	Close(cjFe,nosave);
+	Close(allCoeffs,nosave);
+	Close(felineCoeffs,nosave);
+	
+	Return(finalJoin);
+	
+);
+ 
+curveAdjustment = Function({calWizardCurves}, {default local},
+	/*
+	calWizardCurves = joinedCoeffs;
+	*/
+ 
+ 	calWizardCurves << New Column( "AR Vals", Numeric, Continuous, Set Formula( :"Intercept"n + :"Slope"n * :"Dose Vals"n + :"Quadratic"n * :"Dose Vals"n ^ 2 + :"Cubic"n * :"Dose Vals"n ^ 3 ) );
+
+	calWizardCurves << New Column( "Dose Vals IPOC", Numeric, Continuous, SetFormula( (:"Dose Vals"n - intCorr) / slopeCorr ) );
+
+	fit = calWizardCurves << Bivariate(
+		Y( :"AR Vals"n ),
+		X( :"Dose Vals IPOC"n ),
+		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {212, 73, 88} )} ),
+		By( /*:"BUILDID"n, :"CHEMCODE"n,:"CHEMABBR"n,*/ :"Group"n,:"Species"n) 
+	);
+
+	dtFit = Report( fit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+	Report( fit[1] ) << Close Window;
+
+	dtFinal = dtFit << Split(
+		Split By( :"Term"n ),
+		Split( :"Estimate"n ),
+		Group( :"Species"n, :"Group"n /*, :"CHEMCODE"n, :"CHEMABBR"n, :"BUILDID"n*/ ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property
+	);
+
+	dtFit << Close Window;
+	
+	//rename and organize columns
+	dtFinal:"Species"n << set name("Species Id");
+	dtFinal:"Dose Vals IPOC"n << set name("Slope");
+	dtFinal:"Dose Vals IPOC^2"n << set name("Coeff 2");
+	dtFinal:"Dose Vals IPOC^3"n << set name("Coeff 3");
+	
+	temp1 = dtFinal << New Column("Curve Num",Nominal,
+		Formula(
+			Num(Word(4,:"Group"n,"_"))
+		)
+	);
+	temp2 = dtFinal << New Column("Curves Version",
+		Formula(
+			Word(1,:"Group"n,"_")
+		)
+	);
+	temp3 = dtFinal << New Column("Chem",
+		Formula(
+			Word(2,:"Group"n,"_")
+		)
+	);
+	temp4 = dtFinal << New Column("Assay Number", Nominal,
+		Formula(
+			Num(Word(3,:"Group"n,"_"))
+		)
+	);
+	temp1 << delete formula;
+	temp2 << delete formula;
+	temp3 << delete formula;
+	temp4 << delete formula;
+	
+	
+	dtFinal << Recode Column(
+		dtFinal:"Species Id"n,
+		{Map Value( _rcOrig, {"All", "999", "Feline", "2"}, Unmatched( _rcNow ) )},
+		Update Properties( 1 ),
+		Target Column( :"Species Id"n )
+	);
+	dtFinal:"Species Id"n << set data type("numeric");
+	
+	//set order
+	/*	build
+	code
+	type
+	curve number
+	species
+	
+	intercept
+	slope
+	coeff2
+	coeff3*/
+	dtFinal << Move Selected Columns(
+		{
+			"Curves Version",
+			"Assay Number",
+			"Chem",
+			"Curve Num",
+			"Species Id",
+			"Intercept",
+			"Slope",
+			"Coeff 2",
+			"Coeff 3"
+		},
+		To First
+	);
+	
+	dtFinal << delete columns("Group");
+	
+	Return(dtFinal)
+	
+);
+ 
+fruCal = Function({rawPath, savPath}, {default local},
+ 	/*
+ 	rawPath = rawCalDataPath;
+ 	savPath = savDataPath;
+ 	*/
+ 	
+ 	calStartTbls = calDataPrep(rawPath,savPath);
+ 	
+ 	allCoeffs = calWizardCal(calStartTbls[2], "all");
+ 	feCoeffs = calWizardCal(calStartTbls[3], "feline");
+ 	
+ 	joinedCoeffs = cartesianJoin(allCoeffs[2], feCoeffs[2]);
+ 	
+ 	finalCoeffs = curveAdjustment(joinedCoeffs);
+ 	
+ 	//need to close allCoeffs[1] and feCoeffs[1]
+ 	//need to close joinedCoeffs
+ 	Close(allCoeffs[1],nosave);
+ 	Close(feCoeffs[1],nosave);
+ 	Close(joinedCoeffs,nosave);
+ 	Close(calStartTbls[1],nosave);//this is your main starting table
+ 	
+ 	finalCoeffs << set name("Final Adjusted Coefficients");
+ 	
+ 	Return(calStartTbls,finalCoeffs);
+);
+ 
+////////////////////////////////////////
+//                                    //
+//              Main                  //
+//                                    //
+////////////////////////////////////////
+
+If( Length( Include File List() ) == 1,
+
+	//batchUpdateChk(updateIDs);
+	beta = betaTestCheck(betaLimitwk);
+	If(beta[1] == 1,
+		Empty()
+		,
+		betaFailWindow(beta[2]);
+		Throw()
+	);
+
+	trackUsage( u, addinID );
+
+	If( checkVersion( minJMPver ) == 1, 
+			
+		opInputs = fruCalInputDialog();
+		If( opInputs == 0,
+			Stop()
+			,
+			//simple variable extraction? datatables = inputCleanup( opInputs );
+			rawCalDataPath = opInputs["fruRawdataPath"];
+			savDataPath = opInputs["savDataPath"];
+			
+			finalCoeffs = fruCal(rawCalDataPath,savDataPath);
+			
+		);
+	,
+		wrongVer( minJMPver )
+	);
+	,
+	Print( "FRU Calibration script was included from another source" );
+
+);
