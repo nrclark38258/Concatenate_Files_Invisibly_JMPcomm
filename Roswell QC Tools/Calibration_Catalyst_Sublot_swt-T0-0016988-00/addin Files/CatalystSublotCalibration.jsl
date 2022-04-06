@@ -6,6 +6,10 @@
 //Tool Calibrates for LYTES and QSDMA lots
 
 //------------------Revision History for both script and Help File--
+//	BETA8 1.0 SDarling 04062022
+//		-> updated subLottabprep to include Inst Type for joining of the parameters into the loop qual table. This addresses an error where loop qual results were duplicated.
+//		-> updated subLottabprep inside lytesAssStitching to require "Inst Type" as an input.
+//		-> updated prepLoopData to create a Inst Type column using the InstrumentSerial column and substring out the first 4 letters. Also deletes formula.
 //	BETA7 1.0 SDarling 033022
 //		-> updated buildJSONarray to include a process variable to distingush the master json from SDMA and Lytes.
 //		-> updated SDMAjsonPrepBase to turn lot into numeric at the end for JSON input.
@@ -641,7 +645,7 @@ subLotcharFunc = Function( {table, posCol, respCol, slideLotvar, chemTypecol, la
 	Return( dtSubsum );
 );
 
-subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx, posColy, respCol, fluidCol, slideLotvar, chemTypecol, fitType},
+subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx, posColy, respCol, fluidCol, slideLotvar, chemTypecol, instTypecol, fitType},
 	{default local}, 
 	/*table1 = sub lot characterization function output
 	table2 = calibration function output
@@ -656,6 +660,7 @@ subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx,
 	parseColNamedose = Parse( Eval Insert( ":name(\!"^fluidCol^\!" )" ) );
 	parseColNameresponsemean = Parse( Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" ) );
 	parseColNamechem = Parse( Eval Insert( ":name(\!"^chemTypecol^\!" )" ) );
+	parseColNameinst = Parse( Eval Insert( ":name(\!"^instTypecol^\!" )" ) );
 	
 	colNamechem = Eval Insert( ":name(\!"^chemTypecol^\!" )" );
 	colNameresponse = Eval Insert( ":name(\!"^respCol^\!" )" );
@@ -663,12 +668,12 @@ subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx,
 	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
 	colNamedose = Eval Insert( ":name(\!"^fluidCol^\!" )" );
 	colNameresponsemean = Eval Insert( ":name(\!"Mean(\!^respCol^\!)\!" )" );
-	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
+	colNameinst = Eval Insert( ":name(\!"^instTypecol^\!" )" );
 	
 	tableOut = table1 << Join(
 		With( table2 ),
 		Merge Same Name Columns,
-		By Matching Columns( Parse( colNamecoating ) = Parse( colNamecoating ), Parse( colNamechem ) = Parse( colNamechem ) ),
+		By Matching Columns( Eval( Parse( colNamecoating ) ) = Eval( Parse( colNamecoating ) ), Eval( Parse( colNamechem ) ) = Eval( Parse( colNamechem ) ) , Eval( Parse( colNameinst ) ) = Eval( Parse( colNameinst ) ) ),
 		Drop multiples( 0, 0 ),
 		Include Nonmatches( 0, 0 ),
 		Preserve main table order( 1 ),
@@ -1778,8 +1783,9 @@ ionChemCalDialog = Function({},{default local},
 lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	{default local}, 
 	//testing variables
-	//dtCal = Data Table( "Subset of NA Master Cal Table Concept_010422.jmp" );
-	//dtSub = Data Table( "Subset of NA Master Sub Lot Table Concept_010422.jmp" );
+	//dtCal = Data Table( "calFitfunc_input_lytes_master.jmp" );
+	//dtLoop = Data Table( "Untitled 370.jmp" );
+	//dtSlideLotExpiration = Data Table( "Summary.jmp" );
 	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
 	/*
 	dtCal = calData;
@@ -1809,7 +1815,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
 	
 	dtCalout2 = dtCalout << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
-	dtSubop = subLottabprep( dtSub, dtCalout, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "3P" );
+	dtSubop = subLottabprep( dtSub, dtCalout, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P" );
 	
 	//this will be a place holder assigned target for the correction logic
 	dtSubop << New Column( "Loop Average Dose",
@@ -2458,6 +2464,16 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 		)
 	);
 	loopQualTable:"AR"n << delete formula;
+	
+	loopQualTable << New Column("Inst Type", character, nominal,
+		Formula(
+			If( Substr( :"InstrumentSerial"n, 1, 4 ) == "CTDX",
+				"CatDx",
+				"CatOne"
+			);
+		);
+	);
+	loopQualTable:"Inst Type"n << delete formula;
 	
 	Try(
 		IsScriptable(Column(loopQualTable,"Foil"));
