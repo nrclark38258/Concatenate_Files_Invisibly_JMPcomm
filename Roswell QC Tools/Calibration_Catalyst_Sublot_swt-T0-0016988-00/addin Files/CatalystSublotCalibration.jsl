@@ -6,6 +6,13 @@
 //Tool Calibrates for LYTES and QSDMA lots
 
 //------------------Revision History for both script and Help File--
+//  <-- NOTICE THE SPACE, SAGE!
+//	BETA8 1.0 NClark 040622
+//		-> updated calfitfunc() to remove all the median summary stuff from the "master" path
+//		-> updated calfitfunc() copy all of the begining fits into the "master" path, but without Crossweb [Parse( colNamesublot )]
+//		-> updated calfitfunc() shift all of the begining fits into the "non-master" path
+//		-> updated calfitfunc() to delete columns from the fit table in the "master" path
+//		-> added commented line to prepLoopQual for easy shift to neededloops being numeric and not character
 //	BETA8 1.0 SDarling 04062022
 //		-> updated subLottabprep to include Inst Type for joining of the parameters into the loop qual table. This addresses an error where loop qual results were duplicated.
 //		-> updated subLottabprep inside lytesAssStitching to require "Inst Type" as an input.
@@ -467,96 +474,167 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 	colNamecoating = Eval Insert( ":name(\!"^slideLotvar^\!" )" );
 	colNamedose = Eval Insert( ":name(\!"^fluidCol^\!" )" );
 	
-	If(
-		fitType == "3P",
-			calFit = table << Fit Curve(
-				Y( Parse( colNameresponse ) ),
-				X( Parse( colNamedose ) ),
-				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
-				Fit Exponential 3P
-			);
-			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;
-		, 
-	
-		fitType == "Rodbard", 
-	
-			calFit = table << Fit Curve(
-				Y( Parse( colNameresponse ) ),
-				X( Parse( colNamedose ) ),
-				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
-				Fit Logistic 4P Rodbard
-			);
-			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-			Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;, 
-	
-		fitType == "Quad", 
-	
-			calFit = table << Fit Curve(
-				Y( Parse( colNameresponse ) ),
-				X( Parse( colNamedose ) ),
-				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
-				Fit Quadratic
-			);
-			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-			Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;, 
-	
-		fitType == "Linear", 
-	
-			calFit = table << Fit Curve(
-				Y( Parse( colNameresponse ) ),
-				X( Parse( colNamedose ) ),
-				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
-				Fit Linear
-			);
-			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-			Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;, 
-	
-		fitType == "Cubic", 
-	
-			calFit = table << Fit Curve(
-				Y( parseColNameresponse ),
-				X( parseColNamedose ),
-				By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
-				Fit Cubic
-			);
-			Wait( 0 );
-			dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-			Make Combined Data Table;
-			Report( calFit[1] ) << Close Window;, 
-		
-		fitType == "Cubic-3P", 
-			/////call the Jesse function here
-			
-			Empty()
-	);
-	
 	If( fitType2 == "Master",
-		dt_Calparams1 = dt_Calparams << Summary(
-			Group( :Parameter, parseColNamecoating, parseColNamechem, parseColNameinst ),
-			Median( :Estimate ),
-			Link to Original Data Table( 0 ),
-			Invisible
+		// dt_Calparams1 = dt_Calparams << Summary(
+		// 	Group( :Parameter, parseColNamecoating, parseColNamechem, parseColNameinst ),
+		// 	Median( :Estimate ),
+		// 	Link to Original Data Table( 0 ),
+		// 	Invisible
+		// );
+		// dt_Calparams << Close Window;
+		// dt_Calparams2 = dt_Calparams1 << Split(
+		// 	Split( :Name( "Median(Estimate)" ) ),
+		// 	Split By( :Parameter ),
+		// 	Group( parseColNamecoating, parseColNamechem, parseColNameinst ),
+		// 	Remaining Columns( Drop All )
+		// );
+		// dt_Calparams = dt_Calparams2;
+		// dt_Calparams1 << Close Window;
+		If(
+			fitType == "3P",
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Exponential 3P
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;
+			, 
+		
+			fitType == "Rodbard", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Logistic 4P Rodbard
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Quad", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Quadratic
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Linear", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Linear
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Cubic", 
+		
+				calFit = table << Fit Curve(
+					Y( parseColNameresponse ),
+					X( parseColNamedose ),
+					By( Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Cubic
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+			
+			fitType == "Cubic-3P", 
+				/////call the Jesse function here
+				
+				Empty()
 		);
-		dt_Calparams << Close Window;
-		dt_Calparams2 = dt_Calparams1 << Split(
-			Split( :Name( "Median(Estimate)" ) ),
-			Split By( :Parameter ),
-			Group( parseColNamecoating, parseColNamechem, parseColNameinst ),
-			Remaining Columns( Drop All )
+		dt_Calparams << Delete Columns( :"Table"n, :"Std Error"n, :"Wald ChiSquare"n, :"Prob > ChiSquare"n , :"Lower 95%"n, :"Upper 95%"n);
+		,
+		If(
+			fitType == "3P",
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Exponential 3P
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;
+			, 
+		
+			fitType == "Rodbard", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Logistic 4P Rodbard
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Quad", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Quadratic
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Linear", 
+		
+				calFit = table << Fit Curve(
+					Y( Parse( colNameresponse ) ),
+					X( Parse( colNamedose ) ),
+					By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Linear
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+		
+			fitType == "Cubic", 
+		
+				calFit = table << Fit Curve(
+					Y( parseColNameresponse ),
+					X( parseColNamedose ),
+					By( Parse( colNamesublot ), Parse( colNamecoating ), Parse( colNamechem ), Parse( colNameinst ) ),
+					Fit Cubic
+				);
+				Wait( 0 );
+				dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+				Make Combined Data Table;
+				Report( calFit[1] ) << Close Window;, 
+			
+			fitType == "Cubic-3P", 
+				/////call the Jesse function here
+				
+				Empty()
 		);
-		dt_Calparams = dt_Calparams2;
-		dt_Calparams1 << Close Window;
-	,
 		dt_Calparams << Delete Columns( :"Table"n, :"Std Error"n, :"Wald ChiSquare"n, :"Prob > ChiSquare"n , :"Lower 95%"n, :"Upper 95%"n);
 	);
+
 	Return( dt_Calparams );
 );
 
@@ -2422,6 +2500,7 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 			//show(word(1,loopfileList[i],"_"));
 			//neededloops will be character
 			loop = word(1,loopfileList[i],"_"); //surfs the folder names from Head
+			//loop = Num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
 			If(neededLoops[loop] == 0,
 				RemoveFrom(loopfileList,i)
 			)
