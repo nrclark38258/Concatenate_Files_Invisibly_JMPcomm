@@ -7,7 +7,7 @@
 
 //------------------Revision History for both script and Help File--
 //
-//	BETA1 1.0 NClark 040622
+//	RC1 1.0 NClark 040722
 //
 //------------------------------------------------------------------
 
@@ -27,9 +27,10 @@ Names Default to here(1);
 	slopeCorr = 1.14;
 	intCorr = -70;
 	
-	seePrivateTables = 0;
+	here:troubleShootingMode = 0; //boolean for two functions controling private tables and closing of tables
 	/*example use
-		createdTable = unprivatizeTable(seePrivateTables, createdTable);
+		createdTable = unprivatizeTable(here:troubleShootingMode, createdTable);
+		closeTable(here:troubleShootingMode, tableToBeClosed);
 	*/
 
 //-----------/Variable Declarations-----------------------
@@ -59,18 +60,22 @@ betaTestCheck = Function({betaTimeWk,state = "",buildDate=0},{default local},
 		//Will pass if Beta in date OR if addin not in Beta (TEST) phases
 		path = ConvertFilePath(GetDefaultDirectory());
 		//customMetadata_aa = Include( "D:\JSL Development\Official JMP Addin Working\Loop Qual swt-xxx-yyy\customMetadata.jsl" );
-		customMetadata_aa = Include( path||"customMetadata.jsl" );
-		state = customMetadata_aa["state"];
-		buildDate = customMetadata_aa["buildDate"];
-		If(
-			state == "TEST",
-			if(
-				Today() > (buildDate + InWeeks(betaTimeWk)), passBeta = 0, passBeta = 1
+		Try(
+			customMetadata_aa = Include( path||"customMetadata.jsl" );
+			state = customMetadata_aa["state"];
+			buildDate = customMetadata_aa["buildDate"];
+			If(
+				state == "TEST",
+				if(
+					Today() > (buildDate + InWeeks(betaTimeWk)), passBeta = 0, passBeta = 1
+				);
+				expDate = buildDate + InWeeks(betaTimeWk);
+				,
+				passBeta = 1;
+				expDate = buildDate + InWeeks(betaTimeWk);
 			);
-			expDate = buildDate + InWeeks(betaTimeWk);
 			,
 			passBeta = 1;
-			expDate = buildDate + InWeeks(betaTimeWk);
 		);
 	);
 	Return(passBeta,expDate)
@@ -115,14 +120,26 @@ wrongVer = Function( {maxVer},
 );
 
 unprivatizeTable = Function({bool,tableName},{default local},
+
 	If(bool == 1,
 		tableName << New Data View;
 		Return(tableName)
 		,
 		Return(tableName)
 	)
+	
 );
 
+closeTable = Function({bool,tableName}, {default local},
+	
+	If(bool == 0,
+		Close(tableName, nosave);
+		,
+		Empty()
+	);
+	
+);
+  
 	/////////////////////////////////////////
 	//       Main functions                //
 	/////////////////////////////////////////
@@ -245,10 +262,10 @@ dataCount = Function({dataTable},{default local},
 		Weight( "None" ),
 		//private
 	);
-	//dtSumm = unprivatizeTable(seePrivateTables, dtSumm);
+	//dtSumm = unprivatizeTable(here:troubleShootingMode, dtSumm);
 	
 	counts = dtSumm:"N Rows"n << get as matrix;
-	Close(dtSumm,nosave);
+	closeTable(here:troubleShootingMode, dtSumm);
 	
 	If(min(counts) < 30, Return(0), Return(1));
 	
@@ -349,7 +366,7 @@ curvePointInterp = Function({tableName,crvPtCalc,crvPtMtrx,yCol,xCol,curvePtCol,
 					Sort by Column Property,
 					private
 				);
-				finalCoeffs = unprivatizeTable(seePrivateTables, finalCoeffs);
+				finalCoeffs = unprivatizeTable(here:troubleShootingMode, finalCoeffs);
 				coeffTable << close window;
 				,
 				finalCoeffs = coeffTable << Split(
@@ -358,7 +375,7 @@ curvePointInterp = Function({tableName,crvPtCalc,crvPtMtrx,yCol,xCol,curvePtCol,
 					Sort by Column Property,
 					private
 				);
-				finalCoeffs = unprivatizeTable(seePrivateTables, finalCoeffs);
+				finalCoeffs = unprivatizeTable(here:troubleShootingMode, finalCoeffs);
 				coeffTable << close window;
 				finalCoeffs << New Column("Group",Numeric,<< set each value(num(curveCount[1])));
 			);
@@ -385,7 +402,7 @@ savJoin = Function({datatable, savPath}, {default local},
 		Add Columns from Update Table( :"SAV"n )
 	);
 	
-	Close(savData, nosave);
+	closeTable(here:troubleShootingMode, savData);
 	
 	Return(datatable);
 	
@@ -458,18 +475,18 @@ calDataPrep = Function({rawPath, savPath},{default local},
  	*/
 	
 	dt = Open(rawPath,private);
-	dt = unprivatizeTable(seePrivateTables, dt);
-	
+	dt = unprivatizeTable(here:troubleShootingMode, dt);
+
 	okData = dt << select where(:"BRCNAME"n == "OK") << Subset(
 		Selected Rows( 1 ),
 		Selected columns only( 0 ),
 		private
 	);
-	okData = unprivatizeTable(seePrivateTables, okData);
+	okData = unprivatizeTable(here:troubleShootingMode, okData);
 	
 	If( dataCount(okData) == 0,
-		Close(dt,nosave);
-		Close(okData,nosave);
+		closeTable(here:troubleShootingMode, dt);
+		closeTable(here:troubleShootingMode, okData);
 		dataCountDialog();
 		Return(0)
 	);
@@ -490,7 +507,7 @@ calDataPrep = Function({rawPath, savPath},{default local},
 		Weight( "None" ),
 		private
 	);
-	calData1 = unprivatizeTable(seePrivateTables, calData1);
+	calData1 = unprivatizeTable(here:troubleShootingMode, calData1);
 	
 	temp = calData1 << New Column("CurvePtNum",
 		Formula(
@@ -515,20 +532,20 @@ calDataPrep = Function({rawPath, savPath},{default local},
 		Selected columns only( 0 ),
 		private
 	);
-	calDataAll = unprivatizeTable(seePrivateTables, calDataAll);
+	calDataAll = unprivatizeTable(here:troubleShootingMode, calDataAll);
 	
 	calDataFeline = calData1 << Select Where( :"SPECIES"n == "Feline" ) << Subset(
 		Selected Rows( 1 ),
 		Selected columns only( 0 ),
 		private
 	);
-	calDataFeline = unprivatizeTable(seePrivateTables, calDataFeline);
+	calDataFeline = unprivatizeTable(here:troubleShootingMode, calDataFeline);
 	
 	addPoints(calDataAll,"All");
 	addPoints(calDataFeline,"Feline");
 	
-	Close(dt, nosave);
-	Close(calData1, nosave);
+	closeTable(here:troubleShootingMode, dt);
+	closeTable(here:troubleShootingMode, calData1);
 	
 	Return(okData, calDataAll, calDataFeline);
 	
@@ -588,7 +605,7 @@ cartesianJoin = Function({allCoeffs, felineCoeffs}, {default local},
 		),
 		private
 	);
-	doseTable = unprivatizeTable(seePrivateTables, doseTable);
+	doseTable = unprivatizeTable(here:troubleShootingMode, doseTable);
 	cjAll = allCoeffs << Join(
 		With( doseTable ),
 		Cartesian Join,
@@ -601,16 +618,16 @@ cartesianJoin = Function({allCoeffs, felineCoeffs}, {default local},
 		Output Table( "All" ),
 		private
 	);
-	cjAll = unprivatizeTable(seePrivateTables, cjAll);
-	cjFe = unprivatizeTable(seePrivateTables, cjFe);
+	cjAll = unprivatizeTable(here:troubleShootingMode, cjAll);
+	cjFe = unprivatizeTable(here:troubleShootingMode, cjFe);
 	
 	finalJoin = cjAll << concatenate(cjFe);
 	
-	Close(doseTable,nosave);
-	Close(cjAll,nosave);
-	Close(cjFe,nosave);
-	Close(allCoeffs,nosave);
-	Close(felineCoeffs,nosave);
+	closeTable(here:troubleShootingMode, doseTable);
+	closeTable(here:troubleShootingMode, cjAll);
+	closeTable(here:troubleShootingMode, cjFe);
+	closeTable(here:troubleShootingMode, allCoeffs);
+	closeTable(here:troubleShootingMode, felineCoeffs);
 	
 	Return(finalJoin);
 	
@@ -713,8 +730,62 @@ curveAdjustment = Function({calWizardCurves}, {default local},
 	
 	dtFinal << delete columns("Group");
 	
-	Return(dtFinal)
+	Return(dtFinal,calWizardCurves)
 	
+);
+ 
+curveGraphs = Function({adjustmentTable}, {default local},
+ 	
+	biv = adjustmentTable << Bivariate(
+		Y( :"AR Vals"n ),
+		X( :"Dose Vals IPOC"n ),
+		//Show Points( 1 ),
+		BY( :"Species"n ),
+		SendToReport(
+			Dispatch(
+				{},
+				"Bivar Plot",
+				FrameBox,
+				{Frame Size( 442, 319 ), Row Legend(
+					:"Group"n,
+					Color( 1 ),
+					Color Theme( "Jet" ),
+					Marker( 0 ),
+					Marker Theme( "" ),
+					Continuous Scale( 0 ),
+					Reverse Scale( 0 ),
+					Excluded Rows( 0 )
+				)}
+			)
+		)
+	);
+	biv << show points(0);
+	biv << group by(:"Group"n);
+	biv << Fit Polynomial( 3 );
+	rBiv = biv << report;
+	rBiv[1][Outline Box(1)] << Set Title("All");
+	rBiv[2][Outline Box(1)] << Set Title("Feline");
+
+	( rBiv << XPath("//OutlineBox[contains( text(), 'Polynomial')]") ) << close(1);
+
+	nw = New Window("FRU Final Calibration Curves", <<Journal,
+
+		vlb = V List Box(
+			hlb = H List Box(
+
+				//ob = Outline Box("Pictures")
+
+			)
+		)
+	);
+
+	hlb << Append(rBiv[1]);
+	hlb << Append(rBiv[2]);
+
+	biv << close window;
+	
+	Return(nw);
+ 	
 );
  
 fruCal = Function({rawPath, savPath}, {default local},
@@ -724,26 +795,32 @@ fruCal = Function({rawPath, savPath}, {default local},
  	*/
  	
  	calStartTbls = calDataPrep(rawPath,savPath);
+ 	If(
+ 		calStartTbls == 0,
+ 		Return(0)
+ 		,
+ 		allCoeffs = calWizardCal(calStartTbls[2], "all");
+		feCoeffs = calWizardCal(calStartTbls[3], "feline");
+		
+		joinedCoeffs = cartesianJoin(allCoeffs[2], feCoeffs[2]);
+		
+		finalCoeffs = curveAdjustment(joinedCoeffs);
+		
+		closeTable(here:troubleShootingMode, allCoeffs[1]);
+		closeTable(here:troubleShootingMode, feCoeffs[1]);
+		closeTable(here:troubleShootingMode, calStartTbls[1]); //this is your main starting table
+		
+		curveJournal = curveGraphs(finalCoeffs[2]);
+		closeTable(here:troubleShootingMode, finalCoeffs[2]);
+		
+		finalCoeffs[1] << set name("Final Adjusted Coefficients") << bring window to front;
+		
+		
+		Return(finalCoeffs, nw);
+	);
  	
- 	allCoeffs = calWizardCal(calStartTbls[2], "all");
- 	feCoeffs = calWizardCal(calStartTbls[3], "feline");
- 	
- 	joinedCoeffs = cartesianJoin(allCoeffs[2], feCoeffs[2]);
- 	
- 	finalCoeffs = curveAdjustment(joinedCoeffs);
- 	
- 	//need to close allCoeffs[1] and feCoeffs[1]
- 	//need to close joinedCoeffs
- 	Close(allCoeffs[1],nosave);
- 	Close(feCoeffs[1],nosave);
- 	Close(joinedCoeffs,nosave);
- 	Close(calStartTbls[1],nosave);//this is your main starting table
- 	
- 	finalCoeffs << set name("Final Adjusted Coefficients");
- 	
- 	Return(calStartTbls,finalCoeffs);
 );
- 
+
 ////////////////////////////////////////
 //                                    //
 //              Main                  //
