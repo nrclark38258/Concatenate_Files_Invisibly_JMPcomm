@@ -7,13 +7,15 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
-//	BETA8 1.0 NClark 040622
+//	RC1	  1.0 SDarling 040722
+//		-> updated calfitfunc() to include a split of the estimates at the end of the master path and close the non-split table.
+//	RC1	  1.0 NClark 040622
 //		-> updated calfitfunc() to remove all the median summary stuff from the "master" path
 //		-> updated calfitfunc() copy all of the begining fits into the "master" path, but without Crossweb [Parse( colNamesublot )]
 //		-> updated calfitfunc() shift all of the begining fits into the "non-master" path
 //		-> updated calfitfunc() to delete columns from the fit table in the "master" path
 //		-> added commented line to prepLoopQual for easy shift to neededloops being numeric and not character
-//	BETA8 1.0 SDarling 04062022
+//	RC1   1.0 SDarling 04062022
 //		-> updated subLottabprep to include Inst Type for joining of the parameters into the loop qual table. This addresses an error where loop qual results were duplicated.
 //		-> updated subLottabprep inside lytesAssStitching to require "Inst Type" as an input.
 //		-> updated prepLoopData to create a Inst Type column using the InstrumentSerial column and substring out the first 4 letters. Also deletes formula.
@@ -561,6 +563,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 				Empty()
 		);
 		dt_Calparams << Delete Columns( :"Table"n, :"Std Error"n, :"Wald ChiSquare"n, :"Prob > ChiSquare"n , :"Lower 95%"n, :"Upper 95%"n);
+		dt_Calparams1 = dt_Calparams << Split(
+		 	Split( :Estimate  ),
+		 	Split By( :Parameter ),
+		 	Group( parseColNamecoating, parseColNamechem, parseColNameinst ),
+		 	Remaining Columns( Drop All )
+		);
+		close(dt_Calparams, nosave);
+		dt_Calparams = dt_Calparams1;
 		,
 		If(
 			fitType == "3P",
@@ -1862,7 +1872,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	{default local}, 
 	//testing variables
 	//dtCal = Data Table( "calFitfunc_input_lytes_master.jmp" );
-	//dtLoop = Data Table( "Untitled 370.jmp" );
+	//dtLoop = Data Table( "Untitled 10530.jmp" );
 	//dtSlideLotExpiration = Data Table( "Summary.jmp" );
 	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
 	/*
