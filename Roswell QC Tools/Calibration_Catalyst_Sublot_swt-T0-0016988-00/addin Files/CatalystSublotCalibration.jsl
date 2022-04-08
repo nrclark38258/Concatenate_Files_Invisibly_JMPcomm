@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//	RC2	  1.0 SDarling 040822
+//		-> updated calfitfunc() to have a try statement for creating the parameter estimates as only one plot was causing a failure in creating the combined data table. 
 //	RC1	  1.0 SDarling 040722
 //		-> updated calfitfunc() to include a split of the estimates at the end of the master path and close the non-split table.
 //	RC1	  1.0 NClark 040622
@@ -452,8 +454,8 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 	dtCal = Current Data Table();
 	table = dtCal;
 	posCol = "Cross Web";
-	respCol = "AR";
-	fluidCol = "Dose";
+	respCol = "Script AR";
+	fluidCol = "Script Dose Val";
 	slideLotvar = "Slide Lot";
 	chemTypecol = "Chem Type";
 	instTypecol = "Inst Type";
@@ -501,12 +503,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Exponential 3P
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;
-			, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,
 			fitType == "Rodbard", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -514,12 +518,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Logistic 4P Rodbard
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,
 			fitType == "Quad", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -527,12 +533,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Quadratic
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);				
+			, 
 			fitType == "Linear", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -540,12 +548,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Linear
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,
 			fitType == "Cubic", 
-		
 				calFit = table << Fit Curve(
 					Y( parseColNameresponse ),
 					X( parseColNamedose ),
@@ -553,13 +563,15 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Cubic
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-			
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,
 			fitType == "Cubic-3P", 
 				/////call the Jesse function here
-				
 				Empty()
 		);
 		dt_Calparams << Delete Columns( :"Table"n, :"Std Error"n, :"Wald ChiSquare"n, :"Prob > ChiSquare"n , :"Lower 95%"n, :"Upper 95%"n);
@@ -581,12 +593,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Exponential 3P
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
 			, 
-		
 			fitType == "Rodbard", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -594,12 +608,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Logistic 4P Rodbard
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Logistic 4P Rodbard" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			, 
 			fitType == "Quad", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -607,12 +623,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Quadratic
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Quadratic"  )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Quadratic"  )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,		
 			fitType == "Linear", 
-		
 				calFit = table << Fit Curve(
 					Y( Parse( colNameresponse ) ),
 					X( Parse( colNamedose ) ),
@@ -620,12 +638,14 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Linear
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-		
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Linear"  )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Linear" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			, 
 			fitType == "Cubic", 
-		
 				calFit = table << Fit Curve(
 					Y( parseColNameresponse ),
 					X( parseColNamedose ),
@@ -633,13 +653,15 @@ calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypec
 					Fit Cubic
 				);
 				Wait( 0 );
-				dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-				Make Combined Data Table;
-				Report( calFit[1] ) << Close Window;, 
-			
+				Try( dt_Calparams = Report( calFit[1] )[Outline Box( "Cubic"  )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit[1] ) << Close Window;
+					,
+					dt_Calparams = Report( calFit )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table(invisible(1));
+					Report( calFit ) << Close Window;
+				);
+			,
 			fitType == "Cubic-3P", 
 				/////call the Jesse function here
-				
 				Empty()
 		);
 		dt_Calparams << Delete Columns( :"Table"n, :"Std Error"n, :"Wald ChiSquare"n, :"Prob > ChiSquare"n , :"Lower 95%"n, :"Upper 95%"n);
