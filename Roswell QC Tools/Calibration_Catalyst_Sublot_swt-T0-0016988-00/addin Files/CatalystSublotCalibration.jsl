@@ -7,6 +7,12 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//	RC3	  1.0 SDarling 041422
+//		-> added Grubbs_Outlier_Detection() to SDMAPanelPrep().
+//		-> added Grubbs_Outlier_Detection() to prepCalData().
+//		-> Grubbs_Outlier_Detection() added.
+//		-> outlierDetectWithinGroup() removed from lytes workflow and will not be used currently as the function requires updates.
+//		-> updated outlierDetectWithinGroup() to use a flexible dose column instead of Sample ID.
 //	RC2	  1.0 SDarling 040822
 //		-> updated calfitfunc() to have a try statement for creating the parameter estimates as only one plot was causing a failure in creating the combined data table. 
 //	RC1	  1.0 SDarling 040722
@@ -434,9 +440,93 @@ unprivatizeTable = Function({bool,tableName},{default local},
 	)
 );
 
+Grubbs_Outlier_Detection = Function({tablename, yCol, alpha}, {default local},
+	//variable names for troubleshooting inside function.
+	//tablename = current data table();
+	//yCol = "Corrected AR";
+	//alpha = 0.001;
+	//dosecol = "Panel Dose";
+
+	//parse the input variables.
+	parse_yCol = Parse( Eval Insert( "^tablename^:\!"^yCol^\!"n" ) );
+	//show(parse_yCol);
+
+	//create exclusion column. Do not add if one exists.
+	collist = tablename << get column names(string);
+	//show(collistsubfoil);
+
+	//add exclusion rationale column.
+	if(!contains(collist, "Exclusion Rationale"),
+		tablename << New Column("Exclusion Rationale", Character, Nominal);
+	);
+	
+	g = 1;
+	g0 = 0;
+	i=0;
+	While(g > g0 &  i < 10,
+		//create distribution of AR.
+		dist = tablename << Distribution(
+			Y(parse_yCol),
+			Normal Quantile Plot(1),
+			Fit Distribution( Normal( Goodness of Fit(1) ) )
+		);
+		distr = dist << Report;
+
+		y_values = parse_yCol << Get As Matrix;
+		exRows = tablename << Get Excluded Rows();
+		y_values[exRows] = [];
+		n = N Row(y_values);
+
+		//tquantile and g/g0 calcs.
+		t0Sqr =  t Quantile( 1 - alpha/(2*n), n-2 )^2;
+		g = Maximum( Abs( y_values - Mean( y_values ) ) ) / Std Dev( y_values );
+		g0 = ((n-1)/Sqrt(n)) * Sqrt( t0Sqr / (n - 2 + t0Sqr) );
+	
+		distr<<close window();
+		//show(t0Sqr);
+		//show(g);
+		//show(g0);
+		//show(i);
+		if(
+			g>g0,
+			//print("true");
+			Summarize(tablename, maxvalue=Max(parse_yCol));
+			Summarize(tablename, minvalue=Min(parse_yCol));
+			Summarize(tablename, meanvalue=Mean(parse_yCol));
+			//show(maxvalue, minvalue, meanvalue);
+			
+			if((maxvalue-meanvalue)>(meanvalue-minvalue),
+				print("max value greater");
+				tablename << select where(parse_yCol==maxvalue) << hide(1) << exclude(1);
+				row = tablename << get rows where(Selected());
+				//show(row);
+				For(i=1, i<=nrow(row),i++,
+					tablename:Name("Exclusion Rationale")[row[i]] = tablename:Name("Exclusion Rationale")[row[i]] ||"NDE - Grubb's";
+					show(i);
+				);
+				,
+				print("min value greater");
+				tablename << select where(parse_yCol==minvalue) << hide(1) << exclude(1);
+				row = tablename << get rows where(Selected());
+				//show(row);
+				For(i=1, i<=nrow(row),i++,
+					tablename:Name("Exclusion Rationale")[row[i]] = tablename:Name("Exclusion Rationale")[row[i]] ||"NDE - Grubb's";
+					//show(i);
+				);
+			);
+		);
+		
+		i++;
+		//g=1;
+		//g0=1;
+	);
+	Return(tablename);
+);
+
 	/////////////////////////////////////////
 	//       Main functions                //
 	/////////////////////////////////////////
+
 //TESTED MAIN FUNCTIONS
 
 //UNTESTED MAIN FUNCTIONS
@@ -1329,37 +1419,44 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 
 //Nates mods of Jesse's mods of Tim's outlier function
 //untested
+//currently not used.
 // example: outlierDetectWithinGroup(dt,"AR","Assay","Lot","Instrument Type");
-outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn},{default local},
+outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn,doseColumn},{default local},
 
-	// DTinitial = current data table();
-	// responseColumn = "AR";
-	// assayCodeColumn = "Assay";
-	// slideLotColumn = "Lot";
-	// instrumentTypeColumn = "Instrument Type";
+	/* testing variables
+	DTinitial = current data table();
+	responseColumn = "AR";
+	assayCodeColumn = "Assay";
+	slideLotColumn = "Slide Lot";
+	instrumentTypeColumn = "Instrument Type";
+	doseColumn = "Dose";
+	*/
 	
 	//variable shortening
 	respCol = responseColumn;
 	assayCol = assayCodeColumn;
 	lotCol = slideLotColumn;
-	instType = instrumentTypeColumn;
+	instCol = instrumentTypeColumn;
+	doseCol = doseColumn;
 	
 	//convert text cols names into jsl local column variables
 	//JMP 16 may have fixed issues that require needing both styles
 	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
 	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
 	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
-	nameInstCol = EvalInsert(":\!"^instType^\!"n");
+	nameInstCol = EvalInsert(":\!"^instCol^\!"n");
+	nameDoseCol = EvalInsert(":\!"^doseCol^\!"n");
 	
 	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
 	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
 	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
-	parseInstCol = Parse(EvalInsert(":\!"^instType^\!"n"));
+	parseInstCol = Parse(EvalInsert(":\!"^instCol^\!"n"));
+	parseDoseCol = Parse(EvalInsert(":\!"^doseCol^\!"n"));
 	
 	//**********Sort Table**********
 	DTinitial << Clear Column Selection();
-	temp = DTinitial << New Column("Calibration Group",character,formula(char(parseAssayCol) || char(parseLotCol) || parseInstCol));
-	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || :"Sample id"n));
+	temp = DTinitial << New Column("Calibration Group",character,formula( char(parseAssayCol) || char(parseLotCol) || parseInstCol));
+	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || char(parseDoseCol)));
 	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n), Order(Ascending, Ascending));
 
 	//**********Run Order Column**********
@@ -1893,7 +1990,7 @@ ionChemCalDialog = Function({},{default local},
 lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	{default local}, 
 	//testing variables
-	//dtCal = Data Table( "calFitfunc_input_lytes_master.jmp" );
+	//dtCal = Data Table( "CAL_OLOL 1000-1002_CATwAVL9180.jmp" );
 	//dtLoop = Data Table( "Untitled 10530.jmp" );
 	//dtSlideLotExpiration = Data Table( "Summary.jmp" );
 	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
@@ -1913,13 +2010,7 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
 	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
 	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
-	
-	//outlier detection step for cal. not sure these are the inputs.
-	//outlierDetectWithinGroup( dtCal, "AR", "Assay", "Slide Lot", "Instrument Type" );
-	//outlier detection step for loop qual. not sure these are the inputs.
-	//outlierDetectWithinGroup( dtSub, "AR", "Assay", "Slide Lot", "Instrument ID" );
-	
-	//potentially move this step prior to outlierdetection.
+
 	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
 	dtCalout = calFitfunc( dtCal, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
 	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
@@ -2502,6 +2593,49 @@ prepCalData = Function( {calPathway, dataPath},
 	dt:"Crossweb_BC"n << set data type("Numeric");
 	dt:"Crossweb_BC"n << set name("Cross Web");
 	
+	//outlier determination and exclusion using Grubb's.
+	dt << New Column( "CL Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 40,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt << New Column( "NA Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 41,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt << New Column( "K Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 42,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt:"CL Blocked AR for Outliers"n << Delete Formula;
+	dt:"NA Blocked AR for Outliers"n << Delete Formula;
+	dt:"K Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt, "CL Blocked AR for Outliers", 0.001);
+	Grubbs_Outlier_Detection(dt, "NA Blocked AR for Outliers", 0.001);
+	Grubbs_Outlier_Detection(dt, "K Blocked AR for Outliers", 0.001);
+
+	dt << Delete Columns("CL Blocked AR for Outliers", "NA Blocked AR for Outliers", "K Blocked AR for Outliers");
+
+	dt << Clear Select;
+
 	Return( dt );
 
 );
@@ -2963,6 +3097,7 @@ SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default loc
 
 SDMAPanelPrep = Function({calPath}, {default local},
 	//dt_Panel = current data table();
+	//calPath = calDataPath;
 	
 	dt_Panel = Open(calPath);
 	
@@ -2978,6 +3113,24 @@ SDMAPanelPrep = Function({calPath}, {default local},
 	
 	dt_Panel << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
 	Column(dt_Panel, "Script AR" ) << Delete Formula;
+
+	//outlier detection
+	dt_Panel << New Column( "Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Script Dose Val"n, :"Slide Lot"n, :"Cross Web"n )
+		)
+	);
+
+	dt_Panel:"Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt_Panel, "Blocked AR for Outliers", 0.001);
+
+	dt_Panel << Delete Columns("Blocked AR for Outliers");
+
+	dt_Panel << Clear Select;
+
 	Return(dt_Panel);
 );
 
