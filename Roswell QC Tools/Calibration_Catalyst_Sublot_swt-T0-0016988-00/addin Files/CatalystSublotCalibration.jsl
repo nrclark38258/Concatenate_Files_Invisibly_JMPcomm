@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//	RC3   1.0 SDarling 041922
+//		-> updated SDMAInstPrep to delete excluded rows and outliers from table.
 //	RC3	  1.0 NClark 041922
 //		-> updated lytesAssStitching() to delete excluded rows and outliers from subset of Cal table
 //		-> updated prepLoopData() to delete excluded rows and outliers from table
@@ -3205,7 +3207,7 @@ SDMAPatientPrep = Function({patientPath}, {Default Local},
 );
 
 SDMAInstPrep = Function({platformPath}, {Default Local},
-	//dt_InstTune = current data table();
+	//platformPath = platformDataPath;
 	
 	dt_InstTune = Open(platformPath);
 	
@@ -3228,6 +3230,34 @@ SDMAInstPrep = Function({platformPath}, {Default Local},
 	dt_InstTune << Delete Columns("Foil"n);
 	dt_InstTune:"Foil_BC"n << set name("Foil");
 	dt_InstTune:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+
+	//outlier detection
+	dt_InstTune << New Column( "Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Slide Lot"n, :"Inst Type"n )
+		)
+	);
+
+	dt_InstTune:"Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt_InstTune, "Blocked AR for Outliers", 0.001);
+
+	dt_InstTune << Delete Columns("Blocked AR for Outliers");
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	dt_InstTune << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
+
+	dt_InstTune << Clear Select;
+
 	
 	Return(dt_InstTune);
 );
