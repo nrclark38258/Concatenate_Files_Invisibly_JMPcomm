@@ -7,6 +7,10 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//	RC3	  1.0 NClark 041922
+//		-> updated lytesAssStitching() to delete excluded rows and outliers from subset of Cal table
+//		-> updated prepLoopData() to delete excluded rows and outliers from table
+//		-> updated SDMAPanelPrep() to delete excluded rows and outliers from table
 //	RC3	  1.0 SDarling 041422
 //		-> added Grubbs_Outlier_Detection() to SDMAPanelPrep().
 //		-> added Grubbs_Outlier_Detection() to prepCalData().
@@ -2012,6 +2016,17 @@ lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
 	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
 
 	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
+	/*
+	Typically the deletion of the exclusions would be done in the prep step like for other tables but this
+	code already had the subset step in to maintain the original cal table. the decision was to delete the
+	exclusions from that subset instead. long term it would be ideal to ensure the exclusions could be honored
+	(from columns and row states), but that will be a feature request for a later release
+	*/
+	dtCal2 << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
 	dtCalout = calFitfunc( dtCal, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
 	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
 	
@@ -2760,6 +2775,18 @@ prepLoopData = Function( {calPathway, dataPath, calData},
 		)
 	);
 	Close(cdSum, nosave);
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	loopQualTable << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		:"Loop Lot_LQ"n == "*indet"
+		|
+		Excluded()
+	) << delete rows;
 	
 	Return(loopQualTable);
 
@@ -3072,7 +3099,11 @@ SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default loc
 	);
 	
 	loopQualTable << Invert Row Selection();
-	
+	/*
+	This subset effectively deletes all manually excluded rows as well as rows deemed as outliers.
+	Long term it would be ideal to ensure the exclusions could be honored (from columns and row states),
+	but that will be a feature request for a later release
+	*/
 	//creating a subset with the exclusions out.
 	dt_Sublot = loopQualTable << Subset( 
 		Selected Rows(1),
@@ -3128,6 +3159,16 @@ SDMAPanelPrep = Function({calPath}, {default local},
 	Grubbs_Outlier_Detection(dt_Panel, "Blocked AR for Outliers", 0.001);
 
 	dt_Panel << Delete Columns("Blocked AR for Outliers");
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	dt_Panel << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
 
 	dt_Panel << Clear Select;
 
