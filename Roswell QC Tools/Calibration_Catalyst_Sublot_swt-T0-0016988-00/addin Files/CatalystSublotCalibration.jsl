@@ -9,6 +9,7 @@
 //  <-- NOTICE THE SPACE, SAGE!
 //	RC3   1.0 SDarling 041922
 //		-> updated SDMAInstPrep to delete excluded rows and outliers from table.
+//		-> set d term to 0 in SDMAjsonPrepBase().
 //	RC3	  1.0 NClark 041922
 //		-> updated lytesAssStitching() to delete excluded rows and outliers from subset of Cal table
 //		-> updated prepLoopData() to delete excluded rows and outliers from table
@@ -3781,7 +3782,7 @@ SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration, eventnum}, {defau
 	Column( dt_Basecurvefinal, "Asymptote" ) << Set Name( "a" );
 	Column( dt_Basecurvefinal, "Scale" ) << Set Name( "b" );
 	Column( dt_Basecurvefinal, "Growth Rate" ) << Set Name( "c" );
-	dt_Basecurvefinal << New Column( "d", Numeric, Continuous );
+	dt_Basecurvefinal << New Column( "d", Numeric, Continuous, << set each value(0) );
 	dt_Basecurvefinal << New Column( "e", Numeric, Continuous );
 	dt_Basecurvefinal << New Column( "numWavelengths", Numeric, Nominal, Set Formula( 1 ) );
 	dt_Basecurvefinal << New Column( "species",
@@ -4012,11 +4013,25 @@ jsonPrepBase = Function({finalCalibrationData,baseCoeffs},{default local},
 			:Inst Type || "_" || Char( :chemCode ) || "_" || Char( :Slide Lot ) || "_" || Char( :species )
 		)
 	);
+	
 	temp << delete formula;
 	baseCoeffs:"Slide Lot"n << set name("lot");
 	baseCoeffs:"Dry Read Start"n << set name("dryread_start");
 	baseCoeffs:"Dry Read End"n << set name("dryread_end");
 	baseCoeffs << Move Selected Columns({"ID"}, To First);
+	/*
+	If d parameter is present, makes sure they are all 0 if not filled with another
+	number. If d is missing, add it and set it to 0
+	*/
+	Try(
+		For each row(baseCoeffs,
+			if(ismissing(:"d"n),:"d"n = 0)
+		);
+		,
+		baseCoeffs << new column("d",numeric, continuous,
+			<< set each value(0)
+		);
+	);
 	baseCoeffs << delete columns({"Inst Type"});
 	
 );
