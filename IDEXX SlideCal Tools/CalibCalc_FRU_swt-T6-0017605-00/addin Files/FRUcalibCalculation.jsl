@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	RC2 1.0 NClark 042122
+//		-> Sorted final coefficient table so both species curves for one lot are together
 //	RC2 1.0 NClark 042022
 //		-> Updated min JMP version to be 16.0
 //	RC1 1.0 NClark 040722
