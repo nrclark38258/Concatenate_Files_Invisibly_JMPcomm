@@ -816,9 +816,13 @@ fruCal = Function({rawPath, savPath}, {default local},
 		closeTable(here:troubleShootingMode, finalCoeffs[2]);
 		
 		finalCoeffs[1] << set name("Final Adjusted Coefficients") << bring window to front;
+		finalCoeffs[1] << Sort(
+			By( :Curves Version, :Assay Number, :Chem, :Curve Num ),
+			Order( Ascending, Ascending, Ascending, Ascending ),
+			Replace Table
+		);
 		
-		
-		Return(finalCoeffs, nw);
+		Return(finalCoeffs);
 	);
  	
 );
