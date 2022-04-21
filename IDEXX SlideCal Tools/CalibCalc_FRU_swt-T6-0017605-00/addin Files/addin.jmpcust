@@ -11,8 +11,8 @@
 			<jm:caption>FRU</jm:caption>				
 			
 			<jm:command namesDefaultToHere="1">
-				<jm:name>CATALYST PHBR CALIBRATION CALCULATION</jm:name>
-				<jm:caption>Catalyst PHBR Calibration Calculation v1.0</jm:caption>
+				<jm:name>CATALYST FRU CALIBRATION CALCULATION</jm:name>
+				<jm:caption>Catalyst FRU Calibration Calculation v1.0</jm:caption>
 				<jm:action type="path">$ADDIN_HOME(com.idexx.IDEXXSlideCalTools_FRU)\FRUcalibCalculation.jsl</jm:action>
 				<jm:icon type="builtin">FitDSD</jm:icon>
 			</jm:command>

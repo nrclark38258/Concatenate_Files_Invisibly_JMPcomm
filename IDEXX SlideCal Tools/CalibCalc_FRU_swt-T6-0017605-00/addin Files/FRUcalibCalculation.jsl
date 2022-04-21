@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	RC2 1.0 NClark 042022
+//		-> Updated min JMP version to be 16.0
 //	RC1 1.0 NClark 040722
 //
 //------------------------------------------------------------------
@@ -22,7 +24,7 @@ Names Default to here(1);
 	);
 	addinID = "com.idexx.IDEXXSlideCalTools_FRU";
 	betaLimitwk = 4;
-	minJMPver = "16.1";
+	minJMPver = "16.0";
 	
 	slopeCorr = 1.14;
 	intCorr = -70;
