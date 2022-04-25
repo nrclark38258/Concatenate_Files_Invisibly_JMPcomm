@@ -1,0 +1,497 @@
+//Author(s)
+//NClark
+//IDEXX Laboratories, Inc.
+//Westbrook, ME 04092
+
+Names Default To Here( 1 );
+
+//------------------Revision History for script---------------------
+//
+//	2.5.0.0 NClark 060721
+//		-> Updated addinInstallFIles for Catalyst Assay Codes 
+//	2.4.0.0 NClark 041721
+//		-> Updated addinInstallFiles for QuantPL tools
+//	2.3.0.0 NClark 033021
+//		-> Updated addinInstallFIles to fix typo on MPX tools
+//		-> Updated addinInstallFiles for add Dairy Tools
+//	2.2.0.0 NClark 032621
+//		-> Updated addinInstallFiles for Tim's MPX Data Parser
+//	2.1.0.0 NClark 030521
+//		-> Updated addinInstallFiles for QSDMA AR calculator
+//	2.0.0.0 NClark 052620
+//		-> Updated install files for other FIVEX Tools besides SDCI
+//	1.9.0.0 NClark 032720
+//		-> Fixed to add try so if not in install list, it won't fail the whole update
+//	1.8.0.0 NClark 032720
+//		-> Updated install files to include the new generic beckman tool
+//	1.7.0.1 NClark 080219
+//		-> Updated install files for Bile acids
+//	1.7.0.0 NClark 080119
+//		-> Updated Check update to work with MACs
+//	1.6.0.1 NClark 070819
+//		-> typo in install files
+//	1.6.0.0 NClark 070819
+//		-> Updated install files to have compress cols info
+//	1.5.0.0 NClark 061819
+//		-> Updated batchcheck and trackusage to work with MACs
+//	1.4.0.0 NClark 040319
+//		-> Updated Track Usasge and associated function(s)
+//			-> Updated folder permissions to allow users to write to final log location on network
+//			-> Updated to check for network folder and save file locally or to the network
+//			-> created upload function to upload files if network location present
+//			-> combined network save in saveLocalFile (renamed to saveLogFile)
+//			-> Reverted MTP function to last functioning version
+//			-> Log name now contains computer name and comp name part of file also
+//	1.3.0.0 NClark 032919
+//		-> Commented out all of MTP function until laggy bugs fixed
+//	1.2.0.0 NClark 031919
+//		-> Updated track usage and saveMTP functions to save files to MTP
+//	1.1.0.0 NClark 030719
+//		-> Added new batch update function
+//			-> Can check for updates to multiple addins
+//	1.0.0.8 NClark 021919
+//		-> corrected addinFolder to be... \JMP addins instead of \addins
+//	1.0.0.7 NClark 021919
+//		-> removed char() from jmpVer and made variable concat with "_" to force char
+//	1.0.0.6 NClark 021919
+//		-> added char() around version, libver and jmpver
+//	1.0.0.5 NClark 021919
+//		-> put char() around todayDate in dataStr field
+//	1.0.0.4 NClark 021919
+//		-> changed so usage log populated with todayDate instead of date
+//	1.0.0.3 NClark 021919
+//		-> aded ; on line 94
+//	1.0.0.2 NClark 021919
+//		-> updated track usage to make local file based on username and date
+//		-> created two new functions, one for writing local file one for uploading to MTP site
+//		-> MTP function filled with errors to trigger failure if Empty() isn't the return
+//			-> done to build in functinoality over time
+//	1.0.0.1 NClark 021419
+//		-> added library version to tracking output
+//	1.0 NClark 021319
+//		-> First version released
+//		-> checkforupdate()
+//			-> from JChilton (JMP) using his existing infrastructure from addin manager
+//			-> track changes to keep track of what addins users run
+//------------------------------------------------------------------
+
+checkForUpdate = Function( {addinID,force=0}, 
+	{Default Local}, 
+
+	If(HostIs("MAC"),
+		If(IsDirectory("\Volumes/groups/"),
+			Empty()
+			,
+			web("smb://foghorn.namerica.idexxi.com/groups");
+			nw = New Window("Mounting drive",
+				<< modal,
+				Text Box("Please enter credentials for drive to mount and click ok when complete"),
+				ButtonBox("OK"),
+				Button Box("Cancel", Return(0))
+			);
+		);
+		addinFolder = Convert File Path("\Volumes/groups/JMP User Group/JMP Addins/", unix);
+		,
+		addinFolder = Convert File Path("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\",windows);
+	);
+	Try(
+		addinInstall = addinInstallFiles();
+		
+		// The include will return an Associative Array
+		homeFolder = GetAddin(addinID) << home folder;
+		customMetadata_aa = Include( homeFolder||"customMetadata.jsl" );
+		
+		// Only do this check for the PROD add-ins
+		If( customMetadata_aa["state"] == "PROD",
+		
+			// assign variables for the installed add-in's name, build date
+			addinName = customMetadata_aa["name"];
+			buildDate = customMetadata_aa["buildDate"];
+			
+			// Import the add-in publish info from the shared server location
+			pub_aa = Eval( Parse( Load Text File( customMetadata_aa["deployedAddinsLoc"] || customMetadata_aa["deployedAddinsFilename"] ) ) );
+			
+			// If, for some reason, this add-in's ID was not in the table, there's no way to know if a new version is available
+			If( pub_aa << Contains( customMetadata_aa["id"] ),
+				
+				thisPub_aa = pub_aa[customMetadata_aa["id"]];
+				
+				// get the publish date and filepath for the add-in
+				pubDate = thisPub_aa["pubDate"];
+				//filepath = thisPub_aa["folder"] || thisPub_aa["filename"];
+				filepath = addinFolder || addinInstall[addinID][1];
+				
+				// if the publish date is newer than the build date of the current add-in, then there is a new version
+				If( buildDate < pubDate, 
+					
+					// if we're not forcing an update, let's prompt the user if they want to get the new version
+					If( force == 0,
+						answer = 0;
+						New Window( "Update Available!",
+							<<modal,
+							V List Box(
+								Text Box(
+									"Updates to  " || addinInstall[addinID][2] || " were published on " || Format( pubDate, "Short Date" ) || ".",
+									<<Set Font Style( "bold" )
+								),
+								Text Box(),
+								Text Box( "Click 'OK' to install the updates, or 'Cancel' to continue using the present version." ),
+								Text Box(),
+								H List Box( Spacer Box(), Button Box( "OK", answer = 1 ), Button Box( "Cancel" ) )
+							)
+						),
+						answer = 1
+					);
+					// If they clicked 'OK' (or your forced them to update), open the newest add-in to install it
+					If( answer == 1,
+						Open( filepath );
+						New Window( "Re-Run", modal, Text Box( "Updates for " || addinInstall[addinID][2] || " add-ins have been installed. Please launch the add-in again." ) );
+						Stop();
+					);
+				);
+			);
+		);
+	);
+
+);
+
+batchUpdateChk = Function( {addinList,force=0},
+	{default local},
+	//Batch Check may be able to replace existing functions use
+	//addinList = mf:batchCheck;
+	If(HostIs("MAC"),
+		If(IsDirectory("\Volumes/groups/"),
+			Empty()
+			,
+			web("smb://foghorn.namerica.idexxi.com/groups");
+			nw = New Window("Mounting drive",
+				<< modal,
+				Text Box("Please enter credentials for drive to mount and click ok when complete"),
+				ButtonBox("OK"),
+				Button Box("Cancel", Return(0))
+			);
+		);
+		addinFolder = Convert File Path("\Volumes/groups/JMP User Group/JMP Addins/", unix);
+		,
+		addinFolder = Convert File Path("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\",windows);
+	);
+	
+	installList = Associative Array();
+	
+	Try(
+		addinInstall = addinInstallFiles();
+		textBox = VListBox();
+		doneBox = VListBox();
+		
+		For(i=1,i<=nitems(addinList),i++,
+
+			// The include will return an Associative Array
+			homeFolder = GetAddin(addinList[i]) << home folder;
+			customMetadata_aa = Include( homeFolder||"customMetadata.jsl" );
+			installData = {};
+			
+			// Only do this check for the PROD add-ins
+			If( customMetadata_aa["state"] == "PROD",
+			
+				// assign variables for the installed add-in's name, build date
+				addinName = customMetadata_aa["name"];
+				buildDate = customMetadata_aa["buildDate"];
+				
+				// Import the add-in publish info from the shared server location
+				pub_aa = Eval( Parse( Load Text File( customMetadata_aa["deployedAddinsLoc"] || customMetadata_aa["deployedAddinsFilename"] ) ) );
+				
+				// If, for some reason, this add-in's ID was not in the table, there's no way to know if a new version is available
+				If( pub_aa << Contains( customMetadata_aa["id"] ),
+					
+					thisPub_aa = pub_aa[customMetadata_aa["id"]];
+					
+					// get the publish date and filepath for the add-in
+					pubDate = thisPub_aa["pubDate"];
+					//filepath = thisPub_aa["folder"] || thisPub_aa["filename"];
+					Try(
+						filepath = addinFolder || addinInstall[addinList[i]][1];
+					
+						// if the publish date is newer than the build date of the current add-in, then there is a new version
+						If( buildDate < pubDate, 
+							insertInto(installList,addinList[i]);
+							insertInto(installData,pubDate);
+							insertInto(installData,filePath);
+							insertInto(installData,addinInstall[addinList[i]][2]);
+							
+							installText = TextBox("Updates to  " || addinInstall[addinList[i]][2] || " were published on " || Format( pubDate, "Short Date" ) || ".",<<Set Font Style( "bold" ));
+							doneText = TextBox(addinInstall[addinList[i]][2],<<Set Font Style( "bold" ));
+							textBox << append(installText);
+							doneBox << append(doneText);
+							
+							installList[addinList[i]] = installData;
+						)
+					);
+				);
+			);
+		);
+		If(nitems(installList) > 0,
+			If( force == 0,
+				answer = 0;
+				New Window( "Update(s) Available!",
+					<<modal,
+					V List Box(
+						textBox,
+						Text Box(),
+						Text Box( "Click 'OK' to install the updates, or 'Cancel' to continue using the present version(s)." ),
+						Text Box(),
+						H List Box( Spacer Box(), Button Box( "OK", answer = 1 ), Button Box( "Cancel" ) )
+					)
+				),
+				answer = 1
+			);
+			If( answer == 1,
+				currentKey = installList << first;
+				For(i=1,i<=nitems(installList),i++,
+					Open( installList[currentKey][2] );
+					currentKey = installList << next(currentKey);
+				);
+				New Window( "Re-Run", modal, 
+					VListBox(
+						doneBox,
+						Text Box(),
+						Text Box( "Updates for add-ins have been installed. Please launch the add-in again." )
+					)
+				);
+				Stop();
+			);
+		);
+		,
+		Print("something went wrong with batch check")
+	);
+);
+
+trackUsage = Function({user,addinID},{default local},
+	Try(
+		todayDate = Today();
+		date = Format(todayDate,"yyyy-mm-dd");
+		If(HostIs("MAC"),
+			If(IsDirectory("\Volumes/groups/"),
+				Empty()
+				,
+				web("smb://foghorn.namerica.idexxi.com/groups");
+				nw = New Window("Mounting drive",
+					<< modal,
+					Text Box("Please enter credentials for drive to mount and click ok when complete"),
+					ButtonBox("OK"),
+					Button Box("Cancel", Return(0))
+				);
+			);
+			host = "MAC";
+			localPath = Convert File Path("/Users/"||u||"/Library/Application Support/JMP/AddinUseLogs_NRC/",unix);
+			networkPath = Convert File Path("\Volumes/groups/JMP User Group/JMP Addins/Production_Deployment/AddinUseLogs/", unix);
+			,
+			host = "WIN";
+			localPath = Convert File Path(Get Environment Variable("APPDATA") || "\SAS\AddinUseLogs_NRC\", windows);
+			networkPath = Convert File Path("\\FOGHORN.namerica.idexxi.com\Groups\JMP User Group\JMP Addins\Production_Deployment\AddinUseLogs\", windows);
+		);
+		compName = Get Environment Variable("COMPUTERNAME");
+		
+		fileName = compName||"_"||date||".csv";
+		headerStr = "User,Date,addinName,addinState,addin ver,lib ver,jmp ver,computer name,host\!n";
+		Try(
+			addinInfo = GetAddin(addinID);
+			version = Char(addinInfo << version);
+			addinName = addinInfo<<display name;
+			homeFolder = addinInfo<<home folder;
+			,
+			version = "Not installed yet";
+			addinName = addinID;
+			homeFolder = "";
+		);
+		jmpVer = JMP Version()||"_";
+		Try(
+			libInfo = GetAddin("com.idexx.assayDevLibraries2");
+			libVer = Char(libInfo << version);
+			,
+			libVer = "not installed"
+		);
+		Try(
+			metadata = include(homeFolder||"custommetadata.jsl");
+			state = metadata["state"]
+			,
+			state = "none"
+		);
+		dataStr = user||","||Char(todayDate)||","||addinName||","||state||","||char(version)||","||char(libVer)||","||jmpVer||","||compName||","||host||"\!n";
+
+		//IF network folder exsits, if there are local files upload them, otherwise save new file
+		//if no network folder, just save locally
+		If(IsDirectory(networkPath),
+			uploadFileList = Files In Directory(localPath);
+			show(uploadFileList);
+			If(nitems(uploadFileList) == 0,
+				//save network file
+				saveLogFile(networkPath,fileName,headerStr,dataStr,1);
+				,
+				//upload files
+				uploadFiles(localPath,networkPath,uploadFileList);
+				//save network file
+				saveLogFile(networkPath,fileName,headerStr,dataStr,1);
+			)
+			,
+			saveLogFile(localPath,fileName,headerStr,dataStr,2);
+		);
+		
+		Return(1)
+		,
+		Return(0);
+	);
+);
+
+saveLogFile = Function({path,logName,headerStr,dataStr,locale},{default local},
+	//locale determins if file will be saved locally or to the network
+	//local files will create teh directory if needed while not for network
+	Try(
+		If(Host is("Windows"),
+			If(IsDirectory(path),
+				//LOCAL version of file
+				If(!FileExists(path||logName),
+					SaveTextFile(path||logName,headerStr);
+					SaveTextFile(path||logName,dataStr,mode("append"))
+					,
+					SaveTextFile(path||logName,dataStr,mode("append"))
+				);
+				,
+				//LOCAL version of file
+				Match(locale,
+					1, //network
+					Empty()
+					,
+					2, //local
+					Create Directory(path);
+					SaveTextFile(path||logName,headerStr);
+					SaveTextFile(path||logName,dataStr,mode("append"));
+				)
+			)
+			,
+			Print("fail");
+			Return(0)
+		);
+		,
+		Return(0)
+	);
+);
+
+uploadFiles = Function({localPath,netPath,logNameList},{default local},
+	Try(
+		show(localPath,netPath,logNameList);
+		If(Host is("Windows"),
+			For(i=1,i<=nitems(logNameList),i++,
+				Copy File(localPath||logNameList[i],netPath||logNameList[i]);
+				Delete File(localPath||logNameList[i])
+			),
+			Return(0)
+		)
+		,
+		Print("Error in Transfer");
+		Return(0);		
+	)
+);
+
+saveMTPfile = Function({localPath,logNameList},{default local},
+	//IF TO USE, PERHAPS CHECK FOR NETWORK FOLDER TO CONFIRM CONNECTION
+	//STILL NO CLEAR WAY TO CATCH IF PROCESS HANGS
+	
+	//localPath = Convert File Path(Get Environment Variable("APPDATA") || "\SAS\AddinUseLogs_NRC\", windows);
+	//logNameList = Files In Directory(localPath);
+	Try(
+		newNameList = {};
+		If(Host is("Windows"),
+			x = RunProgram(
+			  Executable( "ftp" ),
+			  Options( "-v -n" ),
+			  ReadFunction( Function( {this}, Write( this << read ) ) )
+			);
+			x << Write( "open mft.idexx.com\!n" ); // site to open
+			x << Write( "user Mft_nrcjmplogs@idexx.com GB5TSf86t6V3S8E 22\!n" ); // credentials
+			For(i=1,i<=nitems(logNameList),i++,
+				newName = Char(today())||logNameList[i];
+				b = Rename File(localPath||logNameList[i],newName);
+				a = localPath||newName;
+				x << Write( EvalInsert("put "||"\!"^a^\!"\!n") );
+				insertInto(newNameList,newName);
+			);
+			x << Write( "disconnect\!n" ); // or just bye if nothing else to do
+			x << Write( "bye\!n" ); // run program terminates when ftp terminates
+			// when ftp signals end-of-file for reading, RunProgram must
+			// really be finished. Wait for it...
+			While( !(x << isReadEof), Wait( .01 ) );
+			
+			For(k=1,k<=nitems(newNameList),k++,
+				DeleteFile(localPath||newNameList[k])
+			)
+			,
+			Empty()//currently only for Windows machines
+		)
+		,
+		Return(0)
+	)
+);
+
+addinInstallFiles = Function({},{},
+	fileList = Associative Array(
+		List(
+			List("com.idexx.RnD_multAssay",{"updateAssayDevMultAssay.jsl","MultiAssay Tools"}),
+			
+			List("com.idexx.RnD_QSDMA",{"updateAssayDevQSDMA.jsl","QSDMA Tools"}),
+
+			List("com.idexx.RnD_QuantPL_DoseModel",{"updateAssayDevQuantPL.jsl","QuantPL Tools"}),
+
+			List("com.idexx.RnD_P4",{"updateAssayDevPROG.jsl","PROG Tools"}),
+			List("com.idexx.RnD_P4titer",{"updateAssayDevPROG.jsl","PROG Tools"}),
+			List("com.idexx.RnD_P4titerCheck",{"updateAssayDevPROG.jsl","PROG Tools"}),
+
+			List("com.idexx.RnD_SDMA",{"updateAssayDevSDMA.jsl","SDMA Tools"}),
+			List("com.idexx.RnD_SDMAcalCurve",{"updateAssayDevSDMA.jsl","SDMA Tools"}),
+			List("com.idexx.RnD_SDMA-t_EggOverlay",{"updateAssayDevSDMA.jsl","SDMA Tools"}),
+			List("com.idexx.RnD_SDMAtiter",{"updateAssayDevSDMA.jsl","SDMA Tools"}),
+			List("com.idexx.RnD_SDMAtiterCheck",{"updateAssayDevSDMA.jsl","SDMA Tools"}),
+
+			List("com.idexx.RnD_TT4",{"updateAssayDevTT4.jsl","TT4 Tools"}),
+			List("com.idexx.RnD_TT430",{"updateAssayDevTT4.jsl","TT4 Tools"}),
+			List("com.idexx.RnD_TT4RS",{"updateAssayDevTT4.jsl","TT4 Tools"}),
+
+			List("com.idexx.RnD_CRP",{"updateAssayDevCRP.jsl","CRP Tools"}),
+			List("com.idexx.RnD_CRPRS",{"updateAssayDevCRP.jsl","CRP Tools"}),
+			List("com.idexx.RnD_CRPcalCurve",{"updateAssayDevCRP.jsl","CRP Tools"}),
+
+			List("com.idexx.RnD_Bile",{"updateAssayDevBile.jsl","Bile Tools"}),
+
+			List("com.idexx.genericAssayDev",{"updateGenericTools.jsl","Generic Tools"}),
+			List("com.idexx.genericAD_AngleTool",{"updateGenericTools.jsl","Generic Tools"}),
+			List("com.idexx.assayTablePreparation",{"updateGenericTools.jsl","Generic Tools"}),
+			List("com.idexx.runsheet",{"updateGenericTools.jsl","Generic Tools"}),
+			List("com.idexx.generic_beckman",{"updateGenericTools.jsl","Generic Tools"}),
+			List("com.idexx.catalystAssayCodes",{"updateGenericTools.jsl","Generic Tools"}),
+
+			List("com.idexx.assayDevLibraries",{"updateLibraries.jsl","Lib Tools"}),
+			List("com.idexx.assayDevLibraries2",{"updateLibraries.jsl","Lib Tools"}),
+
+			List("com.idexx.nclark.removesDuplicates",{"updateRemoveDupes.jsl","Remove Dupes"}),
+
+			List("com.idexx.nclark.copyColumnFormulas",{"updateCopyColumns.jsl","Copy cols"}),
+
+			List("com.idexx.nclark.concatenate_files_invisibly",{"updateConcatInvis.jsl","Concat Tools"}),
+			List("com.idexx.nclark.concatenate_files_invisibly_ChgDef",{"updateConcatInvis.jsl","Concat Tools"}),
+
+			List("com.idexx.nclark.SDCI",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+			List("com.idexx.nclark.FIVEXContactUs",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+			List("com.idexx.nclark.exactBinom",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+			List("com.idexx.nclark.SDCIgraph",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+			List("com.idexx.nclark.updateFX",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+			List("com.idexx.nclark.youdenMSA",{"updateFIVEX_Tools.jsl","FIVEX Tools"}),
+
+			List("com.idexx.nrclark.noCompressFormula",{"updateCompressCols.jsl","Compress Cols"}),
+
+			List("com.idexx.mpxDataparser",{"com.idexx.mpxDataparser_update.jsl","MPX Tools"}),
+
+			List("com.idexx.nrclark.Dairy_Reader_Data",{"updateDairyReader.jsl","Dairy Tools"})
+		)
+	);
+	Return(fileList)
+);
+
