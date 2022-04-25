@@ -7,7 +7,7 @@
 
 //------------------Revision History for both script and Help File--
 //
-// 1.0 NClark 033021
+// 1.0 NClark 052522
 //		-> First Released Version
 //------------------------------------------------------------------
 Names Default to here(1);
@@ -19,7 +19,7 @@ updateLoc = "JMP User Group\JMP Addins\";
 
 //list of files to be installed for addin
 //list in the order you want them installed
-fileNameList = {"Dairy_Reader_Data.jmpaddin"};
+fileNameList = {"Daily_Affirmations.jmpaddin"};
 
 If(Num(Word(1,jmpversion(),"."))>=11,
 	newCap = Caption(
@@ -32,7 +32,7 @@ If(Num(Word(1,jmpversion(),"."))>=11,
 		//Spoken( 1 ),
 		//Delayed( 1 )
 	);
-	,
+    ,
 	newCap = Caption(
 		{500, 500},
 		"Please Wait: Your addins are installing",
