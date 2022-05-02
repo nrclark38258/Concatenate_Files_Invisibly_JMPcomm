@@ -7,6 +7,9 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//		  1.0 SDarling 042922
+//		-> moved calFitfunc, subLotcharFunc, calBarcodeParse, Grubbs_Outlier_Detection, subLottabprep, prepCalData, prepLoopData, prepExpiration, SDMAPanelPrep, SDMALoopQualPrep, SDMAInstPrep, SDMAPatientPrep, assayType to tested section.
+//		-> moved outlierDetectWithinGroup and outlierRecursion to unused function section.
 //	RC3   1.0 SDarling 041922
 //		-> updated SDMAInstPrep to delete excluded rows and outliers from table.
 //		-> set d term to 0 in SDMAjsonPrepBase().
@@ -289,50 +292,7 @@ factorFinder = Function( {number},
 	Return( table );
 );
 
-//UNTESTED FUNCTIONS
-//nate created, needs to test
-instIDpreparation = Function( {tableName, instrumentIDcolumn = "Instrument ID"}, {default local},
-	
-	//variable shortening
-	instID = instrumentIDcolumn;
-	
-	//convert text cols names into jsl local column variables
-	//JMP 16 may have fixed issues that require needing both styles
-	nameIDCol = EvalInsert(":\!"^instID^\!"n");
-	
-	parseIDCol = Parse(EvalInsert(":\!"^instID^\!"n"));
-
-	//this will recode an existing Inst Type column with hopefully the correct layout
-	Try(
-		IsScriptable(Column(tableName, "Inst Type"));
-		tableName << Recode Column(
-			:"Inst Type"n,
-			{lower_rcNow = Lowercase( _rcNow ); Map Value(
-				lower_rcNow,
-				{"catalyst dx", "ctdx", "catdx", "ctdx", "cat dx", "ctdx", "catalystdx", "ctdx", 
-				"catone", "cat1", "cat one", "cat1", "catalyst one", "cat1", "catalystone", "cat1", "catalyst1", "cat1", "catalyst 1", "cat1"},
-				Unmatched( lower_rcNow )
-			)},
-			Target Column(:"Inst Type"n)
-		);
-		,
-		tableName << new column("Inst Type",Character,Nominal,
-			Formula(
-				Match(Substr(parseIDCol,1,4),
-					"CTDX", "ctdx"
-					,
-					"CAT1", "cat1"
-				)
-			)
-		);
-		tableName:"Inst Type"n << delete formula;
-	);
-
-	Return(tableName);
-);
-
-//added by nate to turn Chem Types into Chem Codes
-//technically needs to be tested ... and eventually moved to libraries
+//eventually moved to libraries
 assayTypes = Function({},{default local},
 	assayTyp = Associative Array(
 		{
@@ -379,30 +339,6 @@ assayTypes = Function({},{default local},
 	Return(assayTyp)
 );
 
-
-//nate brought in, from Tim's function probably won't be tested specifically
-outlierRecursion = Function( {resultlist, threshold, outlierLimitCount},
-	{default local},
-	//**********recursive function to create the final result list*********
-
-	TempMedian = Median( resultlist );
-	TempMean = Mean( resultlist );
-	TempN = Length( resultlist );
-	If( TempN < outlierLimitCount,
-		Return( {"Fail"} ),
-		If( Abs( TempMedian - TempMean ) > threshold,
-			If( TempMedian - TempMean < 0,
-				resultlist = Remove( resultlist, TempN, 1 ),
-				resultlist = Remove( resultlist, 1, 1 )
-			);
-			resultlist = outlierRecursion( resultlist, threshold );
-		,
-			Return( resultlist )
-		);
-		Return( resultlist );
-	);
-);
-
 //parse the barcode to get slide lot number, crossweb number, foil number, assay code.
 calBarcodeParse = Function({tablename, barcodecol}, {default local},
 	//tablename = current data table();
@@ -436,15 +372,6 @@ calBarcodeParse = Function({tablename, barcodecol}, {default local},
 	tablename:"Assay Code_BC"n << delete property(Formula);
 	
 	return(tablename);	
-);
-
-unprivatizeTable = Function({bool,tableName},{default local},
-	If(bool == 1,
-		tableName << New Data View;
-		Return(tableName)
-		,
-		Return(tableName)
-	)
 );
 
 Grubbs_Outlier_Detection = Function({tablename, yCol, alpha}, {default local},
@@ -530,13 +457,68 @@ Grubbs_Outlier_Detection = Function({tablename, yCol, alpha}, {default local},
 	Return(tablename);
 );
 
+
+//UNTESTED FUNCTIONS
+//nate created, needs to test
+instIDpreparation = Function( {tableName, instrumentIDcolumn = "Instrument ID"}, {default local},
+	
+	//variable shortening
+	instID = instrumentIDcolumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameIDCol = EvalInsert(":\!"^instID^\!"n");
+	
+	parseIDCol = Parse(EvalInsert(":\!"^instID^\!"n"));
+
+	//this will recode an existing Inst Type column with hopefully the correct layout
+	Try(
+		IsScriptable(Column(tableName, "Inst Type"));
+		tableName << Recode Column(
+			:"Inst Type"n,
+			{lower_rcNow = Lowercase( _rcNow ); Map Value(
+				lower_rcNow,
+				{"catalyst dx", "ctdx", "catdx", "ctdx", "cat dx", "ctdx", "catalystdx", "ctdx", 
+				"catone", "cat1", "cat one", "cat1", "catalyst one", "cat1", "catalystone", "cat1", "catalyst1", "cat1", "catalyst 1", "cat1"},
+				Unmatched( lower_rcNow )
+			)},
+			Target Column(:"Inst Type"n)
+		);
+		,
+		tableName << new column("Inst Type",Character,Nominal,
+			Formula(
+				Match(Substr(parseIDCol,1,4),
+					"CTDX", "ctdx"
+					,
+					"CAT1", "cat1"
+				)
+			)
+		);
+		tableName:"Inst Type"n << delete formula;
+	);
+
+	Return(tableName);
+);
+
+//added by nate to turn Chem Types into Chem Codes
+
+//UNTESTED FUNCTIONS
+
+unprivatizeTable = Function({bool,tableName},{default local},
+	If(bool == 1,
+		tableName << New Data View;
+		Return(tableName)
+		,
+		Return(tableName)
+	)
+);
+
+
 	/////////////////////////////////////////
 	//       Main functions                //
 	/////////////////////////////////////////
 
 //TESTED MAIN FUNCTIONS
-
-//UNTESTED MAIN FUNCTIONS
 calFitfunc = Function( {table, posCol, respCol, fluidCol, slideLotvar, chemTypecol, instTypecol, fitType, fitType2},
 	{default local}, 
 	
@@ -918,6 +900,673 @@ subLottabprep = Function( {table1, table2, calPosxL, calPosxH, calPosy, posColx,
 	
 	Return( tableOut );
 );
+
+prepCalData = Function( {calPathway, dataPath},
+	{default local}, 
+	/*
+	calPathway = "LYTES";
+	dataPath = calDataPath;
+	*/
+	//addin sages barcode function to this preparation
+	dt = Open( dataPath );
+	dt = calBarcodeParse(dt, "Barcode");
+	dt:"Crossweb_BC"n << set data type("Numeric");
+	dt:"Crossweb_BC"n << set name("Cross Web");
+	
+	//outlier determination and exclusion using Grubb's.
+	dt << New Column( "CL Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 40,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt << New Column( "NA Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 41,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt << New Column( "K Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+			If( :"Assay"n == 42,
+				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
+			)
+		)
+	);
+
+	dt:"CL Blocked AR for Outliers"n << Delete Formula;
+	dt:"NA Blocked AR for Outliers"n << Delete Formula;
+	dt:"K Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt, "CL Blocked AR for Outliers", 0.001);
+	Grubbs_Outlier_Detection(dt, "NA Blocked AR for Outliers", 0.001);
+	Grubbs_Outlier_Detection(dt, "K Blocked AR for Outliers", 0.001);
+
+	dt << Delete Columns("CL Blocked AR for Outliers", "NA Blocked AR for Outliers", "K Blocked AR for Outliers");
+
+	dt << Clear Select;
+
+	Return( dt );
+
+);
+
+prepLoopData = Function( {calPathway, dataPath, calData},
+	{default local},
+	/*
+	calPathway = "LYTES";
+	dataPath = loopDataPath;
+	calData = calData;
+	*/
+	neededLoops = AssociativeArray(calData:"Loop Lot_DxRelease");
+	removefrom(neededLoops,"");
+	
+	//loopQualPath = "/D:/IDEXX/Lytes One Loop = One Lot - Documents/Documentation/CO3489 - QC for OLOL/4. Species Calibration/Species File Check/";
+	loopfileList = Files In Directory(dataPath,recursive);
+	
+	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
+	For(i=nitems(loopfileList),i>=1,i--,
+		If(
+			/*Contains(loopfileList[i], "Loop Qualification") |
+			Contains(loopfileList[i], "NDE Count") |
+			Contains(loopfileList[i], "unchosen") |
+			Contains(loopfileList[i], "Sublot Corrected"),*/
+			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
+			RemoveFrom(loopfileList,i)
+			,
+			//show(word(1,loopfileList[i],"_"));
+			//neededloops will be character
+			loop = word(1,loopfileList[i],"_"); //surfs the folder names from Head
+			//loop = Num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
+			If(neededLoops[loop] == 0,
+				RemoveFrom(loopfileList,i)
+			)
+		);
+	);
+	
+	loopFiles = {};
+	For(i=1,i<=nitems(loopfileList),i++,
+		loopFiles[i] = Open(
+			dataPath||loopfileList[i],
+			private
+		);
+		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
+	);
+	loopFiles1 = Remove(loopFiles,1);
+	
+	If(
+		N Items( loopFiles ) == 1, 
+			loopQualTable = loopFiles[1];
+		,
+		N Items( loopFiles ) > 1,
+			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
+			For( i = 1, i <= N Items( loopFiles ), i++,
+				Close( loopFiles[i], nosave )
+			);
+		,
+		N Items( loopFiles ) == 0,
+			Print( "no loop data, please try again" );
+			Return(0);
+	);
+	
+	loopQualTable << New Column("AR",numeric,continuous,
+		Formula(
+			Match( :Dry Reads Used,
+				"6-7", :"DR Mean 6-7 offline_ar"n,
+				"9-10", :"DR Mean 9-10 offline_ar"n,
+				"9-10-11", :"DR Mean 9-10-11 offline_ar"n,
+				"10-11", :"DR Mean 10-11 offline_ar"n
+			)
+		)
+	);
+	loopQualTable:"AR"n << delete formula;
+	
+	loopQualTable << New Column("Inst Type", character, nominal,
+		Formula(
+			If( Substr( :"InstrumentSerial"n, 1, 4 ) == "CTDX",
+				"CatDx",
+				"CatOne"
+			);
+		);
+	);
+	loopQualTable:"Inst Type"n << delete formula;
+	
+	Try(
+		IsScriptable(Column(loopQualTable,"Foil"));
+		loopQualTable:"Foil"n << Set Formula( :"Foil_LQ"n );
+		loopQualTable:"Foil"n << delete formula;
+		loopQualTable:"Foil"n << set data type("Numeric");
+		,
+		loopQualTable << New Column("Foil",
+			Formula( :"Foil_LQ"n )
+		);
+		loopQualTable:"Foil"n << delete formula;
+		loopQualTable:"Foil"n << set data type("Numeric");
+	);
+	loopQualTable:"Crossweb_LQ"n << Set Data Type("Numeric");
+	loopQualTable:"Crossweb_LQ"n << Set Name("Cross Web");
+	
+	
+	//create summary of slide lot and loop lot
+	//add code to update the loopqual table with the slide lots from cal data (update with summary by loop lot)
+	cdSum = calData << Summary(
+		Group( :"Chem Type"n, :"Slide Lot"n, :"Loop Lot_DxRelease"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		private
+	);
+	cdSum = unprivatizeTable(seePrivateTables, cdSum);
+	cdSum:"Loop Lot_DxRelease"n << set data type("Character");
+	cdSum << delete columns("N Rows");
+	
+	loopQualTable << Update(
+		With(cdSum),
+		Match Columns(
+			:"Chem Type"n = :"Chem Type"n,
+			Transform Column(
+				"fullLL_LQ",
+				Formula( "4" || :"Loop Lot_LQ"n);
+			) = :"Loop Lot_DxRelease"n
+		)
+	);
+	Close(cdSum, nosave);
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	loopQualTable << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		:"Loop Lot_LQ"n == "*indet"
+		|
+		Excluded()
+	) << delete rows;
+	
+	Return(loopQualTable);
+
+);
+
+prepExpiration = Function( {calPathway, dataPath},
+	{default local},
+	
+	//def will need to be updated for QSDMA - that path will be a list of one to many files
+	//do the updates to the expiration data fomratting here
+	If(calPathway == "SDMA",
+		datatables = {};
+		listofthings = parse(dataPath);
+		//loop through to open the data tables needed for analysis.
+		For(i=1,i<=nitems(listofthings),i++,
+			
+			datatables[i] = Open(
+				listofthings[i],
+				Worksheets( "Sheet1" ),
+				Use for all sheets( 1 ),
+				Concatenate Worksheets( 0 ),
+				Create Concatenation Column( 0 ),
+				Worksheet Settings(
+					1,
+					Has Column Headers( 1 ),
+					Number of Rows in Headers( 1 ),
+					Headers Start on Row( 1 ),
+					Data Starts on Row( 2 ),
+					Data Starts on Column( 1 ),
+					Data Ends on Row( 0 ),
+					Data Ends on Column( 0 ),
+					Replicated Spanned Rows( 1 ),
+					Replicated Spanned Headers( 0 ),
+					Suppress Hidden Rows( 1 ),
+					Suppress Hidden Columns( 1 ),
+					Suppress Empty Columns( 1 ),
+					Treat as Hierarchy( 0 ),
+					Multiple Series Stack( 0 ),
+					Import Cell Colors( 0 ),
+					Limit Column Detect( 0 ),
+					Column Separator String( "-" )
+				),
+				Invisible
+			);
+			
+			//process each file if needed
+			
+		);
+
+		datatables1 = Remove(datatables,1);
+
+		Try(
+			concatTable = datatables[1] << Concatenate(
+				datatables1
+			);
+			For(i=1,i<=nitems(datatables),i++,
+				Close(datatables[i],nosave);
+			);
+			,
+			concatTable = datatables[1];
+		);
+
+		//modify the concatenated tables to have just batch and expiration date and delete the empty rows inside Batch.
+		concatTable << Select Columns(:"Batch"n, :"Exp. Date"n);
+		concatTable << Invert Column Selection();
+		concatTable << Delete Columns();
+		concatTable << Select where(is missing(:"Batch"n));
+		concatTable << Delete Rows();
+
+		//format the date per what's needed for the JSON
+		concatTable:"Exp. Date"n << Format(
+			"Custom",
+			Formula(
+				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+					1, "0" || Char( Month( value ) ),
+					2, Char( Month( value ) )
+				) || "." || Match( Length( Char( Day( value ) ) ),
+					1, "0" || Char( Day( value ) ),
+					2, Char( Day( value ) )
+				)
+			),
+			10,
+			0
+		);
+
+		//set the column names to the necessary values.	
+		concatTable:"Exp. Date"n << set name("exp_date") << set data type("Character");
+		concatTable:"Batch"n << set name("slide_lot");
+
+		Return(concatTable);
+		,
+		calPathway == "LYTES",
+		// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
+		//.... ClipLot becomes cliplot ExpirationDate become exp_date
+		//.... delete clip type
+		//.... convert chemabbr to chemcode ... don't use array of chem codes, call function to get them and add function to overarching list of functions
+		//.... other stuff too based on what comes in with this file
+		//.... format Expiration dates as follows below
+		//.... make format YYYY.MM.DD (not YYYY-MM-DD)
+		/*Data Table( "basicTest_expDates" ):ExpirationDate <<
+				Format(
+					"Custom",
+					Formula(
+						Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+							1, "0" || Char( Month( value ) ),
+							2, Char( Month( value ) )
+						) || "." || Match( Length( Char( Day( value ) ) ),
+							1, "0" || Char( Day( value ) ),
+							2, Char( Day( value ) )
+						)
+					),
+					10,
+					0
+				);
+			*/
+		//.... make date column character to be properly maintained in array and to JSON
+
+		assayCodes = assayTypes();
+		dt = Open(
+			dataPath,
+			Worksheets( "Summary" ),
+			//Use for all sheets( 1 ),
+			Concatenate Worksheets( 0 ),
+			Create Concatenation Column( 0 ),
+			Worksheet Settings(
+				1,
+				Has Column Headers( 1 ),
+				Number of Rows in Headers( 1 ),
+				Headers Start on Row( 2 ),
+				Data Starts on Row( 3 ),
+				Data Starts on Column( 1 ),
+				Data Ends on Row( 0 ),
+				Data Ends on Column( 0 ),
+				Replicated Spanned Rows( 1 ),
+				Replicated Spanned Headers( 0 ),
+				Suppress Hidden Rows( 1 ),
+				Suppress Hidden Columns( 1 ),
+				Suppress Empty Columns( 1 ),
+				Treat as Hierarchy( 0 ),
+				Multiple Series Stack( 0 ),
+				Import Cell Colors( 0 ),
+				Limit Column Detect( 0 ),
+				Column Separator String( "-" )
+			)
+		);
+		dt << select where(IsMissing(:"ExpirationDate"n)) << delete rows;
+		dt:ExpirationDate << Format(
+			"Custom",
+			Formula(
+				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
+					1, "0" || Char( Month( value ) ),
+					2, Char( Month( value ) )
+				) || "." || Match( Length( Char( Day( value ) ) ),
+					1, "0" || Char( Day( value ) ),
+					2, Char( Day( value ) )
+				)
+			),
+			10,
+			0
+		);
+		dt:"ExpirationDate"n << set name("exp_date");
+		dt:"Lot 2"n << set name("slide_lot");
+		dt:"ClipLot"n << set name("cliplot");
+		dt:"exp_date"n << set data type("Character");
+
+		dt << New Column("chemcode",
+			Formula(
+				assayCodes[:"ChemAbbr"n]
+			)
+		);
+		dt:"chemcode"n << delete formula;
+		
+		keepCols = {"cliplot","slide_lot","exp_date","chemcode"};
+		For(i=ncol(dt),i>=1,i--,
+			if(contains(keepCols, column(dt,i) << get name ), empty()
+				,
+				dt << delete columns(i)
+			)
+		);
+
+		Return( dt );
+	);
+);
+
+SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default local},
+	//loopQualDataPath = "/C:/Users/sdarling/Box/Roswell QSDMA Testing and Analysis/SDMA Loop Qual/Loop Lots/";
+	//calData = Data Table("PAN01_Panel_justResults_Runsheet.jmp");
+	//DXrelease = "/C:/Users/sdarling/OneDrive - IDEXX/Projects/Cal Tool Development/Trial Event/Build 10.75/Event PAN01/QSDMA Product Tracking Board Rev II.xlsm";
+
+	dt = Open(
+		DXrelease,
+		Worksheets( "SDMA" ),
+		Use for all sheets( 1 ),
+		Concatenate Worksheets( 0 ),
+		Create Concatenation Column( 0 ),
+		Worksheet Settings(
+			1,
+			Has Column Headers( 1 ),
+			Number of Rows in Headers( 1 ),
+			Headers Start on Row( 4 ),
+			Data Starts on Row( 5 ),
+			Data Starts on Column( 1 ),
+			Data Ends on Row( 0 ),
+			Data Ends on Column( 0 ),
+			Replicated Spanned Rows( 1 ),
+			Replicated Spanned Headers( 0 ),
+			Suppress Hidden Rows( 1 ),
+			Suppress Hidden Columns( 1 ),
+			Suppress Empty Columns( 1 ),
+			Treat as Hierarchy( 0 ),
+			Multiple Series Stack( 0 ),
+			Import Cell Colors( 0 ),
+			Limit Column Detect( 0 ),
+			Column Separator String( "-" )
+		)
+	);
+
+	Summarize(calData, neededlots = By(:"Slide Lot"n));
+	//show(neededLots);
+
+	dt << select where(Contains(neededLots, :"Slide Lot Number"n));
+
+	dt << Select Columns(:"Slide Lot Number"n, :"Loop Lot Number"n);
+
+	loopslideconfig = dt << Subset(
+		Selected Rows(1),
+		Selected columns only(1),
+		Invisible
+	);
+
+	close(dt, nosave);
+
+	loopslideconfig << Set Name("Loop Lot to Slide Lot");
+	
+	
+	//array required switching loop lot number to numeric as the header of the folders are coming in numeric. From the DX release, this comes in as a character nominal. Switching it here for usage. We could have also switched loop to be character instead. This was the easiest for now as I change it anyway for joining into the loop qual table, where loop lot number is numeric continuous already.
+	loopslideconfig:"Loop Lot Number"n << Set Data Type("Numeric") << Set Modeling Type("Continuous");
+	
+	neededLoops = AssociativeArray(loopslideconfig:"Loop Lot Number");
+	removefrom(neededLoops,"");
+
+	loopfileList = Files In Directory(loopQualDataPath,recursive);
+
+	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
+	For(i=nitems(loopfileList),i>=1,i--,
+		If(
+			/*Contains(loopfileList[i], "Loop Qualification") |
+			Contains(loopfileList[i], "NDE Count") |
+			Contains(loopfileList[i], "unchosen") |
+			Contains(loopfileList[i], "Sublot Corrected"),*/
+			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
+			RemoveFrom(loopfileList, i)
+			,
+			//show(word(1,loopfileList[i],"_"));
+			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
+			If(neededLoops[loop] == 0,
+				removefrom(loopfileList,i)
+			);
+		);
+	);
+	
+	show(loopfileList);
+	
+	loopFiles = {};
+	For(i=1,i<=nitems(loopfileList),i++,
+		loopFiles[i] = Open(
+			loopQualDataPath||loopfileList[i],
+			private
+		);
+		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
+	);
+	loopFiles1 = Remove(loopFiles,1);
+	
+	If(
+		N Items( loopFiles ) == 1, 
+			loopQualTable = loopFiles[1];
+		,
+		N Items( loopFiles ) > 1,
+			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
+			For( i = 1, i <= N Items( loopFiles ), i++,
+				Close( loopFiles[i], nosave )
+			);
+		,
+		N Items( loopFiles ) == 0,
+			Print( "no loop data, please try again" );
+			Return(0);
+	);
+	
+	loopQualTable:"Slide Lot"n << Set Name("Slide Lot_Original");
+	
+	loopQualTable << Update(
+		With( loopslideconfig ),
+		Match Columns( :"Slide Mfg Loop Lot"n = :"Loop Lot Number"n ),
+		Add Columns from Update Table( :"Slide Lot Number"n )
+	);
+	
+	close(loopslideconfig, nosave);
+	
+	loopQualTable:"Slide Lot Number"n << Set Name("Slide Lot") << Set Data Type("Numeric") << Set Modeling Type("Continuous");
+	
+	//selecting the rows that are Grubb's outliers, barcodes that can't be read, or excluded for another purpose.
+	loopQualTable << Row Selection(
+		Select where( 
+			:"Exclusion Rationale"n == "NDE - Grubb's"
+			|
+			:"Loop Lot_LQ"n == "*indet"
+			|
+			Excluded()
+		)
+	);
+	
+	loopQualTable << Invert Row Selection();
+	/*
+	This subset effectively deletes all manually excluded rows as well as rows deemed as outliers.
+	Long term it would be ideal to ensure the exclusions could be honored (from columns and row states),
+	but that will be a feature request for a later release
+	*/
+	//creating a subset with the exclusions out.
+	dt_Sublot = loopQualTable << Subset( 
+		Selected Rows(1),
+		Selected Columns(0) 
+	);
+	
+	dt_Sublot << Delete Columns("Foil"n);
+	dt_Sublot:"Crossweb_LQ"n << set name("Cross Web");
+	dt_Sublot:"Cross Web"n << Data Type( Numeric );
+	dt_Sublot:"Foil_LQ"n << set name("Foil");
+	dt_Sublot:"Foil"n << Data Type( Numeric ) << Set Modeling Type( Nominal );
+	
+	dt_Sublot << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(:"Panel Dose"n) ) );
+	Column( dt_Sublot, "Script Dose Val" ) << Delete Formula;
+	
+	dt_Sublot << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
+	Column( dt_Sublot, "Script AR" ) << Delete Formula;
+	close(loopQualTable, nosave);
+	
+	Return(dt_Sublot);
+);
+
+SDMAPanelPrep = Function({calPath}, {default local},
+	//dt_Panel = current data table();
+	//calPath = calDataPath;
+	
+	dt_Panel = Open(calPath);
+	
+	calBarcodeParse(dt_Panel, "Barcode");
+	dt_Panel:"Crossweb_BC"n << set name("Cross Web");
+	dt_Panel:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	dt_Panel << Delete Columns("Foil"n);
+	dt_Panel:"Foil_BC"n << set name("Foil");
+	dt_Panel:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	dt_Panel << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(Try("Panel Dose (µg/dL)_RS"n, "Panel Dose (ug/dL)_RS"n ))));
+		Column( dt_Panel, "Script Dose Val" ) << Delete Formula;
+	
+	dt_Panel << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
+	Column(dt_Panel, "Script AR" ) << Delete Formula;
+
+	//outlier detection
+	dt_Panel << New Column( "Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Script Dose Val"n, :"Slide Lot"n, :"Cross Web"n )
+		)
+	);
+
+	dt_Panel:"Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt_Panel, "Blocked AR for Outliers", 0.001);
+
+	dt_Panel << Delete Columns("Blocked AR for Outliers");
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	dt_Panel << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
+
+	dt_Panel << Clear Select;
+
+	Return(dt_Panel);
+);
+
+SDMAPatientPrep = Function({patientPath}, {Default Local},
+	
+	dt_FineTune = Open(patientPath);
+	
+	//what is the purpose of this column?
+	dt_FineTune << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
+	Column( dt_FineTune, "Script AR" ) << Delete Formula;
+	
+	dt_FineTune:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	calBarcodeParse(dt_FineTune, "Barcode");
+	dt_FineTune:"Crossweb_BC"n << set name("Cross Web");
+	dt_FineTune:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	dt_FineTune << Delete Columns("Foil"n);
+	dt_FineTune:"Foil_BC"n << set name("Foil");
+	dt_FineTune:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	dt_FineTune << New Column("Lot Type", Character, Nominal, Set Formula(
+		If( :"results.base_concentration"n == -1,
+			"Test",
+			"Reference"
+		)
+	));
+	dt_FineTune:"Lot Type"n << Delete Formula;
+	
+	Return(dt_FineTune);
+	
+);
+
+SDMAInstPrep = Function({platformPath}, {Default Local},
+	//platformPath = platformDataPath;
+	
+	dt_InstTune = Open(platformPath);
+	
+	dt_InstTune << Recode Column(
+		dt_InstTune:"Chem Type"n,
+		{Map Value( _rcOrig, {"QSDMA", "SDMA"}, Unmatched( _rcNow ) )},
+		Update Properties( 1 ),
+		Target Column( :Chem Type )
+	);
+	
+	//what's the point of this column?
+	dt_InstTune << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
+	Column( dt_InstTune, "Script AR" ) << Delete Formula;
+	
+	dt_InstTune:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	calBarcodeParse(dt_InstTune, "Barcode");
+	dt_InstTune:"Crossweb_BC"n << set name("Cross Web");
+	dt_InstTune:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	dt_InstTune << Delete Columns("Foil"n);
+	dt_InstTune:"Foil_BC"n << set name("Foil");
+	dt_InstTune:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+
+	//outlier detection
+	dt_InstTune << New Column( "Blocked AR for Outliers",
+		Numeric,
+		Continuous,
+		Set Formula( 
+				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Slide Lot"n, :"Inst Type"n )
+		)
+	);
+
+	dt_InstTune:"Blocked AR for Outliers"n << Delete Formula;
+
+	Grubbs_Outlier_Detection(dt_InstTune, "Blocked AR for Outliers", 0.001);
+
+	dt_InstTune << Delete Columns("Blocked AR for Outliers");
+	/*
+	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
+	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
+	request for a later release
+	*/
+	dt_InstTune << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
+
+	dt_InstTune << Clear Select;
+
+	
+	Return(dt_InstTune);
+);
+
+
+//UNTESTED MAIN FUNCTIONS
 
 subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, slideLotvar, outputCol, chemTypecol, blockType},
 	{default Local}, 
@@ -1424,165 +2073,6 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 	;
 );
 
-//Nates mods of Jesse's mods of Tim's outlier function
-//untested
-//currently not used.
-// example: outlierDetectWithinGroup(dt,"AR","Assay","Lot","Instrument Type");
-outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn,doseColumn},{default local},
-
-	/* testing variables
-	DTinitial = current data table();
-	responseColumn = "AR";
-	assayCodeColumn = "Assay";
-	slideLotColumn = "Slide Lot";
-	instrumentTypeColumn = "Instrument Type";
-	doseColumn = "Dose";
-	*/
-	
-	//variable shortening
-	respCol = responseColumn;
-	assayCol = assayCodeColumn;
-	lotCol = slideLotColumn;
-	instCol = instrumentTypeColumn;
-	doseCol = doseColumn;
-	
-	//convert text cols names into jsl local column variables
-	//JMP 16 may have fixed issues that require needing both styles
-	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
-	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
-	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
-	nameInstCol = EvalInsert(":\!"^instCol^\!"n");
-	nameDoseCol = EvalInsert(":\!"^doseCol^\!"n");
-	
-	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
-	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
-	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
-	parseInstCol = Parse(EvalInsert(":\!"^instCol^\!"n"));
-	parseDoseCol = Parse(EvalInsert(":\!"^doseCol^\!"n"));
-	
-	//**********Sort Table**********
-	DTinitial << Clear Column Selection();
-	temp = DTinitial << New Column("Calibration Group",character,formula( char(parseAssayCol) || char(parseLotCol) || parseInstCol));
-	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || char(parseDoseCol)));
-	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n), Order(Ascending, Ascending));
-
-	//**********Run Order Column**********
-	temp2 = DTinitial << New Column( "GroupRunOrder",
-		Numeric,
-		"Continuous",
-		Format( "Best", 12 ),
-		Formula(
-			If( Row() == 1 | :"Calibration Within Group"n != Lag( :"Calibration Within Group"n, 1 ),
-				1,
-				Lag( :"GroupRunOrder"n, 1 ) + 1
-			)
-		)
-	);
-	
-		
-	//**********Result List Column**********
-	temp3 = DTinitial << New Column( "BuildGroupList",
-		Expression,
-		"None",
-		Formula( If( :"GroupRunOrder"n == 1, Eval List( {parseRespCol} ), Sort List( Insert( Eval List( Lag( :"BuildGroupList"n, 1 ) ), Eval List( {parseRespCol} ) ) ) ) )
-	);
-
-	//**********Mean for Threshold Calc Column**********
-	temp4 = DTinitial << New Column( "Threshold Median AR",
-		Numeric,
-		"Continuous",
-		Format( "Best", 12 ),
-		Formula( Median( :"BuildGroupList"n ) )
-	);
-			
-	//**********AR Threshold Column**********
-	//prediction model version
-	//RepCount = 3;
-	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(3));
-	temp6 = DTinitial << New Column( "ARthreshold",
-		Numeric,
-		"Continuous",
-		Format( "Best", 12 ),
-		Formula(
-			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + :"RepCount"n * :"Threshold Median AR"n * arThresholdCoeffs[parseAssayCol]["d"]
-		)
-	);
-
-	//**********Results Without Outliers Column**********
-	temp7 = DTinitial << New Column( "RecurseResultList",
-		Expression,
-		"None",
-		Formula(
-			If( :"GroupRunOrder"n > Lag( :"GroupRunOrder"n, -1 ) | Is Missing( Lag( :"GroupRunOrder"n, -1 ) ),
-				outlierRecursion( :"BuildGroupList"n, :"ARthreshold"n )
-			)
-		)
-	);
-
-	//**********Result list Applied to All Rows**********
-	temp8 = DTinitial << New Column( "FinalResultList",
-		Expression,
-		"None",
-		Formula(
-			Index = -1;
-			While( :"GroupRunOrder"n < Lag( :"GroupRunOrder"n, Index ), Index-- );
-			Eval List( Lag( :"RecurseResultList"n, Index + 1 ) );
-		)
-	);
-		
-	//**********Include / Exclude**********	
-	temp9 = DTinitial << New Column( "Outlier Status",
-		Character,
-		"Nominal",
-		Formula( If( Contains( :"FinalResultList"n, "Fail" ), "Failed Level", Contains( :"FinalResultList"n, :AR ), "Include", "Exclude" ) )
-	);
-	temp10 = DTinitial << New Column( "Outlier 1/0", numeric,nominal,formula(Match(:"Outlier Status"n,"Include",0,"Exclude",1,"Failed Level",1)));
-
-	temp11 = DTinitial << New Column("N Outliers (within group)",Numeric,Continuous,
-		Formula(
-			Col Sum( :"Outlier 1/0"n, :"Calibration Within Group"n )
-		)
-	);
-	temp12 = DTinitial << New Column( "N Outliers (lot)",Numeric,Continuous,
-		Formula(
-			Col Sum( :"Outlier 1/0"n, :"Calibration Group"n ) 
-		)
-	);
-	
-	Try(temp << delete formula);
-	Try(temp1 << delete formula);
-	Try(temp2 << delete formula);
-	Try(temp3 << delete formula);
-	Try(temp4 << delete formula);
-	Try(temp5 << delete formula);
-	Try(temp6 << delete formula);
-	Try(temp7 << delete formula);
-	Try(temp8 << delete formula);
-	Try(temp9 << delete formula);
-	Try(temp10 << delete formula);
-	Try(temp11 << delete formula);
-	Try(temp12 << delete formula);
-	
-	DTinitial << delete columns(
-		temp,
-		temp1,
-		temp2,
-		temp3,
-		temp4,
-		temp5,
-		temp6,
-		temp7,
-		temp8,
-		temp9
-	);
-	
-	DTinitial << selectwhere( :"Outlier 1/0"n == 1) << exclude(1);
-	DTinitial << select all rows;
-	DTinitial << invert row selection;
-	
-	return(DTinitial);
-	
-);
 
 //brought in by nate for the starting dialog
 //may change the name to something reasonable :)
@@ -2599,670 +3089,6 @@ inputCleanup = Function( {dialogOutput},
 	)
 );
 
-prepCalData = Function( {calPathway, dataPath},
-	{default local}, 
-	/*
-	calPathway = "LYTES";
-	dataPath = calDataPath;
-	*/
-	//addin sages barcode function to this preparation
-	dt = Open( dataPath );
-	dt = calBarcodeParse(dt, "Barcode");
-	dt:"Crossweb_BC"n << set data type("Numeric");
-	dt:"Crossweb_BC"n << set name("Cross Web");
-	
-	//outlier determination and exclusion using Grubb's.
-	dt << New Column( "CL Blocked AR for Outliers",
-		Numeric,
-		Continuous,
-		Set Formula( 
-			If( :"Assay"n == 40,
-				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
-			)
-		)
-	);
-
-	dt << New Column( "NA Blocked AR for Outliers",
-		Numeric,
-		Continuous,
-		Set Formula( 
-			If( :"Assay"n == 41,
-				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
-			)
-		)
-	);
-
-	dt << New Column( "K Blocked AR for Outliers",
-		Numeric,
-		Continuous,
-		Set Formula( 
-			If( :"Assay"n == 42,
-				:"AR"n - Col Median( :"AR"n, :"Assay"n, :"Dose"n, :"Slide Lot"n, :"Inst Type"n )
-			)
-		)
-	);
-
-	dt:"CL Blocked AR for Outliers"n << Delete Formula;
-	dt:"NA Blocked AR for Outliers"n << Delete Formula;
-	dt:"K Blocked AR for Outliers"n << Delete Formula;
-
-	Grubbs_Outlier_Detection(dt, "CL Blocked AR for Outliers", 0.001);
-	Grubbs_Outlier_Detection(dt, "NA Blocked AR for Outliers", 0.001);
-	Grubbs_Outlier_Detection(dt, "K Blocked AR for Outliers", 0.001);
-
-	dt << Delete Columns("CL Blocked AR for Outliers", "NA Blocked AR for Outliers", "K Blocked AR for Outliers");
-
-	dt << Clear Select;
-
-	Return( dt );
-
-);
-
-prepLoopData = Function( {calPathway, dataPath, calData},
-	{default local},
-	/*
-	calPathway = "LYTES";
-	dataPath = loopDataPath;
-	calData = calData;
-	*/
-	neededLoops = AssociativeArray(calData:"Loop Lot_DxRelease");
-	removefrom(neededLoops,"");
-	
-	//loopQualPath = "/D:/IDEXX/Lytes One Loop = One Lot - Documents/Documentation/CO3489 - QC for OLOL/4. Species Calibration/Species File Check/";
-	loopfileList = Files In Directory(dataPath,recursive);
-	
-	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
-	For(i=nitems(loopfileList),i>=1,i--,
-		If(
-			/*Contains(loopfileList[i], "Loop Qualification") |
-			Contains(loopfileList[i], "NDE Count") |
-			Contains(loopfileList[i], "unchosen") |
-			Contains(loopfileList[i], "Sublot Corrected"),*/
-			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
-			RemoveFrom(loopfileList,i)
-			,
-			//show(word(1,loopfileList[i],"_"));
-			//neededloops will be character
-			loop = word(1,loopfileList[i],"_"); //surfs the folder names from Head
-			//loop = Num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
-			If(neededLoops[loop] == 0,
-				RemoveFrom(loopfileList,i)
-			)
-		);
-	);
-	
-	loopFiles = {};
-	For(i=1,i<=nitems(loopfileList),i++,
-		loopFiles[i] = Open(
-			dataPath||loopfileList[i],
-			private
-		);
-		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
-	);
-	loopFiles1 = Remove(loopFiles,1);
-	
-	If(
-		N Items( loopFiles ) == 1, 
-			loopQualTable = loopFiles[1];
-		,
-		N Items( loopFiles ) > 1,
-			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
-			For( i = 1, i <= N Items( loopFiles ), i++,
-				Close( loopFiles[i], nosave )
-			);
-		,
-		N Items( loopFiles ) == 0,
-			Print( "no loop data, please try again" );
-			Return(0);
-	);
-	
-	loopQualTable << New Column("AR",numeric,continuous,
-		Formula(
-			Match( :Dry Reads Used,
-				"6-7", :"DR Mean 6-7 offline_ar"n,
-				"9-10", :"DR Mean 9-10 offline_ar"n,
-				"9-10-11", :"DR Mean 9-10-11 offline_ar"n,
-				"10-11", :"DR Mean 10-11 offline_ar"n
-			)
-		)
-	);
-	loopQualTable:"AR"n << delete formula;
-	
-	loopQualTable << New Column("Inst Type", character, nominal,
-		Formula(
-			If( Substr( :"InstrumentSerial"n, 1, 4 ) == "CTDX",
-				"CatDx",
-				"CatOne"
-			);
-		);
-	);
-	loopQualTable:"Inst Type"n << delete formula;
-	
-	Try(
-		IsScriptable(Column(loopQualTable,"Foil"));
-		loopQualTable:"Foil"n << Set Formula( :"Foil_LQ"n );
-		loopQualTable:"Foil"n << delete formula;
-		loopQualTable:"Foil"n << set data type("Numeric");
-		,
-		loopQualTable << New Column("Foil",
-			Formula( :"Foil_LQ"n )
-		);
-		loopQualTable:"Foil"n << delete formula;
-		loopQualTable:"Foil"n << set data type("Numeric");
-	);
-	loopQualTable:"Crossweb_LQ"n << Set Data Type("Numeric");
-	loopQualTable:"Crossweb_LQ"n << Set Name("Cross Web");
-	
-	
-	//create summary of slide lot and loop lot
-	//add code to update the loopqual table with the slide lots from cal data (update with summary by loop lot)
-	cdSum = calData << Summary(
-		Group( :"Chem Type"n, :"Slide Lot"n, :"Loop Lot_DxRelease"n ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		private
-	);
-	cdSum = unprivatizeTable(seePrivateTables, cdSum);
-	cdSum:"Loop Lot_DxRelease"n << set data type("Character");
-	cdSum << delete columns("N Rows");
-	
-	loopQualTable << Update(
-		With(cdSum),
-		Match Columns(
-			:"Chem Type"n = :"Chem Type"n,
-			Transform Column(
-				"fullLL_LQ",
-				Formula( "4" || :"Loop Lot_LQ"n);
-			) = :"Loop Lot_DxRelease"n
-		)
-	);
-	Close(cdSum, nosave);
-	/*
-	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
-	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
-	request for a later release
-	*/
-	loopQualTable << Select where( 
-		:"Exclusion Rationale"n == "NDE - Grubb's"
-		|
-		:"Loop Lot_LQ"n == "*indet"
-		|
-		Excluded()
-	) << delete rows;
-	
-	Return(loopQualTable);
-
-);
-
-prepExpiration = Function( {calPathway, dataPath},
-	{default local},
-	
-	//def will need to be updated for QSDMA - that path will be a list of one to many files
-	//do the updates to the expiration data fomratting here
-	If(calPathway == "SDMA",
-		datatables = {};
-		listofthings = parse(dataPath);
-		//loop through to open the data tables needed for analysis.
-		For(i=1,i<=nitems(listofthings),i++,
-			
-			datatables[i] = Open(
-				listofthings[i],
-				Worksheets( "Sheet1" ),
-				Use for all sheets( 1 ),
-				Concatenate Worksheets( 0 ),
-				Create Concatenation Column( 0 ),
-				Worksheet Settings(
-					1,
-					Has Column Headers( 1 ),
-					Number of Rows in Headers( 1 ),
-					Headers Start on Row( 1 ),
-					Data Starts on Row( 2 ),
-					Data Starts on Column( 1 ),
-					Data Ends on Row( 0 ),
-					Data Ends on Column( 0 ),
-					Replicated Spanned Rows( 1 ),
-					Replicated Spanned Headers( 0 ),
-					Suppress Hidden Rows( 1 ),
-					Suppress Hidden Columns( 1 ),
-					Suppress Empty Columns( 1 ),
-					Treat as Hierarchy( 0 ),
-					Multiple Series Stack( 0 ),
-					Import Cell Colors( 0 ),
-					Limit Column Detect( 0 ),
-					Column Separator String( "-" )
-				),
-				Invisible
-			);
-			
-			//process each file if needed
-			
-		);
-
-		datatables1 = Remove(datatables,1);
-
-		Try(
-			concatTable = datatables[1] << Concatenate(
-				datatables1
-			);
-			For(i=1,i<=nitems(datatables),i++,
-				Close(datatables[i],nosave);
-			);
-			,
-			concatTable = datatables[1];
-		);
-
-		//modify the concatenated tables to have just batch and expiration date and delete the empty rows inside Batch.
-		concatTable << Select Columns(:"Batch"n, :"Exp. Date"n);
-		concatTable << Invert Column Selection();
-		concatTable << Delete Columns();
-		concatTable << Select where(is missing(:"Batch"n));
-		concatTable << Delete Rows();
-
-		//format the date per what's needed for the JSON
-		concatTable:"Exp. Date"n << Format(
-			"Custom",
-			Formula(
-				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
-					1, "0" || Char( Month( value ) ),
-					2, Char( Month( value ) )
-				) || "." || Match( Length( Char( Day( value ) ) ),
-					1, "0" || Char( Day( value ) ),
-					2, Char( Day( value ) )
-				)
-			),
-			10,
-			0
-		);
-
-		//set the column names to the necessary values.	
-		concatTable:"Exp. Date"n << set name("exp_date") << set data type("Character");
-		concatTable:"Batch"n << set name("slide_lot");
-
-		Return(concatTable);
-		,
-		calPathway == "LYTES",
-		// adding expiration date table (will have more than just Exp dates) (will be opened by other stuff earlier)
-		//.... ClipLot becomes cliplot ExpirationDate become exp_date
-		//.... delete clip type
-		//.... convert chemabbr to chemcode ... don't use array of chem codes, call function to get them and add function to overarching list of functions
-		//.... other stuff too based on what comes in with this file
-		//.... format Expiration dates as follows below
-		//.... make format YYYY.MM.DD (not YYYY-MM-DD)
-		/*Data Table( "basicTest_expDates" ):ExpirationDate <<
-				Format(
-					"Custom",
-					Formula(
-						Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
-							1, "0" || Char( Month( value ) ),
-							2, Char( Month( value ) )
-						) || "." || Match( Length( Char( Day( value ) ) ),
-							1, "0" || Char( Day( value ) ),
-							2, Char( Day( value ) )
-						)
-					),
-					10,
-					0
-				);
-			*/
-		//.... make date column character to be properly maintained in array and to JSON
-
-		assayCodes = assayTypes();
-		dt = Open(
-			dataPath,
-			Worksheets( "Summary" ),
-			//Use for all sheets( 1 ),
-			Concatenate Worksheets( 0 ),
-			Create Concatenation Column( 0 ),
-			Worksheet Settings(
-				1,
-				Has Column Headers( 1 ),
-				Number of Rows in Headers( 1 ),
-				Headers Start on Row( 2 ),
-				Data Starts on Row( 3 ),
-				Data Starts on Column( 1 ),
-				Data Ends on Row( 0 ),
-				Data Ends on Column( 0 ),
-				Replicated Spanned Rows( 1 ),
-				Replicated Spanned Headers( 0 ),
-				Suppress Hidden Rows( 1 ),
-				Suppress Hidden Columns( 1 ),
-				Suppress Empty Columns( 1 ),
-				Treat as Hierarchy( 0 ),
-				Multiple Series Stack( 0 ),
-				Import Cell Colors( 0 ),
-				Limit Column Detect( 0 ),
-				Column Separator String( "-" )
-			)
-		);
-		dt << select where(IsMissing(:"ExpirationDate"n)) << delete rows;
-		dt:ExpirationDate << Format(
-			"Custom",
-			Formula(
-				Char( Year( value ) ) || "." || Match( Length( Char( Month( value ) ) ),
-					1, "0" || Char( Month( value ) ),
-					2, Char( Month( value ) )
-				) || "." || Match( Length( Char( Day( value ) ) ),
-					1, "0" || Char( Day( value ) ),
-					2, Char( Day( value ) )
-				)
-			),
-			10,
-			0
-		);
-		dt:"ExpirationDate"n << set name("exp_date");
-		dt:"Lot 2"n << set name("slide_lot");
-		dt:"ClipLot"n << set name("cliplot");
-		dt:"exp_date"n << set data type("Character");
-
-		dt << New Column("chemcode",
-			Formula(
-				assayCodes[:"ChemAbbr"n]
-			)
-		);
-		dt:"chemcode"n << delete formula;
-		
-		keepCols = {"cliplot","slide_lot","exp_date","chemcode"};
-		For(i=ncol(dt),i>=1,i--,
-			if(contains(keepCols, column(dt,i) << get name ), empty()
-				,
-				dt << delete columns(i)
-			)
-		);
-
-		Return( dt );
-	);
-);
-
-SDMALoopQualPrep = Function({loopQualDataPath, calData, DXrelease}, {default local},
-	//loopQualDataPath = "/C:/Users/sdarling/Box/Roswell QSDMA Testing and Analysis/SDMA Loop Qual/Loop Lots/";
-	//calData = Data Table("PAN01_Panel_justResults_Runsheet.jmp");
-	//DXrelease = "/C:/Users/sdarling/OneDrive - IDEXX/Projects/Cal Tool Development/Trial Event/Build 10.75/Event PAN01/QSDMA Product Tracking Board Rev II.xlsm";
-
-	dt = Open(
-		DXrelease,
-		Worksheets( "SDMA" ),
-		Use for all sheets( 1 ),
-		Concatenate Worksheets( 0 ),
-		Create Concatenation Column( 0 ),
-		Worksheet Settings(
-			1,
-			Has Column Headers( 1 ),
-			Number of Rows in Headers( 1 ),
-			Headers Start on Row( 4 ),
-			Data Starts on Row( 5 ),
-			Data Starts on Column( 1 ),
-			Data Ends on Row( 0 ),
-			Data Ends on Column( 0 ),
-			Replicated Spanned Rows( 1 ),
-			Replicated Spanned Headers( 0 ),
-			Suppress Hidden Rows( 1 ),
-			Suppress Hidden Columns( 1 ),
-			Suppress Empty Columns( 1 ),
-			Treat as Hierarchy( 0 ),
-			Multiple Series Stack( 0 ),
-			Import Cell Colors( 0 ),
-			Limit Column Detect( 0 ),
-			Column Separator String( "-" )
-		)
-	);
-
-	Summarize(calData, neededlots = By(:"Slide Lot"n));
-	//show(neededLots);
-
-	dt << select where(Contains(neededLots, :"Slide Lot Number"n));
-
-	dt << Select Columns(:"Slide Lot Number"n, :"Loop Lot Number"n);
-
-	loopslideconfig = dt << Subset(
-		Selected Rows(1),
-		Selected columns only(1),
-		Invisible
-	);
-
-	close(dt, nosave);
-
-	loopslideconfig << Set Name("Loop Lot to Slide Lot");
-	
-	
-	//array required switching loop lot number to numeric as the header of the folders are coming in numeric. From the DX release, this comes in as a character nominal. Switching it here for usage. We could have also switched loop to be character instead. This was the easiest for now as I change it anyway for joining into the loop qual table, where loop lot number is numeric continuous already.
-	loopslideconfig:"Loop Lot Number"n << Set Data Type("Numeric") << Set Modeling Type("Continuous");
-	
-	neededLoops = AssociativeArray(loopslideconfig:"Loop Lot Number");
-	removefrom(neededLoops,"");
-
-	loopfileList = Files In Directory(loopQualDataPath,recursive);
-
-	/// UPDATE to potentially key in on specific file AND/OR exclude any non .jmp files also
-	For(i=nitems(loopfileList),i>=1,i--,
-		If(
-			/*Contains(loopfileList[i], "Loop Qualification") |
-			Contains(loopfileList[i], "NDE Count") |
-			Contains(loopfileList[i], "unchosen") |
-			Contains(loopfileList[i], "Sublot Corrected"),*/
-			Word( length( words( loopfileList[i], "_" ) ), loopfileList[i], "_") != "processed.jmp",
-			RemoveFrom(loopfileList, i)
-			,
-			//show(word(1,loopfileList[i],"_"));
-			loop = num(word(1,loopfileList[i],"_")); //surfs the folder names from Head
-			If(neededLoops[loop] == 0,
-				removefrom(loopfileList,i)
-			);
-		);
-	);
-	
-	show(loopfileList);
-	
-	loopFiles = {};
-	For(i=1,i<=nitems(loopfileList),i++,
-		loopFiles[i] = Open(
-			loopQualDataPath||loopfileList[i],
-			private
-		);
-		loopFiles[i] = unprivatizeTable(seePrivateTables, loopFiles[i]);
-	);
-	loopFiles1 = Remove(loopFiles,1);
-	
-	If(
-		N Items( loopFiles ) == 1, 
-			loopQualTable = loopFiles[1];
-		,
-		N Items( loopFiles ) > 1,
-			loopQualTable = loopFiles[1] << concatenate( loopFiles1, create source column );
-			For( i = 1, i <= N Items( loopFiles ), i++,
-				Close( loopFiles[i], nosave )
-			);
-		,
-		N Items( loopFiles ) == 0,
-			Print( "no loop data, please try again" );
-			Return(0);
-	);
-	
-	loopQualTable:"Slide Lot"n << Set Name("Slide Lot_Original");
-	
-	loopQualTable << Update(
-		With( loopslideconfig ),
-		Match Columns( :"Slide Mfg Loop Lot"n = :"Loop Lot Number"n ),
-		Add Columns from Update Table( :"Slide Lot Number"n )
-	);
-	
-	close(loopslideconfig, nosave);
-	
-	loopQualTable:"Slide Lot Number"n << Set Name("Slide Lot") << Set Data Type("Numeric") << Set Modeling Type("Continuous");
-	
-	//selecting the rows that are Grubb's outliers, barcodes that can't be read, or excluded for another purpose.
-	loopQualTable << Row Selection(
-		Select where( 
-			:"Exclusion Rationale"n == "NDE - Grubb's"
-			|
-			:"Loop Lot_LQ"n == "*indet"
-			|
-			Excluded()
-		)
-	);
-	
-	loopQualTable << Invert Row Selection();
-	/*
-	This subset effectively deletes all manually excluded rows as well as rows deemed as outliers.
-	Long term it would be ideal to ensure the exclusions could be honored (from columns and row states),
-	but that will be a feature request for a later release
-	*/
-	//creating a subset with the exclusions out.
-	dt_Sublot = loopQualTable << Subset( 
-		Selected Rows(1),
-		Selected Columns(0) 
-	);
-	
-	dt_Sublot << Delete Columns("Foil"n);
-	dt_Sublot:"Crossweb_LQ"n << set name("Cross Web");
-	dt_Sublot:"Cross Web"n << Data Type( Numeric );
-	dt_Sublot:"Foil_LQ"n << set name("Foil");
-	dt_Sublot:"Foil"n << Data Type( Numeric ) << Set Modeling Type( Nominal );
-	
-	dt_Sublot << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(:"Panel Dose"n) ) );
-	Column( dt_Sublot, "Script Dose Val" ) << Delete Formula;
-	
-	dt_Sublot << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
-	Column( dt_Sublot, "Script AR" ) << Delete Formula;
-	close(loopQualTable, nosave);
-	
-	Return(dt_Sublot);
-);
-
-SDMAPanelPrep = Function({calPath}, {default local},
-	//dt_Panel = current data table();
-	//calPath = calDataPath;
-	
-	dt_Panel = Open(calPath);
-	
-	calBarcodeParse(dt_Panel, "Barcode");
-	dt_Panel:"Crossweb_BC"n << set name("Cross Web");
-	dt_Panel:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	dt_Panel << Delete Columns("Foil"n);
-	dt_Panel:"Foil_BC"n << set name("Foil");
-	dt_Panel:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	dt_Panel << New Column( "Script Dose Val", Numeric, Continuous, Set Formula( num(Try("Panel Dose (µg/dL)_RS"n, "Panel Dose (ug/dL)_RS"n ))));
-		Column( dt_Panel, "Script Dose Val" ) << Delete Formula;
-	
-	dt_Panel << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
-	Column(dt_Panel, "Script AR" ) << Delete Formula;
-
-	//outlier detection
-	dt_Panel << New Column( "Blocked AR for Outliers",
-		Numeric,
-		Continuous,
-		Set Formula( 
-				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Script Dose Val"n, :"Slide Lot"n, :"Cross Web"n )
-		)
-	);
-
-	dt_Panel:"Blocked AR for Outliers"n << Delete Formula;
-
-	Grubbs_Outlier_Detection(dt_Panel, "Blocked AR for Outliers", 0.001);
-
-	dt_Panel << Delete Columns("Blocked AR for Outliers");
-	/*
-	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
-	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
-	request for a later release
-	*/
-	dt_Panel << Select where( 
-		:"Exclusion Rationale"n == "NDE - Grubb's"
-		|
-		Excluded()
-	) << delete rows;
-
-	dt_Panel << Clear Select;
-
-	Return(dt_Panel);
-);
-
-SDMAPatientPrep = Function({patientPath}, {Default Local},
-	
-	dt_FineTune = Open(patientPath);
-	
-	//what is the purpose of this column?
-	dt_FineTune << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
-	Column( dt_FineTune, "Script AR" ) << Delete Formula;
-	
-	dt_FineTune:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	calBarcodeParse(dt_FineTune, "Barcode");
-	dt_FineTune:"Crossweb_BC"n << set name("Cross Web");
-	dt_FineTune:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	dt_FineTune << Delete Columns("Foil"n);
-	dt_FineTune:"Foil_BC"n << set name("Foil");
-	dt_FineTune:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	dt_FineTune << New Column("Lot Type", Character, Nominal, Set Formula(
-		If( :"results.base_concentration"n == -1,
-			"Test",
-			"Reference"
-		)
-	));
-	dt_FineTune:"Lot Type"n << Delete Formula;
-	
-	Return(dt_FineTune);
-	
-);
-
-SDMAInstPrep = Function({platformPath}, {Default Local},
-	//platformPath = platformDataPath;
-	
-	dt_InstTune = Open(platformPath);
-	
-	dt_InstTune << Recode Column(
-		dt_InstTune:"Chem Type"n,
-		{Map Value( _rcOrig, {"QSDMA", "SDMA"}, Unmatched( _rcNow ) )},
-		Update Properties( 1 ),
-		Target Column( :Chem Type )
-	);
-	
-	//what's the point of this column?
-	dt_InstTune << New Column( "Script AR", Numeric, Continuous, Set Formula( :"Corrected AR"n ) );
-	Column( dt_InstTune, "Script AR" ) << Delete Formula;
-	
-	dt_InstTune:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	calBarcodeParse(dt_InstTune, "Barcode");
-	dt_InstTune:"Crossweb_BC"n << set name("Cross Web");
-	dt_InstTune:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	dt_InstTune << Delete Columns("Foil"n);
-	dt_InstTune:"Foil_BC"n << set name("Foil");
-	dt_InstTune:"Foil"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-
-	//outlier detection
-	dt_InstTune << New Column( "Blocked AR for Outliers",
-		Numeric,
-		Continuous,
-		Set Formula( 
-				:"Corrected AR"n - Col Median( :"Corrected AR"n, :"Assay"n, :"Slide Lot"n, :"Inst Type"n )
-		)
-	);
-
-	dt_InstTune:"Blocked AR for Outliers"n << Delete Formula;
-
-	Grubbs_Outlier_Detection(dt_InstTune, "Blocked AR for Outliers", 0.001);
-
-	dt_InstTune << Delete Columns("Blocked AR for Outliers");
-	/*
-	Delete all manually excluded rows as well as rows deemed as outliers. Long term it would be ideal
-	to ensure the exclusions could be honored (from columns and row states), but that will be a feature
-	request for a later release
-	*/
-	dt_InstTune << Select where( 
-		:"Exclusion Rationale"n == "NDE - Grubb's"
-		|
-		Excluded()
-	) << delete rows;
-
-	dt_InstTune << Clear Select;
-
-	
-	Return(dt_InstTune);
-);
-
 sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Expiration, jsonloc}, {default local},
 	/*testing variables
 	dt_Panel = calData;
@@ -4084,6 +3910,190 @@ jsonPrepFoil = Function({foilTable},{default local},
 	foilTable << delete columns({"Inst Type","Chem Type","Sublot Position_Char","Slide Lot","species","chemcode"});
 	
 );
+
+//UNUSED FUNCTIONS
+//Nates mods of Jesse's mods of Tim's outlier function
+// example: outlierDetectWithinGroup(dt,"AR","Assay","Lot","Instrument Type");
+outlierDetectWithinGroup = Function({DTinitial,responseColumn,assayCodeColumn,slideLotColumn,instrumentTypeColumn,doseColumn},{default local},
+
+	/* testing variables
+	DTinitial = current data table();
+	responseColumn = "AR";
+	assayCodeColumn = "Assay";
+	slideLotColumn = "Slide Lot";
+	instrumentTypeColumn = "Instrument Type";
+	doseColumn = "Dose";
+	*/
+	
+	//variable shortening
+	respCol = responseColumn;
+	assayCol = assayCodeColumn;
+	lotCol = slideLotColumn;
+	instCol = instrumentTypeColumn;
+	doseCol = doseColumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameRespCol = EvalInsert(":\!"^respCol^\!"n");
+	nameLotCol = EvalInsert(":\!"^lotCol^\!"n");
+	nameAssayCol = EvalInsert(":\!"^assayCol^\!"n");
+	nameInstCol = EvalInsert(":\!"^instCol^\!"n");
+	nameDoseCol = EvalInsert(":\!"^doseCol^\!"n");
+	
+	parseRespCol = Parse(EvalInsert(":\!"^respCol^\!"n"));
+	parseLotCol = Parse(EvalInsert(":\!"^lotCol^\!"n"));
+	parseAssayCol = Parse(EvalInsert(":\!"^assayCol^\!"n"));
+	parseInstCol = Parse(EvalInsert(":\!"^instCol^\!"n"));
+	parseDoseCol = Parse(EvalInsert(":\!"^doseCol^\!"n"));
+	
+	//**********Sort Table**********
+	DTinitial << Clear Column Selection();
+	temp = DTinitial << New Column("Calibration Group",character,formula( char(parseAssayCol) || char(parseLotCol) || parseInstCol));
+	temp1 = DTinitial << New Column("Calibration Within Group",character,formula(:"Calibration Group"n || char(parseDoseCol)));
+	DTinitial << sort( replace table, By( :"Calibration Within Group"n, :"DateTime"n), Order(Ascending, Ascending));
+
+	//**********Run Order Column**********
+	temp2 = DTinitial << New Column( "GroupRunOrder",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula(
+			If( Row() == 1 | :"Calibration Within Group"n != Lag( :"Calibration Within Group"n, 1 ),
+				1,
+				Lag( :"GroupRunOrder"n, 1 ) + 1
+			)
+		)
+	);
+	
+		
+	//**********Result List Column**********
+	temp3 = DTinitial << New Column( "BuildGroupList",
+		Expression,
+		"None",
+		Formula( If( :"GroupRunOrder"n == 1, Eval List( {parseRespCol} ), Sort List( Insert( Eval List( Lag( :"BuildGroupList"n, 1 ) ), Eval List( {parseRespCol} ) ) ) ) )
+	);
+
+	//**********Mean for Threshold Calc Column**********
+	temp4 = DTinitial << New Column( "Threshold Median AR",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula( Median( :"BuildGroupList"n ) )
+	);
+			
+	//**********AR Threshold Column**********
+	//prediction model version
+	//RepCount = 3;
+	temp5 = DTinitial << New Column("RepCount",numeric,continuous,set each value(3));
+	temp6 = DTinitial << New Column( "ARthreshold",
+		Numeric,
+		"Continuous",
+		Format( "Best", 12 ),
+		Formula(
+			arThresholdCoeffs[parseAssayCol]["a"] + arThresholdCoeffs[parseAssayCol]["b"] * :"RepCount"n + arThresholdCoeffs[parseAssayCol]["c"] * :"Threshold Median AR"n + :"RepCount"n * :"Threshold Median AR"n * arThresholdCoeffs[parseAssayCol]["d"]
+		)
+	);
+
+	//**********Results Without Outliers Column**********
+	temp7 = DTinitial << New Column( "RecurseResultList",
+		Expression,
+		"None",
+		Formula(
+			If( :"GroupRunOrder"n > Lag( :"GroupRunOrder"n, -1 ) | Is Missing( Lag( :"GroupRunOrder"n, -1 ) ),
+				outlierRecursion( :"BuildGroupList"n, :"ARthreshold"n )
+			)
+		)
+	);
+
+	//**********Result list Applied to All Rows**********
+	temp8 = DTinitial << New Column( "FinalResultList",
+		Expression,
+		"None",
+		Formula(
+			Index = -1;
+			While( :"GroupRunOrder"n < Lag( :"GroupRunOrder"n, Index ), Index-- );
+			Eval List( Lag( :"RecurseResultList"n, Index + 1 ) );
+		)
+	);
+		
+	//**********Include / Exclude**********	
+	temp9 = DTinitial << New Column( "Outlier Status",
+		Character,
+		"Nominal",
+		Formula( If( Contains( :"FinalResultList"n, "Fail" ), "Failed Level", Contains( :"FinalResultList"n, :AR ), "Include", "Exclude" ) )
+	);
+	temp10 = DTinitial << New Column( "Outlier 1/0", numeric,nominal,formula(Match(:"Outlier Status"n,"Include",0,"Exclude",1,"Failed Level",1)));
+
+	temp11 = DTinitial << New Column("N Outliers (within group)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Within Group"n )
+		)
+	);
+	temp12 = DTinitial << New Column( "N Outliers (lot)",Numeric,Continuous,
+		Formula(
+			Col Sum( :"Outlier 1/0"n, :"Calibration Group"n ) 
+		)
+	);
+	
+	Try(temp << delete formula);
+	Try(temp1 << delete formula);
+	Try(temp2 << delete formula);
+	Try(temp3 << delete formula);
+	Try(temp4 << delete formula);
+	Try(temp5 << delete formula);
+	Try(temp6 << delete formula);
+	Try(temp7 << delete formula);
+	Try(temp8 << delete formula);
+	Try(temp9 << delete formula);
+	Try(temp10 << delete formula);
+	Try(temp11 << delete formula);
+	Try(temp12 << delete formula);
+	
+	DTinitial << delete columns(
+		temp,
+		temp1,
+		temp2,
+		temp3,
+		temp4,
+		temp5,
+		temp6,
+		temp7,
+		temp8,
+		temp9
+	);
+	
+	DTinitial << selectwhere( :"Outlier 1/0"n == 1) << exclude(1);
+	DTinitial << select all rows;
+	DTinitial << invert row selection;
+	
+	return(DTinitial);
+	
+);
+
+//nate brought in, from Tim's function probably won't be tested specifically.
+//outlierRecursion will not be used.
+outlierRecursion = Function( {resultlist, threshold, outlierLimitCount},
+	{default local},
+	//**********recursive function to create the final result list*********
+
+	TempMedian = Median( resultlist );
+	TempMean = Mean( resultlist );
+	TempN = Length( resultlist );
+	If( TempN < outlierLimitCount,
+		Return( {"Fail"} ),
+		If( Abs( TempMedian - TempMean ) > threshold,
+			If( TempMedian - TempMean < 0,
+				resultlist = Remove( resultlist, TempN, 1 ),
+				resultlist = Remove( resultlist, 1, 1 )
+			);
+			resultlist = outlierRecursion( resultlist, threshold );
+		,
+			Return( resultlist )
+		);
+		Return( resultlist );
+	);
+);
+
 
 ////////////////////////////////////////
 //                                    //

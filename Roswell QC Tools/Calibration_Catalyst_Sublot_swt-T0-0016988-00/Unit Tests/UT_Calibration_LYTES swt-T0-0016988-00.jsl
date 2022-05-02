@@ -112,6 +112,49 @@ lytesCalUT:unitTests = Function({},
 			foilCorrsslopepred_input = open(lytesCalUT:filePath||"subLotcharFunc_foilCorrsslopepred_lytes_input.jmp",invisible);
 		));
 
+	barcodeparseTC = ut test case("F_calBarcodeParse")
+		<< setup(expr(
+			include(lytesCalUT:toolPath);
+		));
+	
+	grubbsTC = ut test case("G_Grubbs_Outlier_Detection")
+		<< setup(expr(
+			include(lytesCalUT:toolPath);
+			outliers = open(lytesCalUT:filePath||"Grubbs_Outliers.jmp", invisible);
+			nooutliers = open(lytesCalUT:filePath||"Grubbs_Outliers_None.jmp", invisible);
+		));
+
+	subLottabprepTC = ut test case("H_subLottabprep_lytes only")
+		<< setup(expr(
+			include(lytesCalUT:toolPath);
+			input_cal = open(lytesCalUT:filePath||"subLottabprep_lytes_dtCalout_input.jmp", invisible);
+			input_lq = open(lytesCalUT:filePath||"subLottabprep_lytes_dtSub_input.jmp", invisible);
+			expected_output = open(lytesCalUT:filePath||"subLottabprep_lytes_output.jmp", invisible);
+		));
+	
+	prepLytesTC = ut test case("I_Prep_lytes")
+		<< setup(expr(
+			include(lytesCalUT:toolPath);
+			input_cal_path = lytesCalUT:filePath||"prepCalData_Input.jmp";
+			input_loop_path = lytesCalUT:filePath||"Lytes_Loop Qual_Input/";
+			input_exp_path = lytesCalUT:filePath||"prepExpiration_lytes_input.xlsm";
+			input_cal_data = open(lytesCalUT:filePath||"prepCalData_output.jmp", invisible);
+			//expected outputs in the respective UT.
+		));
+	
+	prepSDMATC = ut test case("J_Prep_SDMA")
+		<< setup(expr(
+			include(lytesCalUT:toolPath);
+			input_cal_path = lytesCalUT:filePath||"SDMAPanelPrep_cal_input.jmp";
+			input_loop_path = lytesCalUT:filePath||"SDMA_Loop Qual_Input/Loop Lots/";
+			input_DXrelease =  lytesCalUT:filePath||"SDMALoopQualPrep_DXrelease_input.xlsm";
+			input_exp_path = "{\!""||lytesCalUT:filePath||"prepExpiration_SDMA_1001_input.XLSX\!", \!""||lytesCalUT:filePath||"/prepExpiration_SDMA_1003_input.XLSX\!"}";
+			input_patient_path = lytesCalUT:filePath||"SDMAPatientPrep_input.jmp";
+			input_inst_path = lytesCalUT:filePath||"SDMAInstPrep_platform_input.jmp";
+			//expected outputs in the respective UT.
+	));
+
+
 	/////////////////////////////////////////////////////////////
 	//                                                         //
 	//          UNIT TESTS                                     //
@@ -241,6 +284,66 @@ lytesCalUT:unitTests = Function({},
 			);
 
 		));
+	ut test(varCheckTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_assayTypes", 
+		Expr(
+			
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_assayTyp = Associative Array(
+				{
+					{"GLU",00},
+					{"BUN",01},
+					{"CA",03},
+					{"URIC",05},
+					{"TP",06},
+					{"TRIG",07},
+					{"CHOL",08},
+					{"ALB",09},
+					{"NH3",10},
+					{"PHOS",12},
+					{"TBIL",14},
+					{"CREA",15},
+					{"FRU",16},
+					{"CRP",17},
+					{"SDMA",18.04},
+					{"BA",21},
+					{"PROG",23},
+					{"PHBR",25},
+					{"TT4",28.30},
+					{"MG",32},
+					{"LAC",35},
+					{"CL",40},
+					{"K",41},
+					{"NA",42},
+					{"UPRO",54},
+					{"ALTV",56},
+					{"TCO2",57},
+					{"LIPA",59},
+					{"AMYL",60},
+					{"ALT",62},
+					{"LDH",63},
+					{"CK",64},
+					{"ALKP",65},
+					{"GGT",67},
+					{"UCRE",70},
+					{"AST",73},
+					{"WRS",90},
+					{.,-999}
+				}
+			);
+			
+			actual_assayTyp = assayTypes();
+
+			ut assert that(Expr(expected_assayTyp), ut equal to(actual_assayTyp));
+			
+			currentKey = actual_assayTyp << first;
+			For(i=1,i<=nitems(actual_assayTyp),i++,
+				ut assert that(Expr(expected_assayTyp[currentKey]), ut equal to(actual_assayTyp[currentKey]));
+				currentKey = actual_assayTyp << Next(currentKey);
+			);
+		));
+
+
 
 	lytesCalUT:utGroup = "B";
 	lytesCalUT:utGroupTest = 0;
@@ -315,7 +418,7 @@ lytesCalUT:unitTests = Function({},
 	);
 
 			/////////////////////////////////////////////////////////////
-			//          Creat JSON Object                              //
+			//          Create JSON Object                             //
 			/////////////////////////////////////////////////////////////
 	lytesCalUT:utGroup = "C";
 	lytesCalUT:utGroupTest = 0;
@@ -344,7 +447,7 @@ lytesCalUT:unitTests = Function({},
 	);
 
 			/////////////////////////////////////////////////////////////
-			//          calFitFunc Function                             //
+			//          calFitFunc Function                            //
 			/////////////////////////////////////////////////////////////
 	lytesCalUT:utGroup = "D";
 	lytesCalUT:utGroupTest = 0;
@@ -596,7 +699,422 @@ lytesCalUT:unitTests = Function({},
 		
 		)
 	);
+
+			/////////////////////////////////////////////////////////////
+			//              calBarcodeParse Function                   //
+			/////////////////////////////////////////////////////////////
+	lytesCalUT:utGroup = "F";
+	lytesCalUT:utGroupTest = 0;
+	
+	ut test(barcodeparseTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Barcode Cols Added",
+		expr(
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			parsing_table = New Table( "Barcode",
+				Add Rows( 10 ),
+				New Column( "Barcode",
+					Numeric,
+					Continuous,
+					Set Selected,
+					Set Values(
+						{1001152204, 1001153904, 1001153804, 1001152104, 1001152040, 1000152040, 1000151941, 1001152141, 1002151942, 1001152042}
+					)
+				),
+				Invisible
+			);
+			
+			lytesCalUT:saveTable(parsing_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_input.jmp", lytesCalUT:saveFile);
+			
+			parsed_table = calBarcodeParse(parsing_table, "Barcode");
+			
+			lytesCalUT:saveTable(parsed_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_output.jmp", lytesCalUT:saveFile);
+			
+			col_list_parse = parsed_table << get column names(string);
+			
+			ut assert that(expr(col_list_parse), ut equal to ({"Barcode", "Slide Lot_BC", "Crossweb_BC", "Foil_BC", "Assay Code_BC"}));
+		)
+	);
+	
+	ut test(barcodeparseTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_One Set of Barcode Cols",
+		expr(
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			parsing_table = New Table( "Barcode",
+				Add Rows( 10 ),
+				New Column( "Barcode",
+					Numeric,
+					Continuous,
+					Set Selected,
+					Set Values(
+						{1001152204, 1001153904, 1001153804, 1001152104, 1001152040, 1000152040, 1000151941, 1001152141, 1002151942, 1001152042}
+					)
+				),
+				New Column("Slide Lot_BC", 
+					Character, 
+					Nominal, 
+					formula(Substr( Char( :Barcode ), 1, 4 ))
+				),
+				New Column("Crossweb_BC", 
+					Character, 
+					Nominal, 
+					formula(Substr( Char( :Barcode ), 7, 2 ))
+				),
+				New Column("Foil_BC", 
+					Character, 
+					Nominal, 
+					formula(Substr( Char( :Barcode ), 5, 2 ))
+				),
+				New Column("Assay Code_BC", 
+					Character, 
+					Nominal, 
+					formula(Substr( Char( :Barcode ), 9, 2 ))
+				),
+				Invisible
+			);
+			
+			lytesCalUT:saveTable(parsing_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_input.jmp", lytesCalUT:saveFile);
+			
+			parsed_table = calBarcodeParse(parsing_table, "Barcode");
+			
+			lytesCalUT:saveTable(parsed_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_output.jmp", lytesCalUT:saveFile);
+			
+			col_list_parse = parsed_table << get column names(string);
+			
+			ut assert that(expr(col_list_parse), ut equal to ({"Barcode", "Slide Lot_BC", "Crossweb_BC", "Foil_BC", "Assay Code_BC"}));
+		)
+	);
+	
+	ut test(barcodeparseTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Barcode Values Correct",
+		expr(
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			parsing_table = New Table( "Barcode",
+				Add Rows( 10 ),
+				New Column( "Barcode",
+					Numeric,
+					Continuous,
+					Set Selected,
+					Set Values(
+						{1001152204, 1001153904, 1001153804, 1001152104, 1001152040, 1000152040, 1000151941, 1001152141, 1002151942, 1001152042}
+					)
+				),
+				Invisible
+			);
+			
+			lytesCalUT:saveTable(parsing_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_input.jmp", lytesCalUT:saveFile);
+			
+			parsed_table = calBarcodeParse(parsing_table, "Barcode");
+			
+			lytesCalUT:saveTable(parsed_table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_calBarcodeParse_output.jmp", lytesCalUT:saveFile);
+			
+			//get the values for each column to compare in the assert
+			barcode_list = parsed_table:"Barcode"n << get values;
+			slidelot_list = parsed_table:"Slide Lot_BC"n << get values;
+			crossweb_list = parsed_table:"Crossweb_BC"n << get values;
+			foil_list = parsed_table:"Foil_BC"n << get values;
+			assay_list = parsed_table:"Assay Code_BC"n << get values;
+			
+			ut assert that(expr(barcode_list), ut equal to ([1001152204, 1001153904, 1001153804, 1001152104, 1001152040, 1000152040, 1000151941, 1001152141, 1002151942, 1001152042]));
+			ut assert that(expr(slidelot_list), ut equal to ({"1001", "1001", "1001", "1001", "1001", "1000", "1000", "1001", "1002", "1001"}));
+			ut assert that(expr(crossweb_list), ut equal to ({"22", "39", "38", "21", "20", "20", "19", "21", "19", "20"}));
+			ut assert that(expr(foil_list), ut equal to ({"15", "15", "15", "15", "15", "15", "15", "15", "15", "15"}));
+			ut assert that(expr(assay_list), ut equal to ({"04", "04", "04", "04", "40", "40", "41", "41", "42", "42"}));
+		)
+	);
+	
+			/////////////////////////////////////////////////////////////
+			//          Grubbs_Outlier_Detection Function              //
+			/////////////////////////////////////////////////////////////
+	lytesCalUT:utGroup = "G";
+	lytesCalUT:utGroupTest = 0;	
+	
+	ut test(grubbsTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_Outliers", 
+		expr(
+
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			lytesCalUT:saveTable(outliers, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Grubbs_Outlier_Detection_input.jmp", lytesCalUT:saveFile);
+
+			table = Grubbs_Outlier_Detection(outliers, "Value", 0.001);
+			
+			wait(3);
+			
+			lytesCalUT:saveTable(table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Grubbs_Outlier_Detection_input.jmp", lytesCalUT:saveFile);
+			
+			row_grubbs = table << get rows where("Exclusion Rationale"n == "NDE - Grubb's");
+			row_outliers = table << get rows where("Outlier"n == "Yes");
+			number_grubbs = nitems(row_grubbs);
+			number_outliers = nitems(row_outliers);
+			
+			ut assert that(expr(row_grubbs), ut equal to (row_outliers));
+			ut assert that(expr(number_grubbs), ut equal to (number_outliers));
+		)
+	);
+	
+	ut test(grubbsTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_No Outliers", 
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			lytesCalUT:saveTable(outliers, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Grubbs_Outlier_Detection_input.jmp", lytesCalUT:saveFile);
+
+			table = Grubbs_Outlier_Detection(nooutliers, "Value", 0.001);
+			
+			lytesCalUT:saveTable(table, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_Grubbs_Outlier_Detection_input.jmp", lytesCalUT:saveFile);
+			
+			row_grubbs = table << get rows where("Exclusion Rationale"n == "NDE - Grubb's");
+			row_outliers = table << get rows where("Outlier"n == "Yes");
+			number_grubbs = nitems(row_grubbs);
+			number_outliers = nitems(row_outliers);
+			
+			ut assert that(expr(number_grubbs), ut equal to (number_outliers));
+
+		)
+	);
+
+			/////////////////////////////////////////////////////////////
+			//                 subLottabprep Function                  //
+			/////////////////////////////////////////////////////////////
+	lytesCalUT:utGroup = "H";
+	lytesCalUT:utGroupTest = 0;	
+	
+	ut test(subLottabprepTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_dtSubop",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			lytesCalUT:saveTable(input_cal, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_subLottabprep_dtCalout_input.jmp", lytesCalUT:saveFile);
+			lytesCalUT:saveTable(input_lq, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_subLottabprep_dtSub_input.jmp", lytesCalUT:saveFile);
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_subLottabprep_expected.jmp", lytesCalUT:saveFile);
+			
+			//setting the variables for calCWlow, calCWhigh, and calFoil. Variables based on flow with the datasets input but could be different for other data tables.
+			calCWlow = 6;
+			calCWhigh = 21;
+			calFoil = 15;
+			
+			actual_output = subLottabprep( input_lq, input_cal, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P" );
+			wait(0);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_subLottabprep_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+
+			/////////////////////////////////////////////////////////////
+			//                 Lytes Prep Functions                    //
+			/////////////////////////////////////////////////////////////
+	lytesCalUT:utGroup = "I";
+	lytesCalUT:utGroupTest = 0;	
+	
+	ut test(prepLytesTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_prepCalData",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"prepCalData_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepCalData_lytes_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = prepCalData("LYTES", input_cal_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepCalData_lytes_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+	
+	ut test(prepLytesTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_preLoopData",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"prepLoopData_lytes_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepLoopData_lytes_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = prepLoopData("LYTES", input_loop_path, input_cal_data);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepLoopData_lytes_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+	
+	ut test(prepLytesTC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_prepExpiration",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"prepExpiration_lytes_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepExpiration_lytes_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = prepExpiration("LYTES", input_exp_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepExpiration_lytes_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+
+			/////////////////////////////////////////////////////////////
+			//                 SDMA Prep Functions                     //
+			/////////////////////////////////////////////////////////////
+	lytesCalUT:utGroup = "J";
+	lytesCalUT:utGroupTest = 0;	
+	
+	ut test(prepSDMATC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMAPanelPrep",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"SDMAPanelPrep_cal_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAPanelPrep_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = SDMAPanelPrep(input_cal_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAPanelPrep_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+	
+	ut test(prepSDMATC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMALoopQualPrep",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"SDMALoopQualPrep_output.jmp", invisible);
+			cal_table = open(lytesCalUT:filePath||"SDMAPanelPrep_cal_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMALoopQualPrep_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = SDMALoopQualPrep(input_loop_path, cal_table, input_DXrelease);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMALoopQualPrep_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+
+	ut test(prepSDMATC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_prepExpiration_SDMA",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"prepExpiration_SDMA_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepExpiration_SDMA_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = prepExpiration("SDMA", input_exp_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_prepExpiration_SDMA_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+
+	ut test(prepSDMATC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMAInstPrep",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"SDMAInstPrep_platform_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAInstPrep_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = SDMAInstPrep(input_inst_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAInstPrep_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+	
+	ut test(prepSDMATC, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1)||"_SDMAPatientPrep",
+		expr(
+		
+			lytesCalUT:utGroupTest = lytesCalUT:utGroupTest + 1;
+			
+			expected_output = open(lytesCalUT:filePath||"SDMAPatientPrep_output.jmp", invisible);
+			
+			lytesCalUT:saveTable(expected_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAPatientPrep_expected.jmp", lytesCalUT:saveFile);
+			
+			actual_output = SDMAPatientPrep(input_patient_path);
+			
+			compare_tables = lytesCalUT:tableCompare(actual_output, expected_output);
+			
+			//the below may work better than the above through diff JMP versions
+			ut assert that(Expr(compare_tables[2] << Are Data Different), ut equal to(0));
+			ut assert that(Expr(compare_tables[2] << Get columns properties differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get columns attributes differences), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get unmatched columns list), ut empty());
+			ut assert that(Expr(compare_tables[2] << Get Columns List( "Mismatched Data Type" )), ut empty());
+			
+			lytesCalUT:saveTable(actual_output, lytesCalUT:savePath, lytesCalUT:utGroup||Char(lytesCalUT:utGroupTest+1),"_SDMAPatientPrep_actual.jmp", lytesCalUT:saveFile);
+		)
+	);
+
 );
+
 
 	/////////////////////////////////////////////////////////////
 	//          Saving Report and deleteing Namespace          //
