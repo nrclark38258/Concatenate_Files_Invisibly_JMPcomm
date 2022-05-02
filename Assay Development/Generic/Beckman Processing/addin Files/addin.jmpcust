@@ -13,7 +13,7 @@
 			
 			<jm:command namesDefaultToHere="1">
 				<jm:name>com.idexx.nclark.generic</jm:name>
-				<jm:caption>Beckman Processing v1.1</jm:caption>
+				<jm:caption>Beckman Processing v1.2</jm:caption>
 				<jm:action type="path">$ADDIN_HOME(com.idexx.generic_beckman)\BeckmanProcessingTool.jsl</jm:action>
 				<jm:icon type="path">$ADDIN_HOME(com.idexx.generic_beckman)\beckman.ico</jm:icon>
 			</jm:command>

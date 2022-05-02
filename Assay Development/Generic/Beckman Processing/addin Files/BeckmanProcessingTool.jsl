@@ -7,6 +7,29 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	1.2.0 NClark 042922
+//		-> ----- NOTE STILL NEED TO MAKE WORK CORRECTLY FOR XLSX AND MODEL 680 -----
+//		-> updated newCap() to resolve IDE issues with font formatting (didn't seem to cause JMP processing errors)
+//		-> updated obtainFileInfo()
+//			-> to use filepath instead of a list and iterator
+//			-> updated to read the 1st 50 lines of data
+//			-> added code to identify  modelFam = DxC700 in addition to 680 and 5800
+//			-> updated to correctly obtain indexPieces, indexFileName, and serialNum when modelFam = DxC700
+//		-> updated openCSV() to use filePath instead of list and interator
+//		-> updated beckmanCleanup()
+//			-> to use tableName intead of list and iterator
+//			-> added try() to create Unit No. data for DxC700 and probably for 680, but not duplicate if already exists
+//			-> removed the tracking of the iterator for failures (not sure if that's actually needed anymore)
+//		-> updated fileProcessing()
+//			-> removed the open XLS match (although will need to add back in)
+//			-> updated use of beckmanCleanup() for parameter updates above
+//			-> moved the closing of the intermediate tables into fileProcessing() rather than in finalProcessing()
+//		-> updated finalProcessing()
+//			-> coloring of columns is now based on a list of columns, and each table will work through the list and color accordingly (old way listed each column separately for each table)
+//			-> deleted the code for closing intermediate tables as that was aded to fileProcessing()
+//		-> updated MAIN
+//			-> Throw() replaced with Stop() in the beckfiles IF statement
+//			-> updated print statement to reference the beckman script
 //	1.1.0.0 NClark 032720
 //		-> beckman cleanup
 //			-> renamed uniquerunid uniquecurveid
@@ -59,8 +82,8 @@ newCap = Function({message,delayBool=1},{Default Local},
 		message,
 		Font( "Arial" ),
 		Font Size( 16 ),
-		Text Color( “blue” ),
-		Back Color( “yellow” ),
+		Text Color( "Blue" ),
+		Back Color( "Yellow" ),
 		//Spoken( 1 ),
 		//Delayed( 1 )
 	);
@@ -254,20 +277,21 @@ beckmanColumnArray = Associative Array(
 	}
 );
  
-obtainFileInfo = Function({list,listNum},
-	{pathBreak,fileName,fileType,dt,headerStart,indexPieces,indexFileName,serialNum,fileInformation},
-//list = Files;
-//listNum = 1;
+obtainFileInfo = Function({filePath}, {pathBreak,fileName,fileType,dt,headerStart,indexPieces,indexFileName,serialNum,fileInformation},
+	/*
+	filePath = files[j];
+	*/
 	fileInfo = associative array();
 	
-	pathBreak = Words(list[listNum],"/");
+	pathBreak = Words(filePath,"/");
 	fileName = pathBreak[nitems(pathBreak)];
 	fileType = Word(nitems(Words(fileName,".")),fileName,".");
 	fileNameNoExt = Munger(fileName,1,"."||fileType,"");
-		
+	
+	//do i need xlsx stuff? the pick file forces to CSV only...
 	Match(fileType,
 		"xlsx",
-		dt = Open(list[listNum], 
+		dt = Open(filePath, 
 			invisible, //not sure why this working and private not
 			//private,
 			worksheetsettings(
@@ -276,16 +300,16 @@ obtainFileInfo = Function({list,listNum},
 				//Headers start on row(colNameStart),
 				data starts on row( 1 ),
 				data starts on column( 1 ),
-				data ends on row( 15 ),
+				data ends on row( 50 ),
 				data ends on column( 15 )
 			)
 		)
-	,
+		,
 		"csv",
-		dt = Open(list[listNum], 
+		dt = Open(filePath, 
 		   Scan Whole File( 0 ),
 		   Labels( 0 ), 
-		   Lines To Read( 15 ),
+		   Lines To Read( 50 ),///may need to add more as more and more parameters, etc are in file (updated from 15 to 50)
 		   Data Starts( 1 ),
 		   private
 		);
@@ -296,9 +320,12 @@ obtainFileInfo = Function({list,listNum},
 			break();
 		)
 	);
-
-	modelFam = If(Contains(dt[headerStart,0],"CONC")> 0, "680"
-	,
+	//may need to update for DXC700
+	modelFam = If(
+		dt[1,1] == "Index", "DxC700"
+		,
+		Contains(dt[headerStart,0],"CONC")> 0, "680"
+		,
 		Contains(dt[headerStart,0],"Conc.")> 0, "5800"
 	);
 	
@@ -308,13 +335,20 @@ obtainFileInfo = Function({list,listNum},
 		indexPieces = Words(dt[2,2],":");
 		indexFileName = Trim(Concat(indexPieces[1],":",indexPieces[2]),Both);
 		serialNum = "";
-	,
+		,
+		modelFam == "5800",
 		//rowNum = 1;
 		//colNum = 1;
 		indexPieces = Words(dt[1,1],":");
 		indexFileName = Trim(Concat(indexPieces[1],":",indexPieces[2]),Both);
 		serialNum = dt[2,2]
+		,
+		modelFam == "DxC700",
+		indexPieces = Words(dt[1,2],":");
+		indexFileName = Trim(ConcatItems(indexPieces,":"),Both);
+		serialNum = dt[2,2];
 	);
+	//above the indexFileName could be removed from the if() by using concatItems for all...
 	fileInformation = EvalExpr(List(List(Expr(IndexFileName),Expr(headerStart),Expr(modelFam),Expr(serialNum),Expr(fileType),Expr(fileNameNoExt))));
 
 	InsertInto(fileInfo, fileName, fileInformation);
@@ -323,8 +357,13 @@ obtainFileInfo = Function({list,listNum},
 	Return( fileInfo );
 );
 
-openCSV = Function({list,listNum,colNameStart},
-	Open(list[listNum],
+openCSV = Function({filepath,colNameStart},
+	/*
+	filePath = files[j];
+	colNameStart = fileInfo[fileName][2];
+	*/
+		
+	dt = Open(filepath,
 		Import Settings(
 			End Of Line( CRLF, CR, LF ),
 			End Of Field( Tab, Comma, CSV( 0 ) ),
@@ -344,6 +383,8 @@ openCSV = Function({list,listNum,colNameStart},
 		),
 		private
 	);
+	Return(dt);
+
 );
 
 errorList = associative array(
@@ -420,64 +461,81 @@ wrongVer = Function( {maxVer},
 	)
 );
 
-beckmanCleanup = Function({list,iteration,fileName,failPos,failList},{j,wholeList,i,a},
+beckmanCleanup = Function({tableName,fileName,failPos,failList},{j,wholeList,i,a},
 	//list = {Data Table( "AU_20200110_1007_RE_000" )};
 	//iteration = 1;
 	//fileName = "AU_20200110_1007_RE_000.csv";
+	/*
+	tableName = wholeList[j];
+	fileName = fileName;
+	failPos = failPosList;
+	failList = failListList;
+	*/
 	
-	j = iteration;
-	wholeList = list;
 	//j=1;
 	//fileType = "csv";
 	//pulled in work from both models Trys will change columns that will change
-	//orig from 680
-	Try(Column(wholeList[j],"CONC") << Set Name("Conc."));
-	Try(Column(wholeList[j],"Conc.")<<Data Type("Numeric"));
-	Try(Column(wholeList[j],"Conc.")<<Modeling Type("Continuous"));
+		//orig from 680
+	Try(Column(tableName,"CONC") << Set Name("Conc."));
+	Try(Column(tableName,"Conc.")<<Data Type("Numeric"));
+	Try(Column(tableName,"Conc.")<<Modeling Type("Continuous"));
 		//orig from 5800
-	Try(Column(wholeList[j],"Measure Time") << Set Name("Measured Date/Time"));
-	Try(Column(wholeList[j],"S. No.") << Set Name("Sample No.") << Data Type("Character"));
-	Try(Column(wholeList[j],"Cal/QC No.") << Set Name("QC/CalNo."));
-	Try(Column(wholeList[j],"Data Flags") << Set Name("DataFlag"));
-	Try(Column(wholeList[j],"Conc.")<<Data Type("Numeric"));
-	Try(Column(wholeList[j],"Conc.")<<Modeling Type("Continuous"));
-	
-	If(fileInfo[fileName][5] == "csv" & (Column(wholeList[j],1)<<get data type) == "Character",
-		wholeList[j] << Selectwhere(IsMissing(Num(:Name("Measured Date/Time"))))<<deleterows;
-		For(i=1,i<=ncol(wholeList[j]),i++,
-			a = column(wholeList[j],i) << get name;
-			Column(wholeList[j],i) << Set Data Type(beckmanColumnArray[a][1]);
-			Column(wholeList[j],i) << Set Modeling Type(beckmanColumnArray[a][2]);
+	Try(Column(tableName,"Measure Time") << Set Name("Measured Date/Time"));
+	Try(Column(tableName,"S. No.") << Set Name("Sample No.") << Data Type("Character"));
+	Try(Column(tableName,"Cal/QC No.") << Set Name("QC/CalNo."));
+	Try(Column(tableName,"Data Flags") << Set Name("DataFlag"));
+	Try(Column(tableName,"Conc.")<<Data Type("Numeric"));
+	Try(Column(tableName,"Conc.")<<Modeling Type("Continuous"));
+		//orig from DxC700
+	Try(Column(tableName,"Flags") << Set Name("DataFlag"));
+	///// Need add Unit number for DxC data... AND 680 data??
+	Try(IsScriptable(tableName:"Unit No."n);
+		,
+		tableName << new column("Unit No.", Numeric, << set each value(1))
+	);
+	//CSV data seems to come in "better" than this code suggests it should... it may be a version related thing
+	//// TRY THIS IN JMP 14!
+	//// May also happen if an xlsx is resaved as a csv (rare, don't plan for?)
+	//fileinfo not included as parameter, maybe should do that?
+	If(fileInfo[fileName][5] == "csv" & (Column(tableName,1)<<get data type) == "Character",
+		tableName << Selectwhere(IsMissing(Num(:Name("Measured Date/Time"))))<<deleterows;
+		For(i=1,i<=ncol(tableName),i++,
+			a = column(tableName,i) << get name;
+			Column(tableName,i) << Set Data Type(beckmanColumnArray[a][1]);
+			Column(tableName,i) << Set Modeling Type(beckmanColumnArray[a][2]);
 		)
-	,
-		fileInfo[fileName][5] == "xlsx" & (Column(wholeList[j],1)<<get data type) == "Character",
-		wholeList[j] << SelectAllRows << deleterows;
+		,
+		fileInfo[fileName][5] == "xlsx" & (Column(tableName,1)<<get data type) == "Character",
+		tableName << SelectAllRows << deleterows;
 
-		InsertInto(failList,wholeList[j]<<getname);
-		InsertInto(failPos,j)
-	,
-		fileInfo[fileName][5] == "xlsx" & (Column(wholeList[j],1)<<get data type) == "Numeric",
-		wholeList[j] << Selectwhere(IsMissing(:Name("Measured Date/Time"))) << deleterows;
-	,
+		InsertInto(failList,tableName<<getname);
+		//InsertInto(failPos,j)
+		,
+		fileInfo[fileName][5] == "xlsx" & (Column(tableName,1)<<get data type) == "Numeric",
+		tableName << Selectwhere(IsMissing(:Name("Measured Date/Time"))) << deleterows;
+		,
+		fileInfo[fileName][5] == "csv" & (Column(tableName,1)<<get data type) == "Numeric",
+		tableName << Selectwhere(IsMissing(:Name("Measured Date/Time"))) << deleterows;
+		,
 		Empty()
 	);
 	
-	Try(Column(wholeList[j], "Measured Date/Time") << Format("m/d/y h:m:s"));
+	Try(Column(tableName, "Measured Date/Time") << Format("m/d/y h:m:s"));
 
-	Try(colList = wholeList[j] << get column names(string);
+	Try(colList = tableName << get column names(string);
 		flagPos = Contains(colList,"DataFlag");
-		emptyCol = Column(wholeList[j],flagPos + 1) << GetName();
-		If(Word(1,emptyCol) == "Column", Column(wholeList[j],flagPos + 1) << Set Name("Wavelength"));
+		emptyCol = Column(tableName,flagPos + 1) << GetName();
+		If(Word(1,emptyCol) == "Column", Column(tableName,flagPos + 1) << Set Name("Wavelength"));
 		For(i=0,i<=27,i++,
 			colRef = "P"||Char(i);
-			Column(wholeList[j],colRef)<<Data Type("Numeric");
-			Column(wholeList[j],colRef)<<Modeling Type("Continuous");
-			Column(wholeList[j],colRef)<<SetName("Rea."||colRef);
+			Column(tableName,colRef)<<Data Type("Numeric");
+			Column(tableName,colRef)<<Modeling Type("Continuous");
+			Column(tableName,colRef)<<SetName("Rea."||colRef);
 		);
-		wholeList[j] << SelectWhere(:Wavelength == "Reaction OD" | :Wavelength == "Reagent Blank")<<deleterows();
+		tableName << SelectWhere(:Wavelength == "Reaction OD" | :Wavelength == "Reagent Blank")<<deleterows();
 	);
 
-	wholeList[j] << Sort(
+	tableName << Sort(
 		By( 
 			:Name( "Measured Date/Time" ),
 			:Sample No.,
@@ -496,30 +554,31 @@ beckmanCleanup = Function({list,iteration,fileName,failPos,failList},{j,wholeLis
 	);
 	
 	//Assumes Data is internal
-	wholeList[j] << New Column( "Lab", Character( 10 ), 
+	tableName << New Column( "Lab", Character( 10 ), 
 		<< Set Each Value("IDX-Internal")
 	);
-	wholeList[j] << New Column( "Index File", Character( 10 ), 
+	tableName << New Column( "Index File", Character( 10 ), 
 		<< Set Each Value(fileInfo[filename][1])
 	);
-	wholeList[j] << New Column( "Model Family", Character( 10 ), 
+	tableName << New Column( "Model Family", Character( 10 ), 
 		<< Set Each Value(fileInfo[filename][3])
 	);	
-	wholeList[j] << New Column( "Serial Number", Character( 10 ), 
+	tableName << New Column( "Serial Number", Character( 10 ), 
 		<< Set Each Value(fileInfo[filename][4])
 	);
 
-	wholeList[j] << New Column( "UniqueCurveID",Character( 40 ), 
+	//680s don't seem to have wavelength??
+	tableName << New Column( "UniqueCurveID",Character( 40 ), 
 		Formula( :Lab || "_" || :Index File || "_" || Char( :Name("Measured Date/Time") ) ||"_" || Char( :Unit No. ) || "_" || :Test Name || "_" || :Wavelength )
 	);
-	Column( wholeList[j], "UniqueCurveID" ) << evalFormula << delete formula;
+	Column( tableName, "UniqueCurveID" ) << evalFormula << delete formula;
 
-	wholeList[j] << New Column( "UniqueRunID",Character( 40 ), 
+	tableName << New Column( "UniqueRunID",Character( 40 ), 
 		Formula( :Lab || "_" || :Index File || "_" || Char( :Name("Measured Date/Time") ) ||"_" || Char( :Unit No. ) || "_" || :Test Name )
 	);
-	Column( wholeList[j], "UniqueRunID" ) << evalFormula << delete formula;
+	Column( tableName, "UniqueRunID" ) << evalFormula << delete formula;
 
-	wholeList[j] << New Column( "Flag Desc",
+	tableName << New Column( "Flag Desc",
 		Character( 10 ),
 		Formula(
 			dataList = Words( :DataFlag, " " );
@@ -534,10 +593,10 @@ beckmanCleanup = Function({list,iteration,fileName,failPos,failList},{j,wholeLis
 			);
 		)
 	);
-	Column( wholeList[j], "Flag Desc" ) << evalFormula << deleteFormula;//did to fix cases where first couple rows didn't get 'none'
+	Column( tableName, "Flag Desc" ) << evalFormula << deleteFormula;//did to fix cases where first couple rows didn't get 'none'
 	
-	wholeList[j] << New Column( "Date", Character( 10 ), Formula( Short Date( :Name( "Measured Date/Time" ) ) ) );
-	Column( wholeList[j], "Date" ) << delete formula;
+	tableName << New Column( "Date", Character( 10 ), Formula( Short Date( :Name( "Measured Date/Time" ) ) ) );
+	Column( tableName, "Date" ) << delete formula;
 
 );
 
@@ -557,14 +616,16 @@ failedImport = Function({failTables},{failList},
 	)
 );
 
-fileProcessing = Function({Files},{default local},
-	
+fileProcessing = Function({files},{default local},
+	/*
+	files = beckFiles;
+	*/
 	wholeList = {};
 	failPosList = {};
 	failListList = {};
 	
-	For(j=1, j<= nitems(Files),j++,
-		pathBreak = Words(Files[j],"/");
+	For(j=1, j<= nitems(files),j++,
+		pathBreak = Words(files[j],"/");
 		fileName = pathBreak[nitems(pathBreak)];
 		//fileType = Word(nitems(Words(fileName,".")),fileName,".");
 		//fileNameNoExt = Munger(fileName,1,"."||fileType,"");
@@ -573,17 +634,14 @@ fileProcessing = Function({Files},{default local},
 		message = fileProcessingMsg || Char(j) || " of " || Char(nitems(files));
 		newCap(message,1);
 
-		obtainFileInfo(files,j);
+		fileInfo = obtainFileInfo(files[j]);
 		
-		wholeList[j] = Match(fileInfo[fileName][5],
-			"xlsx", openXLS(files,j,fileInfo[fileName][2])
-		,
-			"csv", openCSV(files,j,fileInfo[fileName][2])
-		);
+		//need to put back that match, and build the open XLS function
+		wholeList[j] = openCSV(files[j],fileInfo[fileName][2]); //used to have a match for diff file types
 		wholeList[j] << SetName(fileInfo[fileName][6]);
 		//j=8;
 		//filetype="xlsx";
-		beckmanCleanup(wholeList,j,fileName,failPosList,failListList);
+		beckmanCleanup(wholeList[j],fileName,failPosList,failListList);
 		//Print( fileName||" 3d");
 		
 		wholeList[j] << Move Selected Columns(
@@ -621,6 +679,7 @@ fileProcessing = Function({Files},{default local},
 
 	);
 	
+	///turn this into a foreach or an array removal rather than position
 	//RemoveFrom(wholeList,failPos);
 
 	If(nitems(wholeList) == 0,
@@ -650,12 +709,20 @@ fileProcessing = Function({Files},{default local},
 		RemoveFrom(wholeList,1);
 		concatTable = startConcat << Concatenate(wholeList,Output Table( "Beckman_"||nextTodayDate||"_splitProgCurves" ))//,Create Source Column);
 	);
+
+	For(i=1,i<=nitems(wholeList),i++,
+		Close(wholeList[i],nosave)
+	);
+	Try(Close(startConcat,nosave));
 	
 	Return(concatTable);
 
 );
 
 finalProcessing = Function({tableName},{default local},
+	/*
+	tableName = concatTable;
+	*/
 	concatTable = tableName;
 	
 	message = "Finishing Data Processing";
@@ -738,44 +805,22 @@ finalProcessing = Function({tableName},{default local},
 
 	stackTable << Clear Select;
 
-	//color splitProgCurve columns
-	Column(concatTable,"Index File") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"Lab") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"Model Family") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"Date") << Color Cells(RGBColor(103,255,247));
-	Column(concatTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
-
-	//color progCurve columns
-	Column(stackTable,"Index File") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Lab") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Model Family") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Date") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"Curve Source") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"BeckmanTimePoint") << Color Cells(RGBColor(103,255,247));
-	Column(stackTable,"DevTimePoint") << Color Cells(RGBColor(103,255,247));
-
-	//color justResults columns
-	Column(jrTable,"Index File") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"UniqueRunID") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Lab") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Model Family") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Serial Number") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Date") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Flag Desc") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"Curve Source") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"BeckmanTimePoint") << Color Cells(RGBColor(103,255,247));
-	Column(jrTable,"DevTimePoint") << Color Cells(RGBColor(103,255,247));
-
-	For(i=1,i<=nitems(wholeList),i++,
-		Close(wholeList[i],nosave)
+	colorList = {"Index File","UniqueRunID","UniqueCurveID","Lab","Model Family","Serial Number","Date","Flag Desc","Curve Source","BeckmanTimePoint","DevTimePoint"};
+	For(i=1,i<=ncol(concatTable),i++,
+		If(contains(colorList, Column(concatTable,i) << get name) > 0,
+			Column(concatTable, i) << Color Cells(RGBColor(103,255,247));
+		)
 	);
-	Try(Close(startConcat,nosave));
-	Try(Close(subTable,nosave));
+	For(i=1,i<=ncol(stackTable),i++,
+		If(contains(colorList, Column(stackTable,i) << get name) > 0,
+			Column(stackTable, i) << Color Cells(RGBColor(103,255,247));
+		)
+	);
+	For(i=1,i<=ncol(jrTable),i++,
+		If(contains(colorList, Column(jrTable,i) << get name) > 0,
+			Column(jrTable, i) << Color Cells(RGBColor(103,255,247));
+		)
+	);
 
 	Caption(Remove);
 
@@ -814,17 +859,16 @@ If( Length( Include File List() ) == 1,
 		);
 		
 		If( nitems(beckFiles) == 0,
-			Throw();
+			Stop();
 			,
 			splitName = fileProcessing( beckFiles );
 			finalProcessing(splitName)
 		);
-	,
+		,
 		wrongVer( minJMPver );
 		throw();
 	)
-,
-	Print( "Script was included from another source" );
-	//build within try() command
-	//dt_start = mf:subsetDT;
+	,
+	Print( "Beckman Processing script was included from another source" );
+
 );
