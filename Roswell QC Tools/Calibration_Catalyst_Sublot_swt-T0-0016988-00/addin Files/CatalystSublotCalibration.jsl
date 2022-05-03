@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//		  1.0 SDarling 050322
+//		-> moved subLot2Dblocker Func, linearFitadder, lytesCubicto3P, jsonPrepBase, jsonPrepCW, jsonPrepFoil, SDMAjsonPrepBase, SDMAjsonPrepCW, and SDMAjsonPrepFoil to tested section.
 //		  1.0 SDarling 042922
 //		-> moved calFitfunc, subLotcharFunc, calBarcodeParse, Grubbs_Outlier_Detection, subLottabprep, prepCalData, prepLoopData, prepExpiration, SDMAPanelPrep, SDMALoopQualPrep, SDMAInstPrep, SDMAPatientPrep, assayType to tested section.
 //		-> moved outlierDetectWithinGroup and outlierRecursion to unused function section.
@@ -293,6 +295,7 @@ factorFinder = Function( {number},
 );
 
 //eventually moved to libraries
+//added by nate to turn Chem Types into Chem Codes
 assayTypes = Function({},{default local},
 	assayTyp = Associative Array(
 		{
@@ -457,9 +460,7 @@ Grubbs_Outlier_Detection = Function({tablename, yCol, alpha}, {default local},
 	Return(tablename);
 );
 
-
-//UNTESTED FUNCTIONS
-//nate created, needs to test
+//nate created
 instIDpreparation = Function( {tableName, instrumentIDcolumn = "Instrument ID"}, {default local},
 	
 	//variable shortening
@@ -499,8 +500,6 @@ instIDpreparation = Function( {tableName, instrumentIDcolumn = "Instrument ID"},
 
 	Return(tableName);
 );
-
-//added by nate to turn Chem Types into Chem Codes
 
 //UNTESTED FUNCTIONS
 
@@ -1565,9 +1564,6 @@ SDMAInstPrep = Function({platformPath}, {Default Local},
 	Return(dt_InstTune);
 );
 
-
-//UNTESTED MAIN FUNCTIONS
-
 subLot2DblockerFunc = Function( {table, respCol, posCol, blockCol, fluidCol, slideLotvar, outputCol, chemTypecol, blockType},
 	{default Local}, 
 	
@@ -1701,7 +1697,465 @@ linearFitadder = Function( {table, respCol, posCol, fluidCol, slideLotvar, chemT
 	table << Delete Columns( "Sub Lot Condition N", "sumYi", "sumXi", "sumXi*Yi", "sumXi2", "tempa", "coeffb", "coeffa", "coeffd", "coeffc" );
 );
 
+SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration, eventnum}, {default local},
+	//dt_Basecurvefinal = DataTable("Base Curve");
+	//dt_expiration = DataTable("Untitled 479");
+	
+	Column( dt_Basecurvefinal, "Asymptote" ) << Set Name( "a" );
+	Column( dt_Basecurvefinal, "Scale" ) << Set Name( "b" );
+	Column( dt_Basecurvefinal, "Growth Rate" ) << Set Name( "c" );
+	dt_Basecurvefinal << New Column( "d", Numeric, Continuous, << set each value(0) );
+	dt_Basecurvefinal << New Column( "e", Numeric, Continuous );
+	dt_Basecurvefinal << New Column( "numWavelengths", Numeric, Nominal, Set Formula( 1 ) );
+	dt_Basecurvefinal << New Column( "species",
+		Numeric,
+		Nominal,
+		Set Formula( If( :Species == "Canine", 99, :Species == "Feline", 2, Empty() ) )
+	);
+	//dt_Basecurvefinal << New Column( "hidden", Numeric, Nominal, Set Formula( 0 ) );
+	dt_Basecurvefinal << New Column( "chemCode", Numeric, Nominal, Set Formula( If( :Chem Type == "SDMA", 4, Emtpy() ) ) );	
+	dt_Basecurvefinal << New Column( "dryread_start", Numeric, Continuous );
+	dt_Basecurvefinal << New Column( "dryread_end", Numeric, Continuous );
+	
+	//get the min and max lot numbers for table naming
+	Summarize(dt_Basecurvefinal, lot_list = by(:"Slide Lot"n));
+	//using for each which is JMP 16 only
+	For Each( {value, index}, lot_list, lot_list[index] = num(value) );
+	Min_lot = Char(Min(lot_list));
+	Max_lot = Char(Max(lot_list));
+	
+	
+	Column( dt_Basecurvefinal, "Slide Lot" ) << Set Name( "lot" );
+	dt_expiration:"slide_lot"n << Set Data Type("Character") << Set Modeling Type("Nominal");
+	dt_Basecurvefinal << Update(
+		With(dt_expiration),
+		Match Columns( :lot = :slide_lot),
+		Add Columns from Update Table( :exp_date ),
+		Replace Columns in Maine Table( None )
+	);
+	dt_Basecurvefinal << New Column( "ID",
+		Character,
+		Nominal,
+		Set Formula(
+			If(
+				:Inst Type == "CatOne", "cat1",
+				:Inst Type == "CatDx", "ctdx",
+				Empty()
+			) || "_" || Char( :chemCode ) || "_" || Char( :lot ) || "_" || Char( :species )
+		)
+	);
+	
+	Column( dt_Basecurvefinal, "lot") << Set Data Type("Numeric") << Set Modeling Type("Nominal");
+	Column( dt_Basecurvefinal, "ID" ) << Delete Formula;
+	Column( dt_Basecurvefinal, "numWavelengths" ) << Delete Formula;
+	Column( dt_Basecurvefinal, "species" ) << Delete Formula;
+	//Column( dt_Basecurvefinal, "hidden" ) << Delete Formula;
+	Column( dt_Basecurvefinal, "chemCode" ) << Delete Formula;
+	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "Species" );
+	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
+	
+	//will need to make event more dynamic. idk if this is relevant to QSDMA or not... *insert shrug here*
+	dt_BaseCurvefinal << Set Name(eventnum || " BaseCurve " || Min_lot || "-" || Max_lot );
+	
+	return(dt_Basecurvefinal);
+);
 
+SDMAjsonPrepFoil = Function({dt_Foil}, {Default Local},
+		//////transform the foil corrections to the low bit number type
+	dt_Foil << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset * 10000, 0 ) / 10000 ) );
+	dt_Foil << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain * 10000, 0 ) / 10000 ) );
+
+	Column( dt_Foil, "a" ) << Delete Formula;
+	Column( dt_Foil, "b" ) << Delete Formula;
+	
+	dt_Foil << Delete Columns( "Foil Offset", "Foil Gain" );
+	
+	//dt_Foil << Set Name( "Foil" );
+	dt_Platform = New Table( "Inst Temp",
+		<<Add Rows( 2 ),
+		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
+		Invisible
+	);
+	wait(0.1);
+	dtFoil = dt_Foil << Join( With( dt_Platform ), Cartesian Join );
+	
+	dtFoil << New Column( "ID",
+		Character,
+		Nominal,
+		Set Formula(
+			If(
+				:Inst Type == "CatOne", "cat1",
+				:Inst Type == "CatDx", "ctdx",
+				Empty()
+			) || "_" || If( :Chem Type == "SDMA",
+				"4",
+				Empty()
+			) || "_" || Char( :Slide Lot )
+		)
+	);
+	Column( dtFoil, "ID" ) << Delete Formula;
+	
+	dtFoil << Delete Columns( "Slide Lot", "Chem Type", "Inst Type", "N Rows", "Target Dose", "Foil Correction Raw" );
+	dtFoil << Move Selected Columns("ID"n, To first );
+	Column( dtFoil, "Foil" ) << Set Name( "foil" );
+	dtFoil << Set Name("Foil");
+	close(dt_Platform, nosave);
+	
+	Return(dtFoil);
+);
+
+SDMAjsonPrepCW = Function({dt_Crossweb}, {Default Local},
+
+
+	dt_Crossweb << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	dt_Crossweb << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+
+	Column( dt_Crossweb, "Cross Web Start" ) << Delete Formula;
+	Column( dt_Crossweb, "Cross Web End" ) << Delete Formula;
+
+	dtFit = dt_Crossweb << Bivariate(
+		Y( :Cross Web Offset, :Cross Web Gain ),
+		X( :Cross Web ),
+		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
+		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
+	);
+	Wait( 0 );
+	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+	dtFit << Close Window;
+
+	dt_Crossweb << Close Window;
+
+	cwSplit1 = cwInterptemp << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start, :Y ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		Invisible
+	);
+
+	cwInterptemp << Close Window;
+
+	cwSplit2 = cwSplit1 << Split(
+		Split By( :Y ),
+		Split( :Cross Web, :"Cross Web^2"n, :"Cross Web^3"n, :Intercept ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start ),
+		Sort by Column Property,
+		Invisible
+	);
+
+	cwSplit1 << Close Window;
+	
+	Column( cwSplit2, "Intercept Cross Web Offset" ) << Set Name( "e" );
+	Column( cwSplit2, "Cross Web Cross Web Offset" ) << Set Name( "f" );
+	Column( cwSplit2, "Cross Web^2 Cross Web Offset" ) << Set Name( "g" );
+	Column( cwSplit2, "Cross Web^3 Cross Web Offset" ) << Set Name( "h" );
+	Column( cwSplit2, "Intercept Cross Web Gain" ) << Set Name( "a" );
+	Column( cwSplit2, "Cross Web Cross Web Gain" ) << Set Name( "b" );
+	Column( cwSplit2, "Cross Web^2 Cross Web Gain" ) << Set Name( "c" );
+	Column( cwSplit2, "Cross Web^3 Cross Web Gain" ) << Set Name( "d" );
+	
+	
+	cwSplit2 << Set Name( "Cross Web" );
+	Column( cwSplit2, "Cross Web End" ) << Set Name( "crossweb_end" );
+	Column( cwSplit2, "Cross Web Start" ) << Set Name( "crossweb_start" );
+	cwSplit2:"crossweb_end"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
+	cwSplit2:"crossweb_start"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
+	
+	dt_Platform = New Table( "Inst Temp",
+		<<Add Rows( 2 ),
+		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
+		Invisible
+	);
+	wait(0.1);
+	
+	cwSplit3 = cwSplit2 << Join( With( dt_Platform ), Cartesian Join );
+	cwSplit3 << New Column( "ID",
+		Character,
+		Nominal,
+		Set Formula(
+			If(
+				:Inst Type == "CatOne", "cat1",
+				:Inst Type == "CatDx", "ctdx",
+				Empty()
+			) || "_" || If( :Chem Type == "SDMA",
+				"4",
+				Empty()
+			) || "_" || Char( :Slide Lot )
+		)
+	);
+	Column( cwSplit3, "ID" ) << Delete Formula;
+	
+	
+	dt_Platform << Close Window;
+	cwSplit2 << Close Window;
+	
+	cwSplit3 << Delete Columns( "Slide Lot", "Chem Type", "Inst Type");
+	cwSplit3 << Move Selected Columns("ID"n, To first );
+	cwSplit3 << Set Name("Cross Web");
+	
+	dt_Crossweb = cwSplit3;
+	Return(dt_Crossweb);
+);
+
+jsonPrepBase = Function({finalCalibrationData,baseCoeffs},{default local},
+	
+	finalCal = finalCalibrationData;
+	//expTbl = expirationTable;
+	
+	//--dtCaloutLast
+	dtCalFinalSumm = finalCal << Summary(
+		Group( :Assay, :Slide Lot, :cliplot, :Dry Read Start, :Dry Read End, :exp_date ),
+		Freq( "None" ),
+		Weight( "None" )
+	);
+	dtCalFinalSumm << delete columns("N Rows");
+	baseCoeffs << Update(
+		With( dtCalFinalSumm ),
+		Match Columns( :Assay = :Assay, :Slide Lot = :Slide Lot )
+	);
+	//baseCoeffs << Update(
+	//	With( expTbl ),
+	//	Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
+	//);
+	Close(dtCalFinalSumm,nosave);
+	//Close(dtSLExp,nosave);
+	
+	instIDpreparation(baseCoeffs);
+
+	baseCoeffs << New Column("species",Numeric,
+		<< set each value(99)
+	);
+	baseCoeffs << New Column("numWavelengths",Numeric,
+		<< set each value(1)
+	);
+	baseCoeffs:"Assay"n << set name("chemCode");
+	temp = baseCoeffs << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemCode ) || "_" || Char( :Slide Lot ) || "_" || Char( :species )
+		)
+	);
+	
+	temp << delete formula;
+	baseCoeffs:"Slide Lot"n << set name("lot");
+	baseCoeffs:"Dry Read Start"n << set name("dryread_start");
+	baseCoeffs:"Dry Read End"n << set name("dryread_end");
+	baseCoeffs << Move Selected Columns({"ID"}, To First);
+	/*
+	If d parameter is present, makes sure they are all 0 if not filled with another
+	number. If d is missing, add it and set it to 0
+	*/
+	Try(
+		For each row(baseCoeffs,
+			if(ismissing(:"d"n),:"d"n = 0)
+		);
+		,
+		baseCoeffs << new column("d",numeric, continuous,
+			<< set each value(0)
+		);
+	);
+	baseCoeffs << delete columns({"Inst Type"});
+	
+);
+
+jsonPrepCW = Function({crossWebTable},{default local},
+	
+	//--cwSplit2
+	crossWebTable << New Column("Inst Type",Character,
+		<< set each value("both")
+	);
+	temp = crossWebTable << New Column("chemcode",Numeric,
+		Formula(
+			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
+		)
+	);
+	temp << delete formula;
+	temp = crossWebTable << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
+		)
+	);
+	temp << delete formula;
+	crossWebTable:"Cross Web Start"n << set name("crossweb_start");
+	crossWebTable:"Cross Web End"n << set name("crossweb_end");
+	crossWebTable << Move Selected Columns({"ID"}, To First);
+	crossWebTable << delete columns({"Inst Type","Chem Type","Slide Lot","species","chemcode"});
+	
+);
+
+jsonPrepFoil = Function({foilTable},{default local},
+	
+	//--foilMasterAll
+	foilTable << New Column("Inst Type",Character,
+		<< set each value("both")
+	);
+	temp = foilTable << New Column("chemcode",Numeric,
+		Formula(
+			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
+		)
+	);
+	temp << delete formula;
+	temp = foilTable << New Column("ID",Character,
+		Formula(
+			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
+		)
+	);
+	temp << delete formula;
+	foilTable:"Foil"n << set name("foil");
+	foilTable << Move Selected Columns({"ID"}, To First);
+	foilTable << delete columns({"Inst Type","Chem Type","Sublot Position_Char","Slide Lot","species","chemcode"});
+	
+);
+
+//from jesses work. Nate needs to test and integrate into calFitFunc
+lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLotColumn, assayColumn, instrumentTypeColumn},
+	{default local}, 
+	
+	//will only work with Assay Code, currently. ChemType is not supported
+	
+	//table = currentdatatable();
+	//responseColumn = "AR";
+	//concentrationColumn = "Target";
+	//slideLotColumn = "Lot";
+	//assayCodeColumn = "Assay";
+	
+	//variable shortening
+	respCol = responseColumn;
+	concCol = concentrationColumn;
+	lotCol = slideLotColumn;
+	assayCol = assayColumn;
+	instTypeCol = instrumentTypeColumn;
+	
+	//convert text cols names into jsl local column variables
+	//JMP 16 may have fixed issues that require needing both styles
+	nameRespCol = Eval Insert( ":\!"^respCol^\!"n" );
+	nameConcCol = Eval Insert( ":\!"^concCol^\!"n" );
+	nameLotCol = Eval Insert( ":\!"^lotCol^\!"n" );
+	nameAssayCol = Eval Insert( ":\!"^assayCol^\!"n" );
+	nameInstCol = Eval Insert( ":\!"^instTypeCol^\!"n" );
+	
+	parseRespCol = Parse( Eval Insert( ":\!"^respCol^\!"n" ) );
+	parseConcCol = Parse( Eval Insert( ":\!"^concCol^\!"n" ) );
+	parseLotCol = Parse( Eval Insert( ":\!"^lotCol^\!"n" ) );
+	parseAssayCol = Parse( Eval Insert( ":\!"^assayCol^\!"n" ) );
+	parseInstCol = Parse( Eval Insert( ":\!"^instTypeCol^\!"n" ) );
+
+	platform = table << Fit Curve(
+		Y( Parse( nameRespCol ) ),
+		X( Parse( nameConcCol ) ), 
+		//Group(:Lot),
+		Fit Exponential 3P,
+		By( Parse( nameInstCol ), Parse( nameAssayCol ), Parse( nameLotCol ) ),
+		Invisible
+	);
+	Wait( 0 );
+	dt_3p_uncorrected = Try(
+		Report( platform[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+		Make Combined Data Table( private( 1 ) ),
+		Report( platform )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+		Make Combined Data Table( private( 1 ) )
+	);
+	dt_3p_uncorrected = unprivatizeTable(seePrivateTables, dt_3p_uncorrected);
+	platform << close window;
+	//dt_3p_uncorrected:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
+	
+	dt_final_curves = dt_3p_uncorrected << Split(
+		Split By( :"Parameter"n ),
+		Split( :"Estimate"n ),
+		Group( parseAssayCol, parseLotCol, parseInstCol ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		output table name( "cal curves by lot" ),
+		private
+	);
+	dt_final_curves = unprivatizeTable(seePrivateTables, dt_final_curves);
+	Close( dt_3p_uncorrected, no save );
+	
+	Summarize( table, a = by( parseAssayCol ) );
+	// first, set up table with dose levels
+	dt_dose_levels = New Table( "dose quantiles table", private );
+	dt_dose_levels = unprivatizeTable(seePrivateTables, dt_dose_levels);
+	dt_dose_levels << Add Rows( N Items( a ) * 101 ); //101 per assay present. we expect 3 always, but in case there isn't
+	dt_dose_levels << Delete Columns( {"Column 1"} );
+	dt_dose_levels << New Column( assayCol, character, nominal, values( Sort List( Repeat( a, 101 ) ) ) );
+	dt_dose_levels << New Column( "Quantile", numeric, continuous, formula( Sequence( 0, 1, 0.01 ) ) );
+	dt_dose_levels << New Column( "mid point for Chem Type", formula( assayMidPoint[parseAssayCol] ) );
+	dt_dose_levels << New Column( "Concentration (3p uncorrected)",
+		numeric,
+		continuous,
+		formula( assayRange[parseAssayCol][1] + (assayRange[parseAssayCol][2] - assayRange[parseAssayCol][1]) * :"Quantile"n )
+	);
+	
+	// join with curves, duplicating for each:
+	dt_full_dose_levels = dt_final_curves << Join(
+		With( dt_dose_levels ),
+		Merge Same Name Columns,
+		By Matching Columns( Eval( Parse( nameAssayCol ) ) = Eval( Parse( nameAssayCol ) ) ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 1 ),
+		Preserve main table order( 1 ),
+		output table name( "full dose levels" ),
+		private
+	);
+	dt_full_dose_levels = unprivatizeTable(seePrivateTables, dt_full_dose_levels);
+	Close( dt_dose_levels, no save );
+	
+	// add AR and new concentration columns:
+	dt_full_dose_levels << New Column( "AR",
+		Numeric,
+		"Continuous",
+		Formula( :"Asymptote"n + :"Scale"n * Exp( :"Growth Rate"n * :"Concentration (3p uncorrected)"n ) )
+	);
+	
+	//the eval for int account for how it's displayed in the associative array (number plus offset)
+	dt_full_dose_levels << New Column( "Concentration (3p corrected)",
+		Numeric,
+		"Continuous",
+		Formula(
+			Eval( assayCorrectedCubic[parseAssayCol]["int"] ) + assayCorrectedCubic[parseAssayCol]["lin"] * :"Concentration (3p uncorrected)"n
+			+assayCorrectedCubic[parseAssayCol]["quad"] * :"Concentration (3p uncorrected)"n ^ 2 + assayCorrectedCubic[parseAssayCol]["cub"] *
+			:"Concentration (3p uncorrected)"n ^ 3
+		)
+	);
+	
+	platform = dt_full_dose_levels << Fit Curve(
+		Y( Parse( nameRespCol ) ),
+		X( :"Concentration (3p corrected)"n ), 
+		//Group( parse(nameLotCol) ),
+		Fit Cubic,
+		By( Parse( nameInstCol ), Parse( nameAssayCol ), Parse( nameLotCol ) ),
+		invisible
+	);
+	Wait( 0 );
+	dt_new_curves = Try(
+		Report( platform[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+		Make Combined Data Table( private( 1 ) ),
+		Report( platform )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table( private( 1 ) )
+	);
+	dt_new_curves = unprivatizeTable(seePrivateTables, dt_new_curves);
+	platform << close window;
+	//dt_new_curves:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
+
+	dt_new_curves_split = dt_new_curves << Split(
+		Split By( :"Parameter"n ),
+		Split( :"Estimate"n ),
+		Group( parseAssayCol, parseLotCol, parseInstCol ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		output table name( "new curves split" )
+	);
+	
+	Column( dt_new_curves_split, assayCol ) << data type( numeric );
+	Close( dt_new_curves, no save );
+	Close( dt_final_curves, nosave );
+	
+	Return( dt_new_curves_split )
+	
+	;
+);
+
+
+//UNTESTED MAIN FUNCTIONS
 //nate included, will cover UTs for function
 buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePath, processvar},
 	{default local}, 
@@ -1924,155 +2378,6 @@ buildJSONarray = Function( {mainCurveTable, crosswebTable, foilTable, jsonSavePa
 	
 	Return( eventJSONexpr, jsonExpr );
 );
-
-//from jesses work. Nate needs to test and integrate into calFitFunc
-//untested
-lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLotColumn, assayColumn, instrumentTypeColumn},
-	{default local}, 
-	
-	//will only work with Assay Code, currently. ChemType is not supported
-	
-	//table = currentdatatable();
-	//responseColumn = "AR";
-	//concentrationColumn = "Target";
-	//slideLotColumn = "Lot";
-	//assayCodeColumn = "Assay";
-	
-	//variable shortening
-	respCol = responseColumn;
-	concCol = concentrationColumn;
-	lotCol = slideLotColumn;
-	assayCol = assayColumn;
-	instTypeCol = instrumentTypeColumn;
-	
-	//convert text cols names into jsl local column variables
-	//JMP 16 may have fixed issues that require needing both styles
-	nameRespCol = Eval Insert( ":\!"^respCol^\!"n" );
-	nameConcCol = Eval Insert( ":\!"^concCol^\!"n" );
-	nameLotCol = Eval Insert( ":\!"^lotCol^\!"n" );
-	nameAssayCol = Eval Insert( ":\!"^assayCol^\!"n" );
-	nameInstCol = Eval Insert( ":\!"^instTypeCol^\!"n" );
-	
-	parseRespCol = Parse( Eval Insert( ":\!"^respCol^\!"n" ) );
-	parseConcCol = Parse( Eval Insert( ":\!"^concCol^\!"n" ) );
-	parseLotCol = Parse( Eval Insert( ":\!"^lotCol^\!"n" ) );
-	parseAssayCol = Parse( Eval Insert( ":\!"^assayCol^\!"n" ) );
-	parseInstCol = Parse( Eval Insert( ":\!"^instTypeCol^\!"n" ) );
-
-	platform = table << Fit Curve(
-		Y( Parse( nameRespCol ) ),
-		X( Parse( nameConcCol ) ), 
-		//Group(:Lot),
-		Fit Exponential 3P,
-		By( Parse( nameInstCol ), Parse( nameAssayCol ), Parse( nameLotCol ) ),
-		Invisible
-	);
-	Wait( 0 );
-	dt_3p_uncorrected = Try(
-		Report( platform[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-		Make Combined Data Table( private( 1 ) ),
-		Report( platform )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-		Make Combined Data Table( private( 1 ) )
-	);
-	dt_3p_uncorrected = unprivatizeTable(seePrivateTables, dt_3p_uncorrected);
-	platform << close window;
-	//dt_3p_uncorrected:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
-	
-	dt_final_curves = dt_3p_uncorrected << Split(
-		Split By( :"Parameter"n ),
-		Split( :"Estimate"n ),
-		Group( parseAssayCol, parseLotCol, parseInstCol ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property,
-		output table name( "cal curves by lot" ),
-		private
-	);
-	dt_final_curves = unprivatizeTable(seePrivateTables, dt_final_curves);
-	Close( dt_3p_uncorrected, no save );
-	
-	Summarize( table, a = by( parseAssayCol ) );
-	// first, set up table with dose levels
-	dt_dose_levels = New Table( "dose quantiles table", private );
-	dt_dose_levels = unprivatizeTable(seePrivateTables, dt_dose_levels);
-	dt_dose_levels << Add Rows( N Items( a ) * 101 ); //101 per assay present. we expect 3 always, but in case there isn't
-	dt_dose_levels << Delete Columns( {"Column 1"} );
-	dt_dose_levels << New Column( assayCol, character, nominal, values( Sort List( Repeat( a, 101 ) ) ) );
-	dt_dose_levels << New Column( "Quantile", numeric, continuous, formula( Sequence( 0, 1, 0.01 ) ) );
-	dt_dose_levels << New Column( "mid point for Chem Type", formula( assayMidPoint[parseAssayCol] ) );
-	dt_dose_levels << New Column( "Concentration (3p uncorrected)",
-		numeric,
-		continuous,
-		formula( assayRange[parseAssayCol][1] + (assayRange[parseAssayCol][2] - assayRange[parseAssayCol][1]) * :"Quantile"n )
-	);
-	
-	// join with curves, duplicating for each:
-	dt_full_dose_levels = dt_final_curves << Join(
-		With( dt_dose_levels ),
-		Merge Same Name Columns,
-		By Matching Columns( Eval( Parse( nameAssayCol ) ) = Eval( Parse( nameAssayCol ) ) ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 1, 1 ),
-		Preserve main table order( 1 ),
-		output table name( "full dose levels" ),
-		private
-	);
-	dt_full_dose_levels = unprivatizeTable(seePrivateTables, dt_full_dose_levels);
-	Close( dt_dose_levels, no save );
-	
-	// add AR and new concentration columns:
-	dt_full_dose_levels << New Column( "AR",
-		Numeric,
-		"Continuous",
-		Formula( :"Asymptote"n + :"Scale"n * Exp( :"Growth Rate"n * :"Concentration (3p uncorrected)"n ) )
-	);
-	
-	//the eval for int account for how it's displayed in the associative array (number plus offset)
-	dt_full_dose_levels << New Column( "Concentration (3p corrected)",
-		Numeric,
-		"Continuous",
-		Formula(
-			Eval( assayCorrectedCubic[parseAssayCol]["int"] ) + assayCorrectedCubic[parseAssayCol]["lin"] * :"Concentration (3p uncorrected)"n
-			+assayCorrectedCubic[parseAssayCol]["quad"] * :"Concentration (3p uncorrected)"n ^ 2 + assayCorrectedCubic[parseAssayCol]["cub"] *
-			:"Concentration (3p uncorrected)"n ^ 3
-		)
-	);
-	
-	platform = dt_full_dose_levels << Fit Curve(
-		Y( Parse( nameRespCol ) ),
-		X( :"Concentration (3p corrected)"n ), 
-		//Group( parse(nameLotCol) ),
-		Fit Cubic,
-		By( Parse( nameInstCol ), Parse( nameAssayCol ), Parse( nameLotCol ) ),
-		invisible
-	);
-	Wait( 0 );
-	dt_new_curves = Try(
-		Report( platform[1] )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-		Make Combined Data Table( private( 1 ) ),
-		Report( platform )[Outline Box( "Cubic" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table( private( 1 ) )
-	);
-	dt_new_curves = unprivatizeTable(seePrivateTables, dt_new_curves);
-	platform << close window;
-	//dt_new_curves:"Group"n << Set Name("Lot") << Data Type( "Numeric" ) << Modeling Type( "Nominal" );
-
-	dt_new_curves_split = dt_new_curves << Split(
-		Split By( :"Parameter"n ),
-		Split( :"Estimate"n ),
-		Group( parseAssayCol, parseLotCol, parseInstCol ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property,
-		output table name( "new curves split" )
-	);
-	
-	Column( dt_new_curves_split, assayCol ) << data type( numeric );
-	Close( dt_new_curves, no save );
-	Close( dt_final_curves, nosave );
-	
-	Return( dt_new_curves_split )
-	
-	;
-);
-
 
 //brought in by nate for the starting dialog
 //may change the name to something reasonable :)
@@ -3598,316 +3903,6 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 	
 	//Return the analysis tables.
 	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
-	
-);
-
-SDMAjsonPrepBase = Function({dt_Basecurvefinal, dt_expiration, eventnum}, {default local},
-	//dt_Basecurvefinal = DataTable("Base Curve");
-	//dt_expiration = DataTable("Untitled 479");
-	
-	Column( dt_Basecurvefinal, "Asymptote" ) << Set Name( "a" );
-	Column( dt_Basecurvefinal, "Scale" ) << Set Name( "b" );
-	Column( dt_Basecurvefinal, "Growth Rate" ) << Set Name( "c" );
-	dt_Basecurvefinal << New Column( "d", Numeric, Continuous, << set each value(0) );
-	dt_Basecurvefinal << New Column( "e", Numeric, Continuous );
-	dt_Basecurvefinal << New Column( "numWavelengths", Numeric, Nominal, Set Formula( 1 ) );
-	dt_Basecurvefinal << New Column( "species",
-		Numeric,
-		Nominal,
-		Set Formula( If( :Species == "Canine", 99, :Species == "Feline", 2, Empty() ) )
-	);
-	//dt_Basecurvefinal << New Column( "hidden", Numeric, Nominal, Set Formula( 0 ) );
-	dt_Basecurvefinal << New Column( "chemCode", Numeric, Nominal, Set Formula( If( :Chem Type == "SDMA", 4, Emtpy() ) ) );	
-	dt_Basecurvefinal << New Column( "dryread_start", Numeric, Continuous );
-	dt_Basecurvefinal << New Column( "dryread_end", Numeric, Continuous );
-	
-	//get the min and max lot numbers for table naming
-	Summarize(dt_Basecurvefinal, lot_list = by(:"Slide Lot"n));
-	//using for each which is JMP 16 only
-	For Each( {value, index}, lot_list, lot_list[index] = num(value) );
-	Min_lot = Char(Min(lot_list));
-	Max_lot = Char(Max(lot_list));
-	
-	
-	Column( dt_Basecurvefinal, "Slide Lot" ) << Set Name( "lot" );
-	dt_expiration:"slide_lot"n << Set Data Type("Character") << Set Modeling Type("Nominal");
-	dt_Basecurvefinal << Update(
-		With(dt_expiration),
-		Match Columns( :lot = :slide_lot),
-		Add Columns from Update Table( :exp_date ),
-		Replace Columns in Maine Table( None )
-	);
-	dt_Basecurvefinal << New Column( "ID",
-		Character,
-		Nominal,
-		Set Formula(
-			If(
-				:Inst Type == "CatOne", "cat1",
-				:Inst Type == "CatDx", "ctdx",
-				Empty()
-			) || "_" || Char( :chemCode ) || "_" || Char( :lot ) || "_" || Char( :species )
-		)
-	);
-	
-	Column( dt_Basecurvefinal, "lot") << Set Data Type("Numeric") << Set Modeling Type("Nominal");
-	Column( dt_Basecurvefinal, "ID" ) << Delete Formula;
-	Column( dt_Basecurvefinal, "numWavelengths" ) << Delete Formula;
-	Column( dt_Basecurvefinal, "species" ) << Delete Formula;
-	//Column( dt_Basecurvefinal, "hidden" ) << Delete Formula;
-	Column( dt_Basecurvefinal, "chemCode" ) << Delete Formula;
-	dt_Basecurvefinal << Delete Columns( "Inst Type", "Species Name", "Chem Type", "Species" );
-	dt_Basecurvefinal << Move Selected Columns("ID"n, To first );
-	
-	//will need to make event more dynamic. idk if this is relevant to QSDMA or not... *insert shrug here*
-	dt_BaseCurvefinal << Set Name(eventnum || " BaseCurve " || Min_lot || "-" || Max_lot );
-	
-	return(dt_Basecurvefinal);
-);
-
-SDMAjsonPrepFoil = Function({dt_Foil}, {Default Local},
-		//////transform the foil corrections to the low bit number type
-	dt_Foil << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset * 10000, 0 ) / 10000 ) );
-	dt_Foil << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain * 10000, 0 ) / 10000 ) );
-
-	Column( dt_Foil, "a" ) << Delete Formula;
-	Column( dt_Foil, "b" ) << Delete Formula;
-	
-	dt_Foil << Delete Columns( "Foil Offset", "Foil Gain" );
-	
-	//dt_Foil << Set Name( "Foil" );
-	dt_Platform = New Table( "Inst Temp",
-		<<Add Rows( 2 ),
-		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
-		Invisible
-	);
-	wait(0.1);
-	dtFoil = dt_Foil << Join( With( dt_Platform ), Cartesian Join );
-	
-	dtFoil << New Column( "ID",
-		Character,
-		Nominal,
-		Set Formula(
-			If(
-				:Inst Type == "CatOne", "cat1",
-				:Inst Type == "CatDx", "ctdx",
-				Empty()
-			) || "_" || If( :Chem Type == "SDMA",
-				"4",
-				Empty()
-			) || "_" || Char( :Slide Lot )
-		)
-	);
-	Column( dtFoil, "ID" ) << Delete Formula;
-	
-	dtFoil << Delete Columns( "Slide Lot", "Chem Type", "Inst Type", "N Rows", "Target Dose", "Foil Correction Raw" );
-	dtFoil << Move Selected Columns("ID"n, To first );
-	Column( dtFoil, "Foil" ) << Set Name( "foil" );
-	dtFoil << Set Name("Foil");
-	close(dt_Platform, nosave);
-	
-	Return(dtFoil);
-);
-
-SDMAjsonPrepCW = Function({dt_Crossweb}, {Default Local},
-
-
-	dt_Crossweb << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
-	dt_Crossweb << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
-
-	Column( dt_Crossweb, "Cross Web Start" ) << Delete Formula;
-	Column( dt_Crossweb, "Cross Web End" ) << Delete Formula;
-
-	dtFit = dt_Crossweb << Bivariate(
-		Y( :Cross Web Offset, :Cross Web Gain ),
-		X( :Cross Web ),
-		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
-		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
-	);
-	Wait( 0 );
-	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-	dtFit << Close Window;
-
-	dt_Crossweb << Close Window;
-
-	cwSplit1 = cwInterptemp << Split(
-		Split By( :Term ),
-		Split( :Estimate ),
-		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start, :Y ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property,
-		Invisible
-	);
-
-	cwInterptemp << Close Window;
-
-	cwSplit2 = cwSplit1 << Split(
-		Split By( :Y ),
-		Split( :Cross Web, :"Cross Web^2"n, :"Cross Web^3"n, :Intercept ),
-		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start ),
-		Sort by Column Property,
-		Invisible
-	);
-
-	cwSplit1 << Close Window;
-	
-	Column( cwSplit2, "Intercept Cross Web Offset" ) << Set Name( "e" );
-	Column( cwSplit2, "Cross Web Cross Web Offset" ) << Set Name( "f" );
-	Column( cwSplit2, "Cross Web^2 Cross Web Offset" ) << Set Name( "g" );
-	Column( cwSplit2, "Cross Web^3 Cross Web Offset" ) << Set Name( "h" );
-	Column( cwSplit2, "Intercept Cross Web Gain" ) << Set Name( "a" );
-	Column( cwSplit2, "Cross Web Cross Web Gain" ) << Set Name( "b" );
-	Column( cwSplit2, "Cross Web^2 Cross Web Gain" ) << Set Name( "c" );
-	Column( cwSplit2, "Cross Web^3 Cross Web Gain" ) << Set Name( "d" );
-	
-	
-	cwSplit2 << Set Name( "Cross Web" );
-	Column( cwSplit2, "Cross Web End" ) << Set Name( "crossweb_end" );
-	Column( cwSplit2, "Cross Web Start" ) << Set Name( "crossweb_start" );
-	cwSplit2:"crossweb_end"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
-	cwSplit2:"crossweb_start"n << Set Data Type("Numeric") << Set Modeling Type("Nominal");
-	
-	dt_Platform = New Table( "Inst Temp",
-		<<Add Rows( 2 ),
-		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
-		Invisible
-	);
-	wait(0.1);
-	
-	cwSplit3 = cwSplit2 << Join( With( dt_Platform ), Cartesian Join );
-	cwSplit3 << New Column( "ID",
-		Character,
-		Nominal,
-		Set Formula(
-			If(
-				:Inst Type == "CatOne", "cat1",
-				:Inst Type == "CatDx", "ctdx",
-				Empty()
-			) || "_" || If( :Chem Type == "SDMA",
-				"4",
-				Empty()
-			) || "_" || Char( :Slide Lot )
-		)
-	);
-	Column( cwSplit3, "ID" ) << Delete Formula;
-	
-	
-	dt_Platform << Close Window;
-	cwSplit2 << Close Window;
-	
-	cwSplit3 << Delete Columns( "Slide Lot", "Chem Type", "Inst Type");
-	cwSplit3 << Move Selected Columns("ID"n, To first );
-	cwSplit3 << Set Name("Cross Web");
-	
-	dt_Crossweb = cwSplit3;
-	Return(dt_Crossweb);
-);
-
-jsonPrepBase = Function({finalCalibrationData,baseCoeffs},{default local},
-	
-	finalCal = finalCalibrationData;
-	//expTbl = expirationTable;
-	
-	//--dtCaloutLast
-	dtCalFinalSumm = finalCal << Summary(
-		Group( :Assay, :Slide Lot, :cliplot, :Dry Read Start, :Dry Read End, :exp_date ),
-		Freq( "None" ),
-		Weight( "None" )
-	);
-	dtCalFinalSumm << delete columns("N Rows");
-	baseCoeffs << Update(
-		With( dtCalFinalSumm ),
-		Match Columns( :Assay = :Assay, :Slide Lot = :Slide Lot )
-	);
-	//baseCoeffs << Update(
-	//	With( expTbl ),
-	//	Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
-	//);
-	Close(dtCalFinalSumm,nosave);
-	//Close(dtSLExp,nosave);
-	
-	instIDpreparation(baseCoeffs);
-
-	baseCoeffs << New Column("species",Numeric,
-		<< set each value(99)
-	);
-	baseCoeffs << New Column("numWavelengths",Numeric,
-		<< set each value(1)
-	);
-	baseCoeffs:"Assay"n << set name("chemCode");
-	temp = baseCoeffs << New Column("ID",Character,
-		Formula(
-			:Inst Type || "_" || Char( :chemCode ) || "_" || Char( :Slide Lot ) || "_" || Char( :species )
-		)
-	);
-	
-	temp << delete formula;
-	baseCoeffs:"Slide Lot"n << set name("lot");
-	baseCoeffs:"Dry Read Start"n << set name("dryread_start");
-	baseCoeffs:"Dry Read End"n << set name("dryread_end");
-	baseCoeffs << Move Selected Columns({"ID"}, To First);
-	/*
-	If d parameter is present, makes sure they are all 0 if not filled with another
-	number. If d is missing, add it and set it to 0
-	*/
-	Try(
-		For each row(baseCoeffs,
-			if(ismissing(:"d"n),:"d"n = 0)
-		);
-		,
-		baseCoeffs << new column("d",numeric, continuous,
-			<< set each value(0)
-		);
-	);
-	baseCoeffs << delete columns({"Inst Type"});
-	
-);
-
-jsonPrepCW = Function({crossWebTable},{default local},
-	
-	//--cwSplit2
-	crossWebTable << New Column("Inst Type",Character,
-		<< set each value("both")
-	);
-	temp = crossWebTable << New Column("chemcode",Numeric,
-		Formula(
-			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
-		)
-	);
-	temp << delete formula;
-	temp = crossWebTable << New Column("ID",Character,
-		Formula(
-			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
-		)
-	);
-	temp << delete formula;
-	crossWebTable:"Cross Web Start"n << set name("crossweb_start");
-	crossWebTable:"Cross Web End"n << set name("crossweb_end");
-	crossWebTable << Move Selected Columns({"ID"}, To First);
-	crossWebTable << delete columns({"Inst Type","Chem Type","Slide Lot","species","chemcode"});
-	
-);
-
-jsonPrepFoil = Function({foilTable},{default local},
-	
-	//--foilMasterAll
-	foilTable << New Column("Inst Type",Character,
-		<< set each value("both")
-	);
-	temp = foilTable << New Column("chemcode",Numeric,
-		Formula(
-			Match( :Chem Type, "CL", 40, "K", 41, "NA", 42 )
-		)
-	);
-	temp << delete formula;
-	temp = foilTable << New Column("ID",Character,
-		Formula(
-			:Inst Type || "_" || Char( :chemcode ) || "_" || Char( :Slide Lot )
-		)
-	);
-	temp << delete formula;
-	foilTable:"Foil"n << set name("foil");
-	foilTable << Move Selected Columns({"ID"}, To First);
-	foilTable << delete columns({"Inst Type","Chem Type","Sublot Position_Char","Slide Lot","species","chemcode"});
 	
 );
 
