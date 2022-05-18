@@ -7,6 +7,11 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//		  1.0 SDarling 051822
+//		-> moved inputCleanup to tested.
+//		  1.0 SDarling 051122
+//		-> Changed the returning of dt_Sublot to dt_Sublot_New in sdmaAssStitching.
+//		-> moved lytesAssStitching and sdmaAssStitching to tested.
 //		  1.0 SDarling 050322
 //		-> moved subLot2Dblocker Func, linearFitadder, lytesCubicto3P, jsonPrepBase, jsonPrepCW, jsonPrepFoil, SDMAjsonPrepBase, SDMAjsonPrepCW, and SDMAjsonPrepFoil to tested section.
 //		  1.0 SDarling 042922
@@ -2154,6 +2159,1122 @@ lytesCubicTo3P = Function( {table, responseColumn, concentrationColumn, slideLot
 	;
 );
 
+lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
+	{default local}, 
+	//testing variables
+	//dtCal = Data Table( "CAL_OLOL 1000-1002_CATwAVL9180.jmp" );
+	//dtLoop = Data Table( "Untitled 10530.jmp" );
+	//dtSlideLotExpiration = Data Table( "Summary.jmp" );
+	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
+	/*
+	dtCal = calData;
+	dtLoop = loopData;
+	dtSlideLotExpiration = expiration;
+	jsonloc = jsonPath;
+	*/
+	//setting variables
+	dtSub = dtLoop;
+	dtSLExp = dtSlideLotExpiration;
+	cwPostotal = 40;
+	foilPostotal = 30;
+	defaultBin = 8;
+
+	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
+	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
+	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
+
+	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
+	/*
+	Typically the deletion of the exclusions would be done in the prep step like for other tables but this
+	code already had the subset step in to maintain the original cal table. the decision was to delete the
+	exclusions from that subset instead. long term it would be ideal to ensure the exclusions could be honored
+	(from columns and row states), but that will be a feature request for a later release
+	*/
+	dtCal2 << Select where( 
+		:"Exclusion Rationale"n == "NDE - Grubb's"
+		|
+		Excluded()
+	) << delete rows;
+	dtCalout = calFitfunc( dtCal, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
+	
+	dtCalout2 = dtCalout << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
+	dtSubop = subLottabprep( dtSub, dtCalout, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P" );
+	
+	//this will be a place holder assigned target for the correction logic
+	dtSubop << New Column( "Loop Average Dose",
+		Numeric,
+		Continuous,
+		Set Formula( Col Mean( :Predicted Dose from Master, :Dose, :Slide Lot, :Chem Type ) )
+	);
+
+	//relative correction to evaluate the cross web pattern by dose level
+	subLot2DblockerFunc(
+		dtSubop,
+		"Predicted Dose from Master",
+		"Cross Web",
+		"Foil",
+		"Dose",
+		"Slide Lot",
+		"cal_CW Correction",
+		"Chem Type",
+		"Relative"
+	);
+
+	dtSubop << New Column( "cal_CW Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_CW Correction"n ) );
+	
+	//relative correction to evaluate the foil corrections by dose level
+	subLot2DblockerFunc( dtSubop, "cal_CW Corrected Dose", "Foil", "Loop Average Dose", "Dose", "Slide Lot", "cal_Foil Correction", "Chem Type", "Absolute" );
+	
+	dtSubop << New Column( "cal_Foil Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_Foil Correction"n ) );
+	
+	//this is for informational purposes only and is used to later check the actual corrections vs. entitlement to know if we found any distressing discontinuities along the way
+	dtSubop << New Column( "Entitlement Sublot Dose", Numeric, Continuous, Set Formula( :"cal_CW Corrected Dose"n - :"cal_Foil Correction"n ) );
+
+	//now we're going to calculate the raw correction factors for cross web
+	//first step is to subset out the raw CW corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
+	dtSubop_cw = dtSubop << Summary(
+		Group( :"Chem Type"n, :"Slide Lot"n, :"Cross Web"n, :"Dose"n, :"Loop Average Dose"n, :"cal_CW Correction"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 )
+	);
+	
+	
+	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
+	//check that you applied the cross web correction right for this
+	dtSubop_cw << New Column( "Cross Web Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_CW Correction"n ) );
+	
+	//this is generating the slope and offset corrections by cross web position, slide lot, and chem type
+	linearFitadder( dtSubop_cw, "Cross Web Dose", "Cross Web", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
+	
+
+	//this is interpolating the slope and offset terms for cross web with the spline
+	cwCorrsoffsetpred = subLotcharFunc( dtSubop_cw, "Cross Web", "Offset Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( cwCorrsoffsetpred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Offset Predicted" );
+	
+	
+	//this is producing no slope from time to time. Come back and troubleshoot. Missing Chem Type.
+	cwCorrsslopepred = subLotcharFunc( dtSubop_cw, "Cross Web", "Gain Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( cwCorrsslopepred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Slope Predicted" );
+	
+
+	
+	//this is joining the offset and slope corrections for crossweb into one table
+	crossWebmaster = cwCorrsoffsetpred << Join(
+		With( cwCorrsslopepred ),
+		Merge Same Name Columns,
+		Match Flag( 0 ),
+		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Cross Web = :Cross Web ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 0 ),
+		Preserve main table order( 1 )
+	);
+	
+	
+	//closing windows we don't need anymore
+	cwCorrsoffsetpred << Close Window;
+	cwCorrsslopepred << Close Window;
+	
+	//getting the spline formula for the CW terms to use elsewhere
+	offsetCWspline = Column( crossWebmaster, "Cross Web Offset Predicted" ) << Get Formula;
+	gainCWspline = Column( crossWebmaster, "Cross Web Slope Predicted" ) << Get Formula;
+
+	Column( crossWebmaster, "Cross Web Offset Predicted" ) << Set Name( "CW Offset Spline" );
+	Column( crossWebmaster, "Cross Web Slope Predicted" ) << Set Name( "CW Gain Spline" );
+
+	cwMasterall = crossWebmaster;
+	//show(cwMasterall, crossWebmaster);
+
+	dtSubop_cw << Close Window;
+	
+	//////////////////foil stuff/////////////////////////////////////
+	//now we're going to calculate the correction factors for foils
+	//first step is to subset out the raw foil corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
+	dtSubop_foil = dtSubop << Summary(
+		Group( :Chem Type, :Slide Lot, :Foil, :Dose, :"Loop Average Dose"n, :"cal_Foil Correction"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 )
+	);
+
+	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
+	dtSubop_foil << New Column( "Foil Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_Foil Correction"n ) );
+
+
+	//this is generating the slope and offset corrections by foil position, slide lot, and chem type
+	linearFitadder( dtSubop_foil, "Foil Dose", "Foil", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
+	
+	//this is interpolating the slope and offset terms for foil with the spline
+	foilCorrsoffsetpred = subLotcharFunc( dtSubop_foil, "Foil", "Offset Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( foilCorrsoffsetpred, "Foil_Predicted Correction" ) << Set Name( "Foil Offset Predicted" );
+	
+	//show(foilCorrsoffsetpred);
+	
+	foilCorrsslopepred = subLotcharFunc( dtSubop_foil, "Foil", "Gain Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
+	Wait( 0 );
+	Column( foilCorrsslopepred, "Foil_Predicted Correction" ) << Set Name( "Foil Slope Predicted" );
+
+	//show(foilCorrsslopepred);
+	
+	//this is joining the offset and slope corrections for foil into one table
+	foilMaster = foilCorrsoffsetpred << Join(
+		With( foilCorrsslopepred ),
+		Merge Same Name Columns,
+		Match Flag( 0 ),
+		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Foil = :Foil ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 1, 0 ),
+		Preserve main table order( 1 )
+	);
+	
+	//closing windows we don't need anymore
+	foilCorrsoffsetpred << Close Window;
+	foilCorrsslopepred << Close Window;
+	
+	//getting the spline formula for the foil terms to use elsewhere
+	offsetFoilspline = Column( foilMaster, "Foil Offset Predicted" ) << Get Formula;
+	gainFoilspline = Column( foilMaster, "Foil Slope Predicted" ) << Get Formula;
+	
+	foilMasterall = foilMaster;
+	
+	Column( foilMasterall, "Foil Offset Predicted" ) << Set Name( "Foil Offset Spline" );
+	Column( foilMasterall, "Foil Slope Predicted" ) << Set Name( "Foil Gain Spline" );
+
+	dtSubop_foil << Close Window;
+	
+	//end of sub lot spline calculations - start of transforming sub lot coefficients into DB format//////////
+	//we'll do foil first because it's easier!
+	foilMasterall << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset Spline * 10000, 0 ) / 10000 ) );
+	foilMasterall << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain Spline * 10000, 0 ) / 10000 ) );
+	
+	Column( foilMasterall, "a" ) << Delete Formula;
+	Column( foilMasterall, "b" ) << Delete Formula;
+	
+	foilMasterall << Set Name( "Foil" );
+
+	//now crossweb tranform to DB structure
+	cwMasterall << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	cwMasterall << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	
+	Column( cwMasterall, "Cross Web Start" ) << Delete Formula;
+	Column( cwMasterall, "Cross Web End" ) << Delete Formula;
+
+	dtFit = cwMasterall << Bivariate(
+		Y( :CW Offset Spline, :CW Gain Spline ),
+		X( :Cross Web ),
+		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
+		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
+	);
+	//Show( dtFit );
+	//Show( dtFit[1] );
+	Wait( 0 );
+	
+	//////////////////////////////////////////////////////////////////////////////////////////////
+	////////The code for the variable cwInterptemp will be different for JMP 16 vs JMP 15. 15 requires  "Polynomial Fit Degree=3" whereas 16 supports the original code of  "Polynomial Fit Degree=3 Uncentered". Maybe a try/accept here to fix it?////////
+	//////////////////////////////////////////////////////////////////////////////////////////////
+	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+	dtFit << Close Window;
+	
+	cwMasterall << Close Window;
+
+	cwSplit1 = cwInterptemp << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start, :Y ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		Invisible
+	);
+
+	cwInterptemp << Close Window;
+	
+	
+	cwSplit2 = cwSplit1 << Split(
+		Split By( :Y ),
+		Split( :Cross Web, :"Cross Web^2"n, :"Cross Web^3"n, :Intercept ),
+		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start ),
+		Sort by Column Property
+	);
+		
+	cwSplit1 << Close Window;
+
+	Column( cwSplit2, "Cross Web End" ) << Set Data Type( "Numeric" );
+	Column( cwSplit2, "Cross Web Start" ) << Set Data Type( "Numeric" );
+	Column( cwSplit2, "Slide Lot" ) << Set Data Type( "Numeric" );
+
+	Column( cwSplit2, "Intercept CW Offset Spline" ) << Set Name( "e" );
+	Column( cwSplit2, "Cross Web CW Offset Spline" ) << Set Name( "f" );
+	Column( cwSplit2, "Cross Web^2 CW Offset Spline" ) << Set Name( "g" );
+	Column( cwSplit2, "Cross Web^3 CW Offset Spline" ) << Set Name( "h" );
+	Column( cwSplit2, "Intercept CW Gain Spline" ) << Set Name( "a" );
+	Column( cwSplit2, "Cross Web CW Gain Spline" ) << Set Name( "b" );
+	Column( cwSplit2, "Cross Web^2 CW Gain Spline" ) << Set Name( "c" );
+	Column( cwSplit2, "Cross Web^3 CW Gain Spline" ) << Set Name( "d" );
+	
+	cwSplit2 << Set Name( "Cross Web" );
+	
+	////apply the initial base curve and sub lot corrections to calibration data
+	//adding initial base 3P coefficients to calibration data table
+	dtCal2 << Update(
+		With( dtCalout2 ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
+		Add Columns from Update Table( :Asymptote, :Growth Rate, :Scale )
+	);
+	dtCal2 << New Column( "Base Concentration", Numeric, Continuous, Set Formula( Log( (:AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+	dtCal2 << Set Name( "Base Cal Table" );
+	
+	
+	//adding foil corrections to calibration data table
+	dtCal3 = dtCal2 << Join(
+		With( foilMasterall ),
+		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Merge Same Name Columns,
+		Invisible
+	);
+	
+	Column( dtCal3, "b" ) << Set Name( "Foil b" );
+	Column( dtCal3, "a" ) << Set Name( "Foil a" );
+	
+	//adding cross web corrections to calibration data table
+	dtCal3 << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	dtCal3 << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	
+	dtCalfinal = dtCal3 << Join(
+		With( cwSplit2 ),
+		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
+		Merge Same Name Columns,
+		Invisible
+	);
+
+	//desktop clean up
+	dtCal3 << Close Window;
+	dtCal2 << Close Window;
+
+	//calculate the cross web corrections from parameter system
+	dtCalfinal << New Column( "Cross Web Gain",
+		Numeric,
+		Continuous,
+		Set Formula( :a + :b * :Cross Web + :c * :Cross Web ^ 2 + :d * :Cross Web ^ 3 )
+	);
+	dtCalfinal << New Column( "Cross Web Offset",
+		Numeric,
+		Continuous,
+		Set Formula( :e + :f * :Cross Web + :g * :Cross Web ^ 2 + :h * :Cross Web ^ 3 )
+	);
+
+	//calculate the full sub lot corrections from the foil and cross web corrections
+	dtCalfinal << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
+	dtCalfinal << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
+
+	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
+
+	////adjust master curve coefficients to make calibration data perfectly accurate
+	dtCalfinal << New Column( "Sub Lot Adjusted Dose", Numeric, Continuous, Set Formula( (:Dose - :Sub Lot Offset) / :Sub Lot Gain ) );
+
+	////produce master curve JMP file - modify this to be dynamic for the assay////////////////////////////////
+	///instead of calFitfunc -- would call jesses func. sub lot adjusted dose as your x. AR as normal.
+	//dtCaloutlast = calFitfunc( dtCalfinal, "Cross Web", "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	dtCaloutlast = lytesCubicTo3P(dtCalfinal, "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Assay", "Inst Type");
+	dtCaloutlast << Set Name( "Final Curve Coefficients" );
+	Column( dtCaloutlast, "Slide Lot" ) << Set Data Type( "Numeric" ) << Set Modeling Type( "Continuous" );
+
+	//Newton Rhaphson if we wanted to check this.
+	dtCalfinal << Update(
+		With( dtCaloutlast ),
+		Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
+		//Replace Columns in Main Table( :Asymptote, :Growth Rate, :Scale ) Removed as this is for a 3P not a cubic.
+		Add Columns from Update Table( :Cubic, :Intercept, :Quadratic, :Slope),
+		Replace Columns in Main Table( None )
+	);
+
+	dtCalfinal << delete columns("Base Concentration", "Sub Lot Corrected Dose", "Sub Lot Adjusted Dose");
+
+	dtCalfinal << new column(
+		"Base Concentration Char",
+		Character,
+		Nominal,
+		Formula(
+			p=((3*:"Slope"n)/:"Cubic"n - (:"Quadratic"n/:"Cubic"n)^2)/3;
+			q=(2*(:"Quadratic"n/:"Cubic"n)^3 - ((9*:"Quadratic"n*:"Slope"n)/:"Cubic"n)/:"Cubic"n + (27*(:"Intercept"n-:"AR"n)/:"Cubic"n))/27;
+			newD=(p/3)^3 + (q/2)^2;
+			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
+
+			If(newD>=0,
+				u=Root((-q/2 + (newD)^0.5),3);
+				v=Root((-q/2 - (newD)^0.5),3);
+				y1=u+v;
+				x1=y1 - (:"Quadratic"n/:"Cubic"n)/3;
+				char(x1),
+				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
+				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
+				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
+				x1=y1-(:"Quadratic"n/:"Cubic"n)/3;
+				x2=y2-(:"Quadratic"n/:"Cubic"n)/3;
+				x3=y3-(:"Quadratic"n/:"Cubic"n)/3;
+				char(x1)||" "||char(x2)||" "||char(x3)
+			);
+		);
+	);
+
+	dtCalfinal:"Base Concentration Char"n << delete formula;
+
+	dtCalfinal << New Column( "Base Concentration",
+		Numeric,
+		Continuous,
+		Set Formula( num(:"Base Concentration Char"n) )
+	);
+
+	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
+	
+	////////////////////////////////////////////////////////////////////////////
+
+	//column name cleanup in the calibration data table
+	Column( dtCalfinal, "Sub Lot Corrected Dose" ) << Set Name( "Calc Dose" );	
+	
+	//crossWebmaster << Close Window; Table closed long before this step.
+	//foilMaster << Close Window; This closes the Data Table("Foil"). Which is called in a later step.
+	dtCalout2 << Close Window;
+
+	////clean up all the tables that go into the JSON maker
+
+	//cwSplit2 = cross web table
+	//foilMasterall = foil table
+	//dtCaloutlast = master curve coefficients
+
+	foilMasterall << Delete Columns( "N Rows", "Foil Gain Spline", "Foil Offset Spline" );
+
+	/* For QSDMA as Lytes is a Cubic fit.
+	Column( dtCaloutlast, "Asymptote" ) << Set Name( "a" );
+	Column( dtCaloutlast, "Scale" ) << Set Name( "b" );
+	Column( dtCaloutlast, "Growth Rate" ) << Set Name( "c" );
+	*/
+	
+	Column( dtCaloutlast, "Cubic" ) << Set Name( "d" );
+	Column( dtCaloutlast, "Quadratic" ) << Set Name( "c" );
+	Column( dtCaloutlast, "Slope" ) << Set Name( "b" );
+	Column( dtCaloutlast, "Intercept" ) << Set Name( "a" );
+	
+	////add all the calibration and sublot corrections to the sub lot table to check that it's all good
+
+	foilMastertemp = foilMasterall << Subset( All rows, Selected columns only( 0 ), Invisible );
+	cwMastertemp = cwSplit2 << Subset( All rows, Selected columns only( 0 ), Invisible );
+	dtCaloutlasttemp = dtCaloutlast << Subset( All rows, Selected columns only( 0 ), Invisible );
+	
+	///changing paramater column names so that when everyone is joined in we don't overwrite existing columns
+	Column( foilMastertemp, "a" ) << Set Name( "Foil a" );
+	Column( foilMastertemp, "b" ) << Set Name( "Foil b" );
+
+	Column( cwMastertemp, "a" ) << Set Name( "CW a" );
+	Column( cwMastertemp, "b" ) << Set Name( "CW b" );
+	Column( cwMastertemp, "c" ) << Set Name( "CW c" );
+	Column( cwMastertemp, "d" ) << Set Name( "CW d" );
+	Column( cwMastertemp, "e" ) << Set Name( "CW e" );
+	Column( cwMastertemp, "f" ) << Set Name( "CW f" );
+	Column( cwMastertemp, "g" ) << Set Name( "CW g" );
+	Column( cwMastertemp, "h" ) << Set Name( "CW h" );
+
+	Column( dtCaloutlasttemp, "a" ) << Set Name( "Base a" );
+	Column( dtCaloutlasttemp, "b" ) << Set Name( "Base b" );
+	Column( dtCaloutlasttemp, "c" ) << Set Name( "Base c" );
+	Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" );
+	//Try( Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" ), Throw() ); Lytes will have a column d because it's a cubic fit. QSDMA will not.
+	
+	///updating the loop qual table to check the precision post sub lot corrections
+	//adding base curve data to loop qual
+	Try(
+		dtSubop << Update(
+			With( dtCaloutlasttemp ),
+			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
+			Add Columns from Update Table( :Base a, :Base b, :Base c, :Base d )
+		),
+		dtSubop << Update(
+			With( dtCaloutlasttemp ),
+			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
+			Add Columns from Update Table( :Base a, :Base b, :Base c )
+		)
+	);
+	
+	dtCaloutlasttemp << Close Window;
+
+	//adding cross web corrections to loop qual table
+	dtSubop << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
+	dtSubop << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
+	Column( dtSubop, "Cross Web Start" ) << Delete Formula;
+	Column( dtSubop, "Cross Web End" ) << Delete Formula;
+	
+	dtSubop << Update(
+		With( cwMastertemp ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
+		Add Columns from Update Table( :CW b, :CW f, :CW c, :CW g, :CW d, :CW h, :CW a, :CW e )
+	);
+	cwMastertemp << Close Window;
+	
+	
+	//adding foil corrections to the loop qual table
+	dtSubop << Update(
+		With( foilMastertemp ),
+		Match Columns( :Foil = :Foil, :Chem Type = :Chem Type, :Slide Lot = :Slide Lot ),
+		Add Columns from Update Table( :Foil b, :Foil a )
+	);
+	foilMastertemp << Close Window;
+
+	dtCalfinal << Set Name( "Calibration Data" );
+	dtSubop << Set Name( "Loop Qual Data" );
+	dtCalfinal << show window(1);
+	dtSubop << show window(1);
+
+	////adding in the dose calculation columns to the loop qual table
+	/*If(
+		:Chem Type == "SDMA",
+			
+		,
+		:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", :Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3,
+		Stop()
+	);*/
+	/*
+	dtSubop << New Column( "Base Concentration", Numeric, Continuous, 
+		Set Formula(
+			If(
+				:Chem Type == "SDMA",
+					Log( (:AR - :Base a) / :Base b ) / :Base c 
+				,
+				:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", 
+					:Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3
+			)
+		)
+	);*/
+	
+	//base concentration will now be added using a method to solve a cubic function for lytes as lytes is fit with a cubic.
+	dtSubop << new column(
+		"Base Concentration Char",
+		Numeric,
+		Continuous,
+		Formula(
+			p=((3*:"Base b"n)/:"Base d"n - (:"Base c"n/:"Base d"n)^2)/3;
+			q=(2*(:"Base c"n/:"Base d"n)^3 - ((9*:"Base c"n*:"Base b"n)/:"Base d"n)/:"Base d"n + (27*(:"Base a"n-:"AR"n)/:"Base d"n))/27;
+			D=(p/3)^3 + (q/2)^2;
+			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
+
+			If(D>=0,
+				u=Root((-q/2 + (D)^0.5),3);
+				v=Root((-q/2 - (D)^0.5),3);
+				y1=u+v;
+				x1=y1 - (:"Base c"n/:"Base d"n)/3;
+				char(x1),
+				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
+				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
+				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
+				x1=y1-(:"Base c"n/:"Base d"n)/3;
+				x2=y2-(:"Base c"n/:"Base d"n)/3;
+				x3=y3-(:"Base c"n/:"Base d"n)/3;
+				char(x1)||" "||char(x2)||" "||char(x3)
+			);
+		);
+	);
+	
+	dtSubop << New Column( "Base Concentration",
+		Numeric,
+		Continuous,
+		Set Formula( num(:"Base Concentration Char"n) )
+	);
+	
+	dtSubop << New Column( "Cross Web Gain",
+		Numeric,
+		Continuous,
+		Set Formula( :CW a + :CW b * :Cross Web + :CW c * :Cross Web ^ 2 + :CW d * :Cross Web ^ 3 )
+	);
+	dtSubop << New Column( "Cross Web Offset",
+		Numeric,
+		Continuous,
+		Set Formula( :CW e + :CW f * :Cross Web + :CW g * :Cross Web ^ 2 + :CW h * :Cross Web ^ 3 )
+	);
+
+	dtSubop << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
+	dtSubop << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
+	
+	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
+
+	//do a little work with dtcal to getdry reads and table name on based coeffs then do JSON stuffs
+	//the assumption is dtCal (the original cal table) will be named with something like: CALxx LOTS yyyyyy-zzzzzz
+	//xx = the Cal Event for the build
+	//yyyyyy = lot range start for the event
+	//zzzzzz = lot range end for the event
+
+	dtCaloutlast << set name( dtCal << get name || "_base coefficients");
+	
+	dtCal << close window;
+	dtSub << close window;
+	
+	////MAY NEED TO DELETE CLIP LOT FROM EXP DATE SINCE IT WILL BE IN CAL DATA FROM DX RELEASE
+	dtCalFinal << Update(
+		With( dtSLExp ),
+		Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
+	);
+	Close(dtSLExp,nosave);
+	///preparation for JSON stuff (move into own function??)
+	jsonPrepBase(dtCalFinal,dtCaloutLast);
+	//
+	jsonPrepCW(cwSplit2);
+	//
+	jsonPrepFoil(foilMasterall);
+	//
+		
+	buildJSONarray(dtCaloutlast, cwSplit2, foilMasterall, jsonloc, "Lytes");
+		//JSON building won't close any of these tables - currently
+	//return the necessary tables
+	Return(dtCalfinal, dtSubop);
+	
+);
+
+sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Expiration, jsonloc}, {default local},
+	/*testing variables
+	dt_Panel = calData;
+	dt_Loop = loopData;
+	dt_FineTune = patientData;
+	dt_InstTune = platformData;
+	dt_Expiration = expirationData;
+	*/
+	
+	dt_Cal = dt_Panel;
+	dt_Sublot = dt_Loop;
+	
+	//get the event number from the cal data table
+	Caltablename = dt_Cal << get name;
+	Eventnum = "Event" || Word(2, Caltablename, "_");
+	
+	//QSDMA specific fitting routine settings
+	lamda = 100;
+	calFoil = 15;
+	defaultBin = 8;
+
+	subLot2DblockerFunc( dt_Sublot, "Script AR", "Cross Web", "Foil", "Script Dose Val", "Slide Lot", "Blocked AR", "Chem Type", "Relative" );
+
+	dtSubsum1 = dt_Sublot << Summary(
+		Group( :Script Dose Val, :Slide Lot, :Cross Web, :Chem Type ),
+		Mean( :Blocked AR ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+	
+	dtSubsum2 = dtSubsum1 << Summary( 
+		Group( :Slide Lot, :Chem Type ), 
+		Freq( "None" ), 
+		Weight( "None" ), 
+		Link to original data table( 0 ),
+		Invisible
+	);
+	
+	splineFit = dtSubsum1 << Bivariate(
+		Y( :Name( "Mean(Blocked AR)" ) ),
+		X( :Cross Web ),
+		By( :Slide Lot, :Chem Type ),
+		Fit Spline( lamda, {Line Color( {212, 73, 88} )} ),
+		Invisible
+	);
+	
+	splineFit << (Curve[1] << Save Predicteds);
+	
+	//this requires a explicit column name that comes from saving the predicteds. if we change anything about the Bivariate, this will have to be changed as well.
+	splineFormula = Column( dtSubsum1, "Spline Predictor for Mean(Blocked AR) By Slide Lot By Chem Type" ) << Get Formula;
+	
+	posCount = Max( Column( dtSubsum1, "Cross Web" ) << Get Values );
+	
+	dtTempcount = New Table( "Arbritrary Positions", New Column( "Cross Web", Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
+	
+	dtTempcount << New Column( "Cross Web_Char",
+		Character,
+		Nominal,
+		Set Formula( 
+			If( :Cross Web < 10, "0" || Char( :Cross Web ), Char( :Cross Web ) ) 
+		)
+	);
+	
+	Column( dtTempcount, "Cross Web_Char" ) << Delete Formula;
+	dtTempcount << New Column( "Predicted Mean AR", Numeric, Continuous );
+	
+	dtSubsum = dtSubsum2 << Join( With( dtTempcount ), Cartesian Join, Invisible );
+	Column( dtSubsum, "Predicted Mean AR" ) << Set Formula( Name Expr( splineFormula ) );
+	
+	dtSubsum1 << Close Window;
+	dtSubsum2 << Close Window;
+	dtTempcount << Close Window;
+	Wait( 1 );
+
+	dt_Calparams = calFitfunc( dt_Cal, "Cross Web", "Script AR", "Script Dose Val", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
+	
+	dt_Calparams:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	dt_Cal << Update(
+		With( dt_Calparams ),
+		Match Columns( :Slide Lot = :Slide Lot, :Inst Type = :Inst Type, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( "Asymptote", "Scale", "Growth Rate" )
+	);
+	
+	dt_Cal << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+	dt_Cal << New Column( "Target Dose", Numeric, Continuous, Set Formula( Col Mean( :Master Curve, :Script Dose Val, :Inst Type, :Chem Type ) ) );
+	
+	dt_Calparams2 = calFitfunc(
+		dt_Cal, "Cross Web", "Target Dose", "Master Curve", "Slide Lot", "Chem Type", "Inst Type", "Linear", "Normal"
+	);
+	
+	dt_Calparams2:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	dt_Calparams2:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Continuous");
+	
+	dt_Calparams1 = dt_Calparams2 << Join(
+		With( dtSubsum ),
+		Merge Same Name Columns,
+		Match Flag( 0 ),
+		By Matching Columns( :Slide Lot = :Slide Lot, :Cross Web = :Cross Web, :Chem Type = :Chem Type ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 ),
+		Invisible
+	);
+
+	dt_Calparams2 << close window;
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+	paramFitting = dt_Calparams1 << Bivariate(
+		Y( :Estimate ),
+		X( :Predicted Mean AR ),
+		Fit Line( {Line Color( {212, 73, 88} )} ),
+		By( :Parameter, :Slide Lot, :Chem Type )
+	);
+
+	Wait( 0 );
+	paramForms = Report( paramFitting[1] )[Outline Box( "Linear Fit" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
+	Make Combined Data Table;
+	Report( paramFitting[1] ) << Close Window;
+
+	paramsReady = paramForms << Split(
+		Split By( :Term ),
+		Split( :Estimate ),
+		Group( :Slide Lot, :Parameter, :Chem Type ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property,
+		Invisible
+	);
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+	Column( paramsReady, "Predicted Mean AR" ) << Set Name( "Slope2" );
+	Column( paramsReady, "Intercept" ) << Set Name( "Intercept2" );
+	
+	paramsReady:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
+	
+	paramCalcs = dtSubsum << Join(
+		With( paramsReady ),
+		Merge Same Name Columns,
+		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 ),
+		Invisible
+	);
+
+	paramCalcs << New Column( "Param Value", Numeric, Continuous, Set Formula( :Predicted Mean AR * :Slope2 + :Intercept2 ) );
+
+	paramsFinal = paramCalcs << Split(
+		Split By( :Parameter ),
+		Split( :Param Value ),
+		Group( :Slide Lot, :Cross Web, :Chem Type ),
+		Remaining Columns( Drop All ),
+		Sort by Column Property
+	);
+	
+	Column( paramsFinal, "Slope" ) << Set Name( "Cross Web Gain" );
+	Column( paramsFinal, "Intercept" ) << Set Name( "Cross Web Offset" );
+
+	dt_Sublot_New = dt_Sublot << Join(
+		With( paramsFinal ),
+		Merge Same Name Columns,
+		By Matching Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Drop multiples( 0, 0 ),
+		Include Nonmatches( 0, 0 ),
+		Preserve main table order( 1 )
+	);
+
+	dt_Cal << Update(
+		With( paramsFinal ),
+		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
+	);
+	
+	dt_Sublot_New << Update(
+		With( dt_Calparams ),
+		Match Columns( :Slide Lot = :Slide Lot, :Inst Type = :Inst Type, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Asymptote, :Growth Rate, :Scale )
+	);
+
+	dt_Sublot_New << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+	
+	dt_Sublot_New << New Column( "Cross Web Corrected Dose",
+		Numeric,
+		Continuous,
+		Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset )
+	);
+	
+	dt_Sublot_New << Set Name("Loop Qual Results with Calibration Parameters");
+	
+	dtSublot2mean = dt_Sublot_New << Summary(
+		Group( :Script Dose Val, :Slide Lot, :Foil, :Chem Type ),
+		Mean( :Cross Web Corrected Dose ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+	
+	//algorithm to remove the panel closest to 30. one of the target levels is 30 and that's the one we don't want. thus it should be closer.
+	value = 30;
+	decider = Abs((dtSublot2mean:"Script Dose Val"n << get values) - value);
+	row_where = Loc(decider == Min(decider));
+	dtSublot2mean << delete rows(row_where);
+	
+	dtSublot2meantemp = dtSublot2mean << Select Where( :Foil == calFoil ) << Subset(
+		Selected Rows( 1 ),
+		Columns( "Slide Lot", "Script Dose Val", "Chem Type", "Mean(Cross Web Corrected Dose)" )
+	);
+	
+	Column( dtSublot2meantemp, "Mean(Cross Web Corrected Dose)" ) << Set Name( "Target Dose" );
+	
+	dtSublot2mean << Update(
+		With( dtSublot2meantemp ),
+		Match Columns( :Slide Lot = :Slide Lot, :Script Dose Val = :Script Dose Val, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Target Dose )
+	);
+
+	dtSublot2meantemp << Close Window;
+	
+	dtSublot2mean << New Column( "Foil Correction Raw",
+		Numeric,
+		Continuous,
+		Set Formula( :Target Dose - :Name( "Mean(Cross Web Corrected Dose)" ) )
+	);
+	
+	splineFit2 = dtSublot2mean << Bivariate(
+		Y( :Foil Correction Raw ),
+		X( :Foil ),
+		By( :Slide Lot, :Chem Type ),
+		Fit Spline( lamda, {Line Color( {212, 73, 88} )} ),
+		Invisible
+	);
+	
+	splineFit2 << (Curve[1] << Save Predicteds);
+	
+	splineFormula2 = Column( dtSublot2mean, "Spline Predictor for Foil Correction Raw By Slide Lot By Chem Type" ) << Get Formula;
+	Column( dtSublot2mean, "Spline Predictor for Foil Correction Raw By Slide Lot By Chem Type" ) << Set Name( "Foil Offset" );
+	Column( dtSublot2mean, "Foil Correction Raw" ) << Delete Formula;
+	Column( dtSublot2mean, "Foil Offset" ) << Delete Formula;
+	dtSublot2mean << Delete Columns( "Script Dose Val"n, "Mean(Cross Web Corrected Dose)"n );
+	dtSublot2mean << New Column( "Foil Gain", Numeric, Continuous, Set Formula( 1 ) );
+	Wait( 0 );
+	Column( dtSublot2mean, "Foil Gain" ) << Delete Formula;
+	
+	//add foil params to loop qual table and cal table
+	dt_Sublot_New << Update(
+		With( dtSublot2mean ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Add Columns from Update Table( :Foil Offset, :Foil Gain )
+	);
+	
+	dt_Cal << Update(
+		With( dtSublot2mean ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Add Columns from Update Table( :Foil Offset, :Foil Gain )
+	);
+	
+	dt_Sublot_New << New Column( "Final Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
+
+	dt_Cal << New Column( "Final Calc Dose",
+		Numeric,
+		Continuous,
+		Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset + :Foil Offset )
+	);
+
+	dt_Foil = dtSublot2mean;
+	dt_Crossweb = paramsFinal;
+	dt_Basecurve = dt_Calparams;
+
+	dt_Basecurve << Delete Columns( "Inst Type" );
+	
+	splineFit2 << Close Window;
+	paramCalcs << Close Window;
+	paramsReady << Close Window;
+	paramForms << Close Window;
+	dtSubsum << Close Window;
+	dt_Calparams1 << Close Window;
+	
+	////////////////species fine tune math////////////////////////////////
+	
+	dt_FineTune << Update(
+		With( dt_Basecurve ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Asymptote, :Scale, :Growth Rate )
+	);
+	
+	dt_FineTune << Update(
+		With( dt_Crossweb ),
+		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
+	);	
+	
+	dt_FineTune << Update(
+		With( dt_Foil ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Add Columns from Update Table( :Foil Offset, :Foil Gain )
+	);
+	
+	dt_FineTune << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+	
+	dt_FineTune << New Column( "Cross Web Corrected Dose", Numeric, Continuous, Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset ) );
+	
+	dt_FineTune << New Column( "Test Lot Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
+	
+	///////////this area will need to be modified to get the control lots vs test lots and combining concentrations for analysis. This code is for PQ1 but will need to be modified. Test table also already has lot type built in. We can get this from the runsheet starting with PQ3.////////// Handling this in the prep step.
+	
+	dt_FineTune << New Column( "Final Calc Dose",
+		Numeric,
+		Continuous,
+		Set Formula(
+			if( dt_FineTune:"Lot Type"n == "Reference",
+				dt_FineTune:"results.base_concentration"n,
+				dt_FineTune:"Test Lot Calc Dose"n
+			)
+		)
+	);
+	dt_FineTune:"Final Calc Dose"n << Delete Formula;
+	
+	
+	dt_FineTunesummary = dt_FineTune << Summary(
+		Group( :Slide Lot, :Lot Type, :Patient Name, :Species Name, :Chem Type ),
+		Mean( :Final Calc Dose ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+
+	dt_Finetunetemp = dt_FineTunesummary << Summary(
+		Group(:Lot Type, :Patient Name, :Species Name, :Chem Type ),
+		Mean( :"Mean(Final Calc Dose)"n ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+
+	dt_Finetunetemp << Select Where( :Lot Type == "Test" ) << Delete Rows;
+	Column( dt_Finetunetemp, "Mean(Mean(Final Calc Dose))" ) << Set Name( "Target Dose" );
+	dt_Finetunetemp << Delete Columns( "N Rows", "Lot Type" );
+	
+	dt_FineTunesummary << Update(
+		With( dt_Finetunetemp ),
+		Match Columns( :Chem Type = :Chem Type, :Patient Name = :Patient Name, :Species Name = :Species Name ),
+		Add Columns from Update Table( :Target Dose )
+	);
+	
+	dt_Finetunetemp << Close Window;
+	
+	dt_FineTunesummary << New Column( "Bias to Target", Numeric, Continuous, Set Formula( :Target Dose - :"Mean(Final Calc Dose)"n ) );
+	
+	dt_FineTuneout = dt_FineTunesummary << Summary(
+		Group( :Lot Type, :Slide Lot, :Species Name, :Chem Type ),
+		Mean( :Bias to Target ),
+		Freq( "None" ),
+		Weight( "None" ),
+		Link to original data table( 0 ),
+		Invisible
+	);
+	
+	Column( dt_FineTuneout, "Mean(Bias to Target)" ) << Set Name( "Species Adjustment" );
+	dt_FineTunesummary << Close Window;
+	dt_FineTuneout << Select Where( :Lot Type == "Reference" ) << Delete Rows;
+	dt_FineTuneout << Delete Columns( "Lot Type" );
+	//dt_FineTuneout << Set Name("Species Fine Tune");
+
+
+	///////////////inst type fine tune math///////////////////////////////
+	
+	dt_InstTune << Update(
+		With( dt_Basecurve ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Asymptote, :Scale, :Growth Rate )
+	);
+	dt_InstTune << Update(
+		With( dt_Crossweb ),
+		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
+		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
+	);
+	dt_InstTune << Update(
+		With( dt_Foil ),
+		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
+		Add Columns from Update Table( :Foil Offset, :Foil Gain )
+	);
+	
+	dt_InstTune << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
+		
+	dt_InstTune << New Column( "Cross Web Corrected Dose", Numeric, Continuous, Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset ) );
+	
+	dt_InstTune << New Column( "Final Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
+	
+	dt_Insttunesummary = dt_InstTune << Summary(
+		Group( :Chem Type, :Slide Lot, :Inst Type ),
+		Mean( :Final Calc Dose ),
+		Link to Original Data Table( 0 ),
+		Invisible
+	);
+	
+	dt_Insttemp = dt_Insttunesummary << Select Where( :Inst Type == "CatOne" ) << Subset( Selected Rows( 1 ), Selected Columns( 0 ), Invisible );
+	
+	dt_Insttemp << Delete Columns( "Inst Type", "N Rows" );
+	Column( dt_Insttemp, "Mean(Final Calc Dose)" ) << Set Name( "Target Dose" );
+
+	dt_Insttunesummary << Update(
+		With( dt_Insttemp ),
+		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot ),
+		Add Columns from Update Table( :Target Dose )
+	);
+	
+	dt_Insttunesummary << New Column( "Platform Adjustment", Numeric, Continuous, Set Formula( :Target Dose - :Name( "Mean(Final Calc Dose)" ) ) );
+	Column( dt_Insttunesummary, "Platform Adjustment" ) << Delete Formula;
+	
+	dt_Insttunesummary << Delete Columns( "Mean(Final Calc Dose)", "Target Dose", "N Rows" );
+	//dt_Insttunesummary << Set Name("Platform Fine Tune");
+	
+	dt_Insttemp << Close Window;
+	//dt_InstTune << Close Window;
+	
+	
+	///////////making the tables to transform the CatOne base curve with the offsets to the final curve version///////////////////////
+	dt_Dose = New Table( "Dose Temp", <<Add Rows( 101 ), New Column( "Dose", Numeric, Continuous, Set Values( 0 :: 100 :: 1 ) ), Invisible );
+	dt_Species = New Table( "Species Temp",
+		<<Add Rows( 2 ),
+		New Column( "Species", Character, Nominal, Set Formula( If( Row() == 1, "Canine", "Feline" ) ) ),
+		Invisible
+	);
+	dt_Platform = New Table( "Inst Temp",
+		<<Add Rows( 2 ),
+		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
+		Invisible
+	); 
+	
+	dt_Temp = dt_Basecurve << Join( With( dt_Dose ), Cartesian Join, Invisible );
+	wait(0.1);
+	dt_Temp2 = dt_Temp << Join( With( dt_Species ), Cartesian Join, Invisible );
+	wait(0.1);
+	dt_Curvemaker = dt_Temp2 << Join( With( dt_Platform ), Cartesian Join, Invisible );
+	wait(0.1);
+	
+	///merge in dx and one adjustment
+	dt_Curvemaker << Update(
+		With( dt_Insttunesummary ),
+		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Inst Type = :Inst Type ),
+		Add Columns from Update Table( :Platform Adjustment )
+	);
+	
+	///merge in species adjustment(s)
+	dt_Curvemaker << Update(
+		With( dt_FineTuneout ),
+		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Species = :Species Name),
+		Add Columns from Update Table( :Species Adjustment )
+	);
+	
+	//add ref dose column that accounts for offsets
+	dt_Curvemaker << New Column( "Updated Ref Dose", Numeric, Continuous, Set Formula( :Dose + :Platform Adjustment + :Species Adjustment ) );
+	dt_Curvemaker << New Column( "AR", Numeric, Continuous, Set Formula( :Asymptote + :Scale * Exp( :Growth Rate * :Dose ) ) );
+	
+	dtFitnew = dt_Curvemaker << Fit Curve(
+		Y( :AR ),
+		X( :Updated Ref Dose ),
+		By( :Slide Lot, :Chem Type, :Inst Type, :Species ),
+		Fit Exponential 3P,
+		Invisible
+	);
+	
+	Wait( 0 );
+	dt_Basecurvetemp = Report( dtFitnew[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
+	dtFitnew << Close Window;
+	
+	dt_Basecurvefinal = dt_Basecurvetemp << Split(
+		Split Columns( :Estimate ),
+		Split By( :Parameter ),
+		Group( :Slide Lot, :Chem Type, :Inst Type, :Species ),
+		Remaining Columns( Drop All )
+	);
+	
+	dt_Basecurvetemp << Close Window;
+	dt_Curvemaker << Close Window;
+	dt_Dose << Close Window;
+	dt_Species << Close Window;
+	dt_Platform << Close Window;
+	dt_Temp << Close Window;
+	dt_Temp2 << Close Window;
+	//dt_FineTuneout << Close Window;
+	dt_FineTuneout << Set Name(Eventnum || " Patient Offset");
+	dt_FineTuneout << Show Window(1);
+	//dt_Insttunesummary << Close Window;
+	dt_Insttunesummary << Set Name(Eventnum || " Platform Offset");
+	dt_Insttunesummary << Show Window(1);
+	dt_Basecurve << Close Window;
+	dt_Basecurvefinal << Set Name("Base Curve");
+	
+	BaseFinal = SDMAjsonPrepBase(dt_Basecurvefinal, dt_expiration, Eventnum);
+	FoilFinal = SDMAjsonPrepFoil(dt_Foil);
+	CWFinal = SDMAjsonPrepCW(dt_Crossweb);
+	
+	close(dt_expiration, nosave);
+	close(dt_Sublot, nosave);
+	close(dtSublot2mean, nosave);
+	
+	//currently does not close the base/foil/cw tables.
+	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc, "SDMA4");
+	
+	//Return the analysis tables.
+	Return(dt_Cal, dt_Sublot_New, dt_FineTune, dt_InstTune);
+	
+);
+
+inputCleanup = Function( {dialogOutput},
+	{default local}, 
+	
+	Match( dialogOutput["tb"],
+		2,
+			here:calibrationPathway = "LYTES";
+			calibrationDataPath = dialogOutput["lytesCalDataPath"];
+			loopQualDataPath = dialogOutput["lytesLoopFolder"];
+			expirationDataPath = dialogOutput["lytesExpirationDataPath"];
+			jsonFolderPath = dialogOutput["lytesJSONSaveFolder"];
+
+			Return( calibrationDataPath, loopQualDataPath, expirationDataPath, jsonFolderPath );,
+		3,
+			here:calibrationPathway = "QSDMA";
+			calibrationDataPath = dialogOutput["qsdmaCalDataPath"];
+			loopQualDataPath = dialogOutput["qsdmaLoopFolder"];
+			expirationDataPath = dialogOutput["qsdmaExpirationDataPath"]; //will be list for QSDMA
+			jsonFolderPath = dialogOutput["qsdmaJSONSaveFolder"];
+			platformFineTuneDataPath = dialogOutput["qsdmaPlatformFTDataPath"];
+			speciesFineTuneDataPath = dialogOutput["qsdmaSpeciesFTDataPath"];
+			slideLoopMatchDataPath = dialogOutput["qsdmaLoopMatchDataPath"];
+			
+			Return(
+				calibrationDataPath,
+				loopQualDataPath,
+				expirationDataPath,
+				jsonFolderPath,
+				platformFineTuneDataPath,
+				speciesFineTuneDataPath,
+				slideLoopMatchDataPath
+			);
+	)
+);
 
 //UNTESTED MAIN FUNCTIONS
 //nate included, will cover UTs for function
@@ -2788,1123 +3909,6 @@ ionChemCalDialog = Function({},{default local},
 	If(nw["Button"] == -1, Return(0), Return(nw));
 );
 
-//may change the inputs. still working on this.
-lytesAssStitching = Function( {dtCal, dtLoop, dtSlideLotExpiration, jsonloc},
-	{default local}, 
-	//testing variables
-	//dtCal = Data Table( "CAL_OLOL 1000-1002_CATwAVL9180.jmp" );
-	//dtLoop = Data Table( "Untitled 10530.jmp" );
-	//dtSlideLotExpiration = Data Table( "Summary.jmp" );
-	//table that converts loop lot numbers to production lot numbers - there are a few things we need to do with that before the analysis takes off
-	/*
-	dtCal = calData;
-	dtLoop = loopData;
-	dtSlideLotExpiration = expiration;
-	jsonloc = jsonPath;
-	*/
-	//setting variables
-	dtSub = dtLoop;
-	dtSLExp = dtSlideLotExpiration;
-	cwPostotal = 40;
-	foilPostotal = 30;
-	defaultBin = 8;
-
-	calCWlow = Min( Column( dtCal, "Cross Web" ) << Get Values );
-	calCWhigh = Max( Column( dtCal, "Cross Web" ) << Get Values );
-	calFoil = Mode( Column( dtCal, "Foil" ) << Get Values );
-
-	dtCal2 = dtCal << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
-	/*
-	Typically the deletion of the exclusions would be done in the prep step like for other tables but this
-	code already had the subset step in to maintain the original cal table. the decision was to delete the
-	exclusions from that subset instead. long term it would be ideal to ensure the exclusions could be honored
-	(from columns and row states), but that will be a feature request for a later release
-	*/
-	dtCal2 << Select where( 
-		:"Exclusion Rationale"n == "NDE - Grubb's"
-		|
-		Excluded()
-	) << delete rows;
-	dtCalout = calFitfunc( dtCal, "Cross Web", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
-	Column( dtCalout, "Slide Lot" ) << Set Data Type( "Numeric" );
-	
-	dtCalout2 = dtCalout << Subset( Selected Rows( 0 ), Selected Columns( 0 ), Invisible );
-	dtSubop = subLottabprep( dtSub, dtCalout, calCWlow, calCWhigh, calFoil, "Cross Web", "Foil", "AR", "Dose", "Slide Lot", "Chem Type", "Inst Type", "3P" );
-	
-	//this will be a place holder assigned target for the correction logic
-	dtSubop << New Column( "Loop Average Dose",
-		Numeric,
-		Continuous,
-		Set Formula( Col Mean( :Predicted Dose from Master, :Dose, :Slide Lot, :Chem Type ) )
-	);
-
-	//relative correction to evaluate the cross web pattern by dose level
-	subLot2DblockerFunc(
-		dtSubop,
-		"Predicted Dose from Master",
-		"Cross Web",
-		"Foil",
-		"Dose",
-		"Slide Lot",
-		"cal_CW Correction",
-		"Chem Type",
-		"Relative"
-	);
-
-	dtSubop << New Column( "cal_CW Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_CW Correction"n ) );
-	
-	//relative correction to evaluate the foil corrections by dose level
-	subLot2DblockerFunc( dtSubop, "cal_CW Corrected Dose", "Foil", "Loop Average Dose", "Dose", "Slide Lot", "cal_Foil Correction", "Chem Type", "Absolute" );
-	
-	dtSubop << New Column( "cal_Foil Corrected Dose", Numeric, Continuous, Set Formula( :Predicted Dose from Master - :"cal_Foil Correction"n ) );
-	
-	//this is for informational purposes only and is used to later check the actual corrections vs. entitlement to know if we found any distressing discontinuities along the way
-	dtSubop << New Column( "Entitlement Sublot Dose", Numeric, Continuous, Set Formula( :"cal_CW Corrected Dose"n - :"cal_Foil Correction"n ) );
-
-	//now we're going to calculate the raw correction factors for cross web
-	//first step is to subset out the raw CW corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
-	dtSubop_cw = dtSubop << Summary(
-		Group( :"Chem Type"n, :"Slide Lot"n, :"Cross Web"n, :"Dose"n, :"Loop Average Dose"n, :"cal_CW Correction"n ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 )
-	);
-	
-	
-	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
-	//check that you applied the cross web correction right for this
-	dtSubop_cw << New Column( "Cross Web Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_CW Correction"n ) );
-	
-	//this is generating the slope and offset corrections by cross web position, slide lot, and chem type
-	linearFitadder( dtSubop_cw, "Cross Web Dose", "Cross Web", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
-	
-
-	//this is interpolating the slope and offset terms for cross web with the spline
-	cwCorrsoffsetpred = subLotcharFunc( dtSubop_cw, "Cross Web", "Offset Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
-	Wait( 0 );
-	Column( cwCorrsoffsetpred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Offset Predicted" );
-	
-	
-	//this is producing no slope from time to time. Come back and troubleshoot. Missing Chem Type.
-	cwCorrsslopepred = subLotcharFunc( dtSubop_cw, "Cross Web", "Gain Calc_Cross Web", "Slide Lot", "Chem Type", 100, "Yes" );
-	Wait( 0 );
-	Column( cwCorrsslopepred, "Cross Web_Predicted Correction" ) << Set Name( "Cross Web Slope Predicted" );
-	
-
-	
-	//this is joining the offset and slope corrections for crossweb into one table
-	crossWebmaster = cwCorrsoffsetpred << Join(
-		With( cwCorrsslopepred ),
-		Merge Same Name Columns,
-		Match Flag( 0 ),
-		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Cross Web = :Cross Web ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 1, 0 ),
-		Preserve main table order( 1 )
-	);
-	
-	
-	//closing windows we don't need anymore
-	cwCorrsoffsetpred << Close Window;
-	cwCorrsslopepred << Close Window;
-	
-	//getting the spline formula for the CW terms to use elsewhere
-	offsetCWspline = Column( crossWebmaster, "Cross Web Offset Predicted" ) << Get Formula;
-	gainCWspline = Column( crossWebmaster, "Cross Web Slope Predicted" ) << Get Formula;
-
-	Column( crossWebmaster, "Cross Web Offset Predicted" ) << Set Name( "CW Offset Spline" );
-	Column( crossWebmaster, "Cross Web Slope Predicted" ) << Set Name( "CW Gain Spline" );
-
-	cwMasterall = crossWebmaster;
-	//show(cwMasterall, crossWebmaster);
-
-	dtSubop_cw << Close Window;
-	
-	//////////////////foil stuff/////////////////////////////////////
-	//now we're going to calculate the correction factors for foils
-	//first step is to subset out the raw foil corrections and associated dose information - I use a summary for this only because it was the easiest thing to do
-	dtSubop_foil = dtSubop << Summary(
-		Group( :Chem Type, :Slide Lot, :Foil, :Dose, :"Loop Average Dose"n, :"cal_Foil Correction"n ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 )
-	);
-
-	//rebuilding the dose data with the indivdiual fluid corrections - this preserves any proportional bias should it exist
-	dtSubop_foil << New Column( "Foil Dose", Numeric, Continuous, Set Formula( :"Loop Average Dose"n - :"cal_Foil Correction"n ) );
-
-
-	//this is generating the slope and offset corrections by foil position, slide lot, and chem type
-	linearFitadder( dtSubop_foil, "Foil Dose", "Foil", "Loop Average Dose", "Slide Lot", "Chem Type", 0.5, 1.5 );
-	
-	//this is interpolating the slope and offset terms for foil with the spline
-	foilCorrsoffsetpred = subLotcharFunc( dtSubop_foil, "Foil", "Offset Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
-	Wait( 0 );
-	Column( foilCorrsoffsetpred, "Foil_Predicted Correction" ) << Set Name( "Foil Offset Predicted" );
-	
-	//show(foilCorrsoffsetpred);
-	
-	foilCorrsslopepred = subLotcharFunc( dtSubop_foil, "Foil", "Gain Calc_Foil", "Slide Lot", "Chem Type", 100, "Yes" );
-	Wait( 0 );
-	Column( foilCorrsslopepred, "Foil_Predicted Correction" ) << Set Name( "Foil Slope Predicted" );
-
-	//show(foilCorrsslopepred);
-	
-	//this is joining the offset and slope corrections for foil into one table
-	foilMaster = foilCorrsoffsetpred << Join(
-		With( foilCorrsslopepred ),
-		Merge Same Name Columns,
-		Match Flag( 0 ),
-		By Matching Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Foil = :Foil ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 1, 0 ),
-		Preserve main table order( 1 )
-	);
-	
-	//closing windows we don't need anymore
-	foilCorrsoffsetpred << Close Window;
-	foilCorrsslopepred << Close Window;
-	
-	//getting the spline formula for the foil terms to use elsewhere
-	offsetFoilspline = Column( foilMaster, "Foil Offset Predicted" ) << Get Formula;
-	gainFoilspline = Column( foilMaster, "Foil Slope Predicted" ) << Get Formula;
-	
-	foilMasterall = foilMaster;
-	
-	Column( foilMasterall, "Foil Offset Predicted" ) << Set Name( "Foil Offset Spline" );
-	Column( foilMasterall, "Foil Slope Predicted" ) << Set Name( "Foil Gain Spline" );
-
-	dtSubop_foil << Close Window;
-	
-	//end of sub lot spline calculations - start of transforming sub lot coefficients into DB format//////////
-	//we'll do foil first because it's easier!
-	foilMasterall << New Column( "b", Numeric, Continuous, Set Formula( Round( :Foil Offset Spline * 10000, 0 ) / 10000 ) );
-	foilMasterall << New Column( "a", Numeric, Continuous, Set Formula( Round( :Foil Gain Spline * 10000, 0 ) / 10000 ) );
-	
-	Column( foilMasterall, "a" ) << Delete Formula;
-	Column( foilMasterall, "b" ) << Delete Formula;
-	
-	foilMasterall << Set Name( "Foil" );
-
-	//now crossweb tranform to DB structure
-	cwMasterall << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
-	cwMasterall << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
-	
-	Column( cwMasterall, "Cross Web Start" ) << Delete Formula;
-	Column( cwMasterall, "Cross Web End" ) << Delete Formula;
-
-	dtFit = cwMasterall << Bivariate(
-		Y( :CW Offset Spline, :CW Gain Spline ),
-		X( :Cross Web ),
-		By( :Chem Type, :Slide Lot, :Cross Web Start, :Cross Web End ),
-		Fit Special( Degree( 3 ), Centered Polynomial( 0 ), {Line Color( {61, 174, 70} )} )
-	);
-	//Show( dtFit );
-	//Show( dtFit[1] );
-	Wait( 0 );
-	
-	//////////////////////////////////////////////////////////////////////////////////////////////
-	////////The code for the variable cwInterptemp will be different for JMP 16 vs JMP 15. 15 requires  "Polynomial Fit Degree=3" whereas 16 supports the original code of  "Polynomial Fit Degree=3 Uncentered". Maybe a try/accept here to fix it?////////
-	//////////////////////////////////////////////////////////////////////////////////////////////
-	cwInterptemp = Report( dtFit[1] )[Outline Box( "Polynomial Fit Degree=3 Uncentered" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-	dtFit << Close Window;
-	
-	cwMasterall << Close Window;
-
-	cwSplit1 = cwInterptemp << Split(
-		Split By( :Term ),
-		Split( :Estimate ),
-		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start, :Y ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property,
-		Invisible
-	);
-
-	cwInterptemp << Close Window;
-	
-	
-	cwSplit2 = cwSplit1 << Split(
-		Split By( :Y ),
-		Split( :Cross Web, :"Cross Web^2"n, :"Cross Web^3"n, :Intercept ),
-		Group( :Slide Lot, :Chem Type, :Cross Web End, :Cross Web Start ),
-		Sort by Column Property
-	);
-		
-	cwSplit1 << Close Window;
-
-	Column( cwSplit2, "Cross Web End" ) << Set Data Type( "Numeric" );
-	Column( cwSplit2, "Cross Web Start" ) << Set Data Type( "Numeric" );
-	Column( cwSplit2, "Slide Lot" ) << Set Data Type( "Numeric" );
-
-	Column( cwSplit2, "Intercept CW Offset Spline" ) << Set Name( "e" );
-	Column( cwSplit2, "Cross Web CW Offset Spline" ) << Set Name( "f" );
-	Column( cwSplit2, "Cross Web^2 CW Offset Spline" ) << Set Name( "g" );
-	Column( cwSplit2, "Cross Web^3 CW Offset Spline" ) << Set Name( "h" );
-	Column( cwSplit2, "Intercept CW Gain Spline" ) << Set Name( "a" );
-	Column( cwSplit2, "Cross Web CW Gain Spline" ) << Set Name( "b" );
-	Column( cwSplit2, "Cross Web^2 CW Gain Spline" ) << Set Name( "c" );
-	Column( cwSplit2, "Cross Web^3 CW Gain Spline" ) << Set Name( "d" );
-	
-	cwSplit2 << Set Name( "Cross Web" );
-	
-	////apply the initial base curve and sub lot corrections to calibration data
-	//adding initial base 3P coefficients to calibration data table
-	dtCal2 << Update(
-		With( dtCalout2 ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Inst Type = :Inst Type ),
-		Add Columns from Update Table( :Asymptote, :Growth Rate, :Scale )
-	);
-	dtCal2 << New Column( "Base Concentration", Numeric, Continuous, Set Formula( Log( (:AR - :Asymptote) / :Scale ) / :Growth Rate ) );
-	dtCal2 << Set Name( "Base Cal Table" );
-	
-	
-	//adding foil corrections to calibration data table
-	dtCal3 = dtCal2 << Join(
-		With( foilMasterall ),
-		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
-		Merge Same Name Columns,
-		Invisible
-	);
-	
-	Column( dtCal3, "b" ) << Set Name( "Foil b" );
-	Column( dtCal3, "a" ) << Set Name( "Foil a" );
-	
-	//adding cross web corrections to calibration data table
-	dtCal3 << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
-	dtCal3 << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
-	
-	dtCalfinal = dtCal3 << Join(
-		With( cwSplit2 ),
-		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
-		Merge Same Name Columns,
-		Invisible
-	);
-
-	//desktop clean up
-	dtCal3 << Close Window;
-	dtCal2 << Close Window;
-
-	//calculate the cross web corrections from parameter system
-	dtCalfinal << New Column( "Cross Web Gain",
-		Numeric,
-		Continuous,
-		Set Formula( :a + :b * :Cross Web + :c * :Cross Web ^ 2 + :d * :Cross Web ^ 3 )
-	);
-	dtCalfinal << New Column( "Cross Web Offset",
-		Numeric,
-		Continuous,
-		Set Formula( :e + :f * :Cross Web + :g * :Cross Web ^ 2 + :h * :Cross Web ^ 3 )
-	);
-
-	//calculate the full sub lot corrections from the foil and cross web corrections
-	dtCalfinal << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
-	dtCalfinal << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
-
-	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :Sub Lot Gain * :Base Concentration + :Sub Lot Offset ) );
-
-	////adjust master curve coefficients to make calibration data perfectly accurate
-	dtCalfinal << New Column( "Sub Lot Adjusted Dose", Numeric, Continuous, Set Formula( (:Dose - :Sub Lot Offset) / :Sub Lot Gain ) );
-
-	////produce master curve JMP file - modify this to be dynamic for the assay////////////////////////////////
-	///instead of calFitfunc -- would call jesses func. sub lot adjusted dose as your x. AR as normal.
-	//dtCaloutlast = calFitfunc( dtCalfinal, "Cross Web", "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
-	dtCaloutlast = lytesCubicTo3P(dtCalfinal, "AR", "Sub Lot Adjusted Dose", "Slide Lot", "Assay", "Inst Type");
-	dtCaloutlast << Set Name( "Final Curve Coefficients" );
-	Column( dtCaloutlast, "Slide Lot" ) << Set Data Type( "Numeric" ) << Set Modeling Type( "Continuous" );
-
-	//Newton Rhaphson if we wanted to check this.
-	dtCalfinal << Update(
-		With( dtCaloutlast ),
-		Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
-		//Replace Columns in Main Table( :Asymptote, :Growth Rate, :Scale ) Removed as this is for a 3P not a cubic.
-		Add Columns from Update Table( :Cubic, :Intercept, :Quadratic, :Slope),
-		Replace Columns in Main Table( None )
-	);
-
-	dtCalfinal << delete columns("Base Concentration", "Sub Lot Corrected Dose", "Sub Lot Adjusted Dose");
-
-	dtCalfinal << new column(
-		"Base Concentration Char",
-		Character,
-		Nominal,
-		Formula(
-			p=((3*:"Slope"n)/:"Cubic"n - (:"Quadratic"n/:"Cubic"n)^2)/3;
-			q=(2*(:"Quadratic"n/:"Cubic"n)^3 - ((9*:"Quadratic"n*:"Slope"n)/:"Cubic"n)/:"Cubic"n + (27*(:"Intercept"n-:"AR"n)/:"Cubic"n))/27;
-			newD=(p/3)^3 + (q/2)^2;
-			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
-
-			If(newD>=0,
-				u=Root((-q/2 + (newD)^0.5),3);
-				v=Root((-q/2 - (newD)^0.5),3);
-				y1=u+v;
-				x1=y1 - (:"Quadratic"n/:"Cubic"n)/3;
-				char(x1),
-				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
-				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
-				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
-				x1=y1-(:"Quadratic"n/:"Cubic"n)/3;
-				x2=y2-(:"Quadratic"n/:"Cubic"n)/3;
-				x3=y3-(:"Quadratic"n/:"Cubic"n)/3;
-				char(x1)||" "||char(x2)||" "||char(x3)
-			);
-		);
-	);
-
-	dtCalfinal:"Base Concentration Char"n << delete formula;
-
-	dtCalfinal << New Column( "Base Concentration",
-		Numeric,
-		Continuous,
-		Set Formula( num(:"Base Concentration Char"n) )
-	);
-
-	dtCalfinal << New Column( "Sub Lot Corrected Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
-	
-	////////////////////////////////////////////////////////////////////////////
-
-	//column name cleanup in the calibration data table
-	Column( dtCalfinal, "Sub Lot Corrected Dose" ) << Set Name( "Calc Dose" );	
-	
-	//crossWebmaster << Close Window; Table closed long before this step.
-	//foilMaster << Close Window; This closes the Data Table("Foil"). Which is called in a later step.
-	dtCalout2 << Close Window;
-
-	////clean up all the tables that go into the JSON maker
-
-	//cwSplit2 = cross web table
-	//foilMasterall = foil table
-	//dtCaloutlast = master curve coefficients
-
-	foilMasterall << Delete Columns( "N Rows", "Foil Gain Spline", "Foil Offset Spline" );
-
-	/* For QSDMA as Lytes is a Cubic fit.
-	Column( dtCaloutlast, "Asymptote" ) << Set Name( "a" );
-	Column( dtCaloutlast, "Scale" ) << Set Name( "b" );
-	Column( dtCaloutlast, "Growth Rate" ) << Set Name( "c" );
-	*/
-	
-	Column( dtCaloutlast, "Cubic" ) << Set Name( "d" );
-	Column( dtCaloutlast, "Quadratic" ) << Set Name( "c" );
-	Column( dtCaloutlast, "Slope" ) << Set Name( "b" );
-	Column( dtCaloutlast, "Intercept" ) << Set Name( "a" );
-	
-	////add all the calibration and sublot corrections to the sub lot table to check that it's all good
-
-	foilMastertemp = foilMasterall << Subset( All rows, Selected columns only( 0 ), Invisible );
-	cwMastertemp = cwSplit2 << Subset( All rows, Selected columns only( 0 ), Invisible );
-	dtCaloutlasttemp = dtCaloutlast << Subset( All rows, Selected columns only( 0 ), Invisible );
-	
-	///changing paramater column names so that when everyone is joined in we don't overwrite existing columns
-	Column( foilMastertemp, "a" ) << Set Name( "Foil a" );
-	Column( foilMastertemp, "b" ) << Set Name( "Foil b" );
-
-	Column( cwMastertemp, "a" ) << Set Name( "CW a" );
-	Column( cwMastertemp, "b" ) << Set Name( "CW b" );
-	Column( cwMastertemp, "c" ) << Set Name( "CW c" );
-	Column( cwMastertemp, "d" ) << Set Name( "CW d" );
-	Column( cwMastertemp, "e" ) << Set Name( "CW e" );
-	Column( cwMastertemp, "f" ) << Set Name( "CW f" );
-	Column( cwMastertemp, "g" ) << Set Name( "CW g" );
-	Column( cwMastertemp, "h" ) << Set Name( "CW h" );
-
-	Column( dtCaloutlasttemp, "a" ) << Set Name( "Base a" );
-	Column( dtCaloutlasttemp, "b" ) << Set Name( "Base b" );
-	Column( dtCaloutlasttemp, "c" ) << Set Name( "Base c" );
-	Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" );
-	//Try( Column( dtCaloutlasttemp, "d" ) << Set Name( "Base d" ), Throw() ); Lytes will have a column d because it's a cubic fit. QSDMA will not.
-	
-	///updating the loop qual table to check the precision post sub lot corrections
-	//adding base curve data to loop qual
-	Try(
-		dtSubop << Update(
-			With( dtCaloutlasttemp ),
-			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
-			Add Columns from Update Table( :Base a, :Base b, :Base c, :Base d )
-		),
-		dtSubop << Update(
-			With( dtCaloutlasttemp ),
-			Match Columns( :Slide Lot = :Slide Lot, :Assay = :Assay, :Inst Type = :Inst Type ),
-			Add Columns from Update Table( :Base a, :Base b, :Base c )
-		)
-	);
-	
-	dtCaloutlasttemp << Close Window;
-
-	//adding cross web corrections to loop qual table
-	dtSubop << New Column( "Cross Web Start", Numeric, Continuous, Set Formula( (Ceiling( :Cross Web / defaultBin ) - 1) * defaultBin + 1 ) );
-	dtSubop << New Column( "Cross Web End", Numeric, Continuous, Set Formula( :Cross Web Start + defaultBin - 1 ) );
-	Column( dtSubop, "Cross Web Start" ) << Delete Formula;
-	Column( dtSubop, "Cross Web End" ) << Delete Formula;
-	
-	dtSubop << Update(
-		With( cwMastertemp ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Cross Web Start = :Cross Web Start, :Cross Web End = :Cross Web End ),
-		Add Columns from Update Table( :CW b, :CW f, :CW c, :CW g, :CW d, :CW h, :CW a, :CW e )
-	);
-	cwMastertemp << Close Window;
-	
-	
-	//adding foil corrections to the loop qual table
-	dtSubop << Update(
-		With( foilMastertemp ),
-		Match Columns( :Foil = :Foil, :Chem Type = :Chem Type, :Slide Lot = :Slide Lot ),
-		Add Columns from Update Table( :Foil b, :Foil a )
-	);
-	foilMastertemp << Close Window;
-
-	dtCalfinal << Set Name( "Calibration Data" );
-	dtSubop << Set Name( "Loop Qual Data" );
-	dtCalfinal << show window(1);
-	dtSubop << show window(1);
-
-	////adding in the dose calculation columns to the loop qual table
-	/*If(
-		:Chem Type == "SDMA",
-			
-		,
-		:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", :Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3,
-		Stop()
-	);*/
-	/*
-	dtSubop << New Column( "Base Concentration", Numeric, Continuous, 
-		Set Formula(
-			If(
-				:Chem Type == "SDMA",
-					Log( (:AR - :Base a) / :Base b ) / :Base c 
-				,
-				:Chem Type == "NA" | :Chem Type == "K" | :Chem Type == "CL", 
-					:Base a + :Base b * :AR + :Base c * :AR ^ 2 + :Base d * AR ^ 3
-			)
-		)
-	);*/
-	
-	//base concentration will now be added using a method to solve a cubic function for lytes as lytes is fit with a cubic.
-	dtSubop << new column(
-		"Base Concentration Char",
-		Numeric,
-		Continuous,
-		Formula(
-			p=((3*:"Base b"n)/:"Base d"n - (:"Base c"n/:"Base d"n)^2)/3;
-			q=(2*(:"Base c"n/:"Base d"n)^3 - ((9*:"Base c"n*:"Base b"n)/:"Base d"n)/:"Base d"n + (27*(:"Base a"n-:"AR"n)/:"Base d"n))/27;
-			D=(p/3)^3 + (q/2)^2;
-			phi=ArcCosine((-q/2)/((abs(p)^3)/27)^0.5);
-
-			If(D>=0,
-				u=Root((-q/2 + (D)^0.5),3);
-				v=Root((-q/2 - (D)^0.5),3);
-				y1=u+v;
-				x1=y1 - (:"Base c"n/:"Base d"n)/3;
-				char(x1),
-				y1=2*((abs(p)/3)^0.5) * Cosine(phi/3);
-				y2=-2*((abs(p)/3)^0.5) * Cosine((phi+Pi())/3);
-				y3=-2*((abs(p)/3)^0.5) * Cosine((phi-Pi())/3);
-				x1=y1-(:"Base c"n/:"Base d"n)/3;
-				x2=y2-(:"Base c"n/:"Base d"n)/3;
-				x3=y3-(:"Base c"n/:"Base d"n)/3;
-				char(x1)||" "||char(x2)||" "||char(x3)
-			);
-		);
-	);
-	
-	dtSubop << New Column( "Base Concentration",
-		Numeric,
-		Continuous,
-		Set Formula( num(:"Base Concentration Char"n) )
-	);
-	
-	dtSubop << New Column( "Cross Web Gain",
-		Numeric,
-		Continuous,
-		Set Formula( :CW a + :CW b * :Cross Web + :CW c * :Cross Web ^ 2 + :CW d * :Cross Web ^ 3 )
-	);
-	dtSubop << New Column( "Cross Web Offset",
-		Numeric,
-		Continuous,
-		Set Formula( :CW e + :CW f * :Cross Web + :CW g * :Cross Web ^ 2 + :CW h * :Cross Web ^ 3 )
-	);
-
-	dtSubop << New Column( "Sub Lot Gain", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Gain ) );
-	dtSubop << New Column( "Sub Lot Offset", Numeric, Continuous, Set Formula( :Foil a * :Cross Web Offset + :Foil b ) );
-	
-	dtSubop << New Column( "Calc Dose", Numeric, Continuous, Set Formula( :"Sub Lot Gain"n * :"Base Concentration"n + :"Sub Lot Offset"n ) );
-
-	//do a little work with dtcal to getdry reads and table name on based coeffs then do JSON stuffs
-	//the assumption is dtCal (the original cal table) will be named with something like: CALxx LOTS yyyyyy-zzzzzz
-	//xx = the Cal Event for the build
-	//yyyyyy = lot range start for the event
-	//zzzzzz = lot range end for the event
-
-	dtCaloutlast << set name( dtCal << get name || "_base coefficients");
-	
-	dtCal << close window;
-	dtSub << close window;
-	
-	////MAY NEED TO DELETE CLIP LOT FROM EXP DATE SINCE IT WILL BE IN CAL DATA FROM DX RELEASE
-	dtCalFinal << Update(
-		With( dtSLExp ),
-		Match Columns( :Assay = :chemcode, :Slide Lot = :slide_lot )
-	);
-	Close(dtSLExp,nosave);
-	///preparation for JSON stuff (move into own function??)
-	jsonPrepBase(dtCalFinal,dtCaloutLast);
-	//
-	jsonPrepCW(cwSplit2);
-	//
-	jsonPrepFoil(foilMasterall);
-	//
-		
-	buildJSONarray(dtCaloutlast, cwSplit2, foilMasterall, jsonloc, "Lytes");
-		//JSON building won't close any of these tables - currently
-	//return the necessary tables
-	Return(dtCalfinal, dtSubop);
-	
-);
-
-inputCleanup = Function( {dialogOutput},
-	{default local}, 
-	
-	Match( dialogOutput["tb"],
-		2,
-			here:calibrationPathway = "LYTES";
-			calibrationDataPath = dialogOutput["lytesCalDataPath"];
-			loopQualDataPath = dialogOutput["lytesLoopFolder"];
-			expirationDataPath = dialogOutput["lytesExpirationDataPath"];
-			jsonFolderPath = dialogOutput["lytesJSONSaveFolder"];
-
-			Return( calibrationDataPath, loopQualDataPath, expirationDataPath, jsonFolderPath );,
-		3,
-			here:calibrationPathway = "QSDMA";
-			calibrationDataPath = dialogOutput["qsdmaCalDataPath"];
-			loopQualDataPath = dialogOutput["qsdmaLoopFolder"];
-			expirationDataPath = dialogOutput["qsdmaExpirationDataPath"]; //will be list for QSDMA
-			jsonFolderPath = dialogOutput["qsdmaJSONSaveFolder"];
-			platformFineTuneDataPath = dialogOutput["qsdmaPlatformFTDataPath"];
-			speciesFineTuneDataPath = dialogOutput["qsdmaSpeciesFTDataPath"];
-			slideLoopMatchDataPath = dialogOutput["qsdmaLoopMatchDataPath"];
-			
-			Return(
-				calibrationDataPath,
-				loopQualDataPath,
-				expirationDataPath,
-				jsonFolderPath,
-				platformFineTuneDataPath,
-				speciesFineTuneDataPath,
-				slideLoopMatchDataPath
-			);
-	)
-);
-
-sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Expiration, jsonloc}, {default local},
-	/*testing variables
-	dt_Panel = calData;
-	dt_Loop = loopData;
-	dt_FineTune = patientData;
-	dt_InstTune = platformData;
-	dt_Expiration = expirationData;
-	*/
-	
-	dt_Cal = dt_Panel;
-	dt_Sublot = dt_Loop;
-	
-	//get the event number from the cal data table
-	Caltablename = dt_Cal << get name;
-	Eventnum = "Event" || Word(2, Caltablename, "_");
-	
-	//QSDMA specific fitting routine settings
-	lamda = 100;
-	calFoil = 15;
-	defaultBin = 8;
-
-	subLot2DblockerFunc( dt_Sublot, "Script AR", "Cross Web", "Foil", "Script Dose Val", "Slide Lot", "Blocked AR", "Chem Type", "Relative" );
-
-	dtSubsum1 = dt_Sublot << Summary(
-		Group( :Script Dose Val, :Slide Lot, :Cross Web, :Chem Type ),
-		Mean( :Blocked AR ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		Invisible
-	);
-	
-	dtSubsum2 = dtSubsum1 << Summary( 
-		Group( :Slide Lot, :Chem Type ), 
-		Freq( "None" ), 
-		Weight( "None" ), 
-		Link to original data table( 0 ),
-		Invisible
-	);
-	
-	splineFit = dtSubsum1 << Bivariate(
-		Y( :Name( "Mean(Blocked AR)" ) ),
-		X( :Cross Web ),
-		By( :Slide Lot, :Chem Type ),
-		Fit Spline( lamda, {Line Color( {212, 73, 88} )} ),
-		Invisible
-	);
-	
-	splineFit << (Curve[1] << Save Predicteds);
-	
-	//this requires a explicit column name that comes from saving the predicteds. if we change anything about the Bivariate, this will have to be changed as well.
-	splineFormula = Column( dtSubsum1, "Spline Predictor for Mean(Blocked AR) By Slide Lot By Chem Type" ) << Get Formula;
-	
-	posCount = Max( Column( dtSubsum1, "Cross Web" ) << Get Values );
-	
-	dtTempcount = New Table( "Arbritrary Positions", New Column( "Cross Web", Numeric, Continuous, Set Values( 1 :: posCount :: 1 ) ), Invisible );
-	
-	dtTempcount << New Column( "Cross Web_Char",
-		Character,
-		Nominal,
-		Set Formula( 
-			If( :Cross Web < 10, "0" || Char( :Cross Web ), Char( :Cross Web ) ) 
-		)
-	);
-	
-	Column( dtTempcount, "Cross Web_Char" ) << Delete Formula;
-	dtTempcount << New Column( "Predicted Mean AR", Numeric, Continuous );
-	
-	dtSubsum = dtSubsum2 << Join( With( dtTempcount ), Cartesian Join, Invisible );
-	Column( dtSubsum, "Predicted Mean AR" ) << Set Formula( Name Expr( splineFormula ) );
-	
-	dtSubsum1 << Close Window;
-	dtSubsum2 << Close Window;
-	dtTempcount << Close Window;
-	Wait( 1 );
-
-	dt_Calparams = calFitfunc( dt_Cal, "Cross Web", "Script AR", "Script Dose Val", "Slide Lot", "Chem Type", "Inst Type", "3P", "Master" );
-	
-	dt_Calparams:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	dt_Cal << Update(
-		With( dt_Calparams ),
-		Match Columns( :Slide Lot = :Slide Lot, :Inst Type = :Inst Type, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( "Asymptote", "Scale", "Growth Rate" )
-	);
-	
-	dt_Cal << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
-	dt_Cal << New Column( "Target Dose", Numeric, Continuous, Set Formula( Col Mean( :Master Curve, :Script Dose Val, :Inst Type, :Chem Type ) ) );
-	
-	dt_Calparams2 = calFitfunc(
-		dt_Cal, "Cross Web", "Target Dose", "Master Curve", "Slide Lot", "Chem Type", "Inst Type", "Linear", "Normal"
-	);
-	
-	dt_Calparams2:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	dt_Calparams2:"Cross Web"n << Set Data Type(Numeric) << Set Modeling Type("Continuous");
-	
-	dt_Calparams1 = dt_Calparams2 << Join(
-		With( dtSubsum ),
-		Merge Same Name Columns,
-		Match Flag( 0 ),
-		By Matching Columns( :Slide Lot = :Slide Lot, :Cross Web = :Cross Web, :Chem Type = :Chem Type ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 0, 0 ),
-		Preserve main table order( 1 ),
-		Invisible
-	);
-
-	dt_Calparams2 << close window;
-
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	
-	paramFitting = dt_Calparams1 << Bivariate(
-		Y( :Estimate ),
-		X( :Predicted Mean AR ),
-		Fit Line( {Line Color( {212, 73, 88} )} ),
-		By( :Parameter, :Slide Lot, :Chem Type )
-	);
-
-	Wait( 0 );
-	paramForms = Report( paramFitting[1] )[Outline Box( "Linear Fit" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] <<
-	Make Combined Data Table;
-	Report( paramFitting[1] ) << Close Window;
-
-	paramsReady = paramForms << Split(
-		Split By( :Term ),
-		Split( :Estimate ),
-		Group( :Slide Lot, :Parameter, :Chem Type ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property,
-		Invisible
-	);
-
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	
-	Column( paramsReady, "Predicted Mean AR" ) << Set Name( "Slope2" );
-	Column( paramsReady, "Intercept" ) << Set Name( "Intercept2" );
-	
-	paramsReady:"Slide Lot"n << Set Data Type(Numeric) << Set Modeling Type("Nominal");
-	
-	paramCalcs = dtSubsum << Join(
-		With( paramsReady ),
-		Merge Same Name Columns,
-		By Matching Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 0, 0 ),
-		Preserve main table order( 1 ),
-		Invisible
-	);
-
-	paramCalcs << New Column( "Param Value", Numeric, Continuous, Set Formula( :Predicted Mean AR * :Slope2 + :Intercept2 ) );
-
-	paramsFinal = paramCalcs << Split(
-		Split By( :Parameter ),
-		Split( :Param Value ),
-		Group( :Slide Lot, :Cross Web, :Chem Type ),
-		Remaining Columns( Drop All ),
-		Sort by Column Property
-	);
-	
-	Column( paramsFinal, "Slope" ) << Set Name( "Cross Web Gain" );
-	Column( paramsFinal, "Intercept" ) << Set Name( "Cross Web Offset" );
-
-	dt_Sublot_New = dt_Sublot << Join(
-		With( paramsFinal ),
-		Merge Same Name Columns,
-		By Matching Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Drop multiples( 0, 0 ),
-		Include Nonmatches( 0, 0 ),
-		Preserve main table order( 1 )
-	);
-
-	dt_Cal << Update(
-		With( paramsFinal ),
-		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
-	);
-	
-	dt_Sublot_New << Update(
-		With( dt_Calparams ),
-		Match Columns( :Slide Lot = :Slide Lot, :Inst Type = :Inst Type, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Asymptote, :Growth Rate, :Scale )
-	);
-
-	dt_Sublot_New << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
-	
-	dt_Sublot_New << New Column( "Cross Web Corrected Dose",
-		Numeric,
-		Continuous,
-		Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset )
-	);
-	
-	dt_Sublot_New << Set Name("Loop Qual Results with Calibration Parameters");
-	
-	dtSublot2mean = dt_Sublot_New << Summary(
-		Group( :Script Dose Val, :Slide Lot, :Foil, :Chem Type ),
-		Mean( :Cross Web Corrected Dose ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		Invisible
-	);
-	
-	//algorithm to remove the panel closest to 30. one of the target levels is 30 and that's the one we don't want. thus it should be closer.
-	value = 30;
-	decider = Abs((dtSublot2mean:"Script Dose Val"n << get values) - value);
-	row_where = Loc(decider == Min(decider));
-	dtSublot2mean << delete rows(row_where);
-	
-	dtSublot2meantemp = dtSublot2mean << Select Where( :Foil == calFoil ) << Subset(
-		Selected Rows( 1 ),
-		Columns( "Slide Lot", "Script Dose Val", "Chem Type", "Mean(Cross Web Corrected Dose)" )
-	);
-	
-	Column( dtSublot2meantemp, "Mean(Cross Web Corrected Dose)" ) << Set Name( "Target Dose" );
-	
-	dtSublot2mean << Update(
-		With( dtSublot2meantemp ),
-		Match Columns( :Slide Lot = :Slide Lot, :Script Dose Val = :Script Dose Val, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Target Dose )
-	);
-
-	dtSublot2meantemp << Close Window;
-	
-	dtSublot2mean << New Column( "Foil Correction Raw",
-		Numeric,
-		Continuous,
-		Set Formula( :Target Dose - :Name( "Mean(Cross Web Corrected Dose)" ) )
-	);
-	
-	splineFit2 = dtSublot2mean << Bivariate(
-		Y( :Foil Correction Raw ),
-		X( :Foil ),
-		By( :Slide Lot, :Chem Type ),
-		Fit Spline( lamda, {Line Color( {212, 73, 88} )} ),
-		Invisible
-	);
-	
-	splineFit2 << (Curve[1] << Save Predicteds);
-	
-	splineFormula2 = Column( dtSublot2mean, "Spline Predictor for Foil Correction Raw By Slide Lot By Chem Type" ) << Get Formula;
-	Column( dtSublot2mean, "Spline Predictor for Foil Correction Raw By Slide Lot By Chem Type" ) << Set Name( "Foil Offset" );
-	Column( dtSublot2mean, "Foil Correction Raw" ) << Delete Formula;
-	Column( dtSublot2mean, "Foil Offset" ) << Delete Formula;
-	dtSublot2mean << Delete Columns( "Script Dose Val"n, "Mean(Cross Web Corrected Dose)"n );
-	dtSublot2mean << New Column( "Foil Gain", Numeric, Continuous, Set Formula( 1 ) );
-	Wait( 0 );
-	Column( dtSublot2mean, "Foil Gain" ) << Delete Formula;
-	
-	//add foil params to loop qual table and cal table
-	dt_Sublot_New << Update(
-		With( dtSublot2mean ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
-		Add Columns from Update Table( :Foil Offset, :Foil Gain )
-	);
-	
-	dt_Cal << Update(
-		With( dtSublot2mean ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
-		Add Columns from Update Table( :Foil Offset, :Foil Gain )
-	);
-	
-	dt_Sublot_New << New Column( "Final Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
-
-	dt_Cal << New Column( "Final Calc Dose",
-		Numeric,
-		Continuous,
-		Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset + :Foil Offset )
-	);
-
-	dt_Foil = dtSublot2mean;
-	dt_Crossweb = paramsFinal;
-	dt_Basecurve = dt_Calparams;
-
-	dt_Basecurve << Delete Columns( "Inst Type" );
-	
-	splineFit2 << Close Window;
-	paramCalcs << Close Window;
-	paramsReady << Close Window;
-	paramForms << Close Window;
-	dtSubsum << Close Window;
-	dt_Calparams1 << Close Window;
-	
-	////////////////species fine tune math////////////////////////////////
-	
-	dt_FineTune << Update(
-		With( dt_Basecurve ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Asymptote, :Scale, :Growth Rate )
-	);
-	
-	dt_FineTune << Update(
-		With( dt_Crossweb ),
-		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
-	);	
-	
-	dt_FineTune << Update(
-		With( dt_Foil ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
-		Add Columns from Update Table( :Foil Offset, :Foil Gain )
-	);
-	
-	dt_FineTune << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
-	
-	dt_FineTune << New Column( "Cross Web Corrected Dose", Numeric, Continuous, Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset ) );
-	
-	dt_FineTune << New Column( "Test Lot Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
-	
-	///////////this area will need to be modified to get the control lots vs test lots and combining concentrations for analysis. This code is for PQ1 but will need to be modified. Test table also already has lot type built in. We can get this from the runsheet starting with PQ3.////////// Handling this in the prep step.
-	
-	dt_FineTune << New Column( "Final Calc Dose",
-		Numeric,
-		Continuous,
-		Set Formula(
-			if( dt_FineTune:"Lot Type"n == "Reference",
-				dt_FineTune:"results.base_concentration"n,
-				dt_FineTune:"Test Lot Calc Dose"n
-			)
-		)
-	);
-	dt_FineTune:"Final Calc Dose"n << Delete Formula;
-	
-	
-	dt_FineTunesummary = dt_FineTune << Summary(
-		Group( :Slide Lot, :Lot Type, :Patient Name, :Species Name, :Chem Type ),
-		Mean( :Final Calc Dose ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		Invisible
-	);
-
-	dt_Finetunetemp = dt_FineTunesummary << Summary(
-		Group(:Lot Type, :Patient Name, :Species Name, :Chem Type ),
-		Mean( :"Mean(Final Calc Dose)"n ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		Invisible
-	);
-
-	dt_Finetunetemp << Select Where( :Lot Type == "Test" ) << Delete Rows;
-	Column( dt_Finetunetemp, "Mean(Mean(Final Calc Dose))" ) << Set Name( "Target Dose" );
-	dt_Finetunetemp << Delete Columns( "N Rows", "Lot Type" );
-	
-	dt_FineTunesummary << Update(
-		With( dt_Finetunetemp ),
-		Match Columns( :Chem Type = :Chem Type, :Patient Name = :Patient Name, :Species Name = :Species Name ),
-		Add Columns from Update Table( :Target Dose )
-	);
-	
-	dt_Finetunetemp << Close Window;
-	
-	dt_FineTunesummary << New Column( "Bias to Target", Numeric, Continuous, Set Formula( :Target Dose - :"Mean(Final Calc Dose)"n ) );
-	
-	dt_FineTuneout = dt_FineTunesummary << Summary(
-		Group( :Lot Type, :Slide Lot, :Species Name, :Chem Type ),
-		Mean( :Bias to Target ),
-		Freq( "None" ),
-		Weight( "None" ),
-		Link to original data table( 0 ),
-		Invisible
-	);
-	
-	Column( dt_FineTuneout, "Mean(Bias to Target)" ) << Set Name( "Species Adjustment" );
-	dt_FineTunesummary << Close Window;
-	dt_FineTuneout << Select Where( :Lot Type == "Reference" ) << Delete Rows;
-	dt_FineTuneout << Delete Columns( "Lot Type" );
-	//dt_FineTuneout << Set Name("Species Fine Tune");
-
-
-	///////////////inst type fine tune math///////////////////////////////
-	
-	dt_InstTune << Update(
-		With( dt_Basecurve ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Asymptote, :Scale, :Growth Rate )
-	);
-	dt_InstTune << Update(
-		With( dt_Crossweb ),
-		Match Columns( :Cross Web = :Cross Web, :Slide Lot = :Slide Lot, :Chem Type = :Chem Type ),
-		Add Columns from Update Table( :Cross Web Gain, :Cross Web Offset )
-	);
-	dt_InstTune << Update(
-		With( dt_Foil ),
-		Match Columns( :Slide Lot = :Slide Lot, :Chem Type = :Chem Type, :Foil = :Foil ),
-		Add Columns from Update Table( :Foil Offset, :Foil Gain )
-	);
-	
-	dt_InstTune << New Column( "Master Curve", Numeric, Continuous, Set Formula( Log( (:Script AR - :Asymptote) / :Scale ) / :Growth Rate ) );
-		
-	dt_InstTune << New Column( "Cross Web Corrected Dose", Numeric, Continuous, Set Formula( :Master Curve * :Cross Web Gain + :Cross Web Offset ) );
-	
-	dt_InstTune << New Column( "Final Calc Dose", Numeric, Continuous, Set Formula( :Cross Web Corrected Dose + :Foil Offset ) );
-	
-	dt_Insttunesummary = dt_InstTune << Summary(
-		Group( :Chem Type, :Slide Lot, :Inst Type ),
-		Mean( :Final Calc Dose ),
-		Link to Original Data Table( 0 ),
-		Invisible
-	);
-	
-	dt_Insttemp = dt_Insttunesummary << Select Where( :Inst Type == "CatOne" ) << Subset( Selected Rows( 1 ), Selected Columns( 0 ), Invisible );
-	
-	dt_Insttemp << Delete Columns( "Inst Type", "N Rows" );
-	Column( dt_Insttemp, "Mean(Final Calc Dose)" ) << Set Name( "Target Dose" );
-
-	dt_Insttunesummary << Update(
-		With( dt_Insttemp ),
-		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot ),
-		Add Columns from Update Table( :Target Dose )
-	);
-	
-	dt_Insttunesummary << New Column( "Platform Adjustment", Numeric, Continuous, Set Formula( :Target Dose - :Name( "Mean(Final Calc Dose)" ) ) );
-	Column( dt_Insttunesummary, "Platform Adjustment" ) << Delete Formula;
-	
-	dt_Insttunesummary << Delete Columns( "Mean(Final Calc Dose)", "Target Dose", "N Rows" );
-	//dt_Insttunesummary << Set Name("Platform Fine Tune");
-	
-	dt_Insttemp << Close Window;
-	//dt_InstTune << Close Window;
-	
-	
-	///////////making the tables to transform the CatOne base curve with the offsets to the final curve version///////////////////////
-	dt_Dose = New Table( "Dose Temp", <<Add Rows( 101 ), New Column( "Dose", Numeric, Continuous, Set Values( 0 :: 100 :: 1 ) ), Invisible );
-	dt_Species = New Table( "Species Temp",
-		<<Add Rows( 2 ),
-		New Column( "Species", Character, Nominal, Set Formula( If( Row() == 1, "Canine", "Feline" ) ) ),
-		Invisible
-	);
-	dt_Platform = New Table( "Inst Temp",
-		<<Add Rows( 2 ),
-		New Column( "Inst Type", Character, Nominal, Set Formula( If( Row() == 1, "CatOne", "CatDx" ) ) ),
-		Invisible
-	); 
-	
-	dt_Temp = dt_Basecurve << Join( With( dt_Dose ), Cartesian Join, Invisible );
-	wait(0.1);
-	dt_Temp2 = dt_Temp << Join( With( dt_Species ), Cartesian Join, Invisible );
-	wait(0.1);
-	dt_Curvemaker = dt_Temp2 << Join( With( dt_Platform ), Cartesian Join, Invisible );
-	wait(0.1);
-	
-	///merge in dx and one adjustment
-	dt_Curvemaker << Update(
-		With( dt_Insttunesummary ),
-		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Inst Type = :Inst Type ),
-		Add Columns from Update Table( :Platform Adjustment )
-	);
-	
-	///merge in species adjustment(s)
-	dt_Curvemaker << Update(
-		With( dt_FineTuneout ),
-		Match Columns( :Chem Type = :Chem Type, :Slide Lot = :Slide Lot, :Species = :Species Name),
-		Add Columns from Update Table( :Species Adjustment )
-	);
-	
-	//add ref dose column that accounts for offsets
-	dt_Curvemaker << New Column( "Updated Ref Dose", Numeric, Continuous, Set Formula( :Dose + :Platform Adjustment + :Species Adjustment ) );
-	dt_Curvemaker << New Column( "AR", Numeric, Continuous, Set Formula( :Asymptote + :Scale * Exp( :Growth Rate * :Dose ) ) );
-	
-	dtFitnew = dt_Curvemaker << Fit Curve(
-		Y( :AR ),
-		X( :Updated Ref Dose ),
-		By( :Slide Lot, :Chem Type, :Inst Type, :Species ),
-		Fit Exponential 3P,
-		Invisible
-	);
-	
-	Wait( 0 );
-	dt_Basecurvetemp = Report( dtFitnew[1] )[Outline Box( "Exponential 3P" )][Outline Box( "Parameter Estimates" )][Table Box( 1 )] << Make Combined Data Table;
-	dtFitnew << Close Window;
-	
-	dt_Basecurvefinal = dt_Basecurvetemp << Split(
-		Split Columns( :Estimate ),
-		Split By( :Parameter ),
-		Group( :Slide Lot, :Chem Type, :Inst Type, :Species ),
-		Remaining Columns( Drop All )
-	);
-	
-	dt_Basecurvetemp << Close Window;
-	dt_Curvemaker << Close Window;
-	dt_Dose << Close Window;
-	dt_Species << Close Window;
-	dt_Platform << Close Window;
-	dt_Temp << Close Window;
-	dt_Temp2 << Close Window;
-	//dt_FineTuneout << Close Window;
-	dt_FineTuneout << Set Name(Eventnum || " Patient Offset");
-	dt_FineTuneout << Show Window(1);
-	//dt_Insttunesummary << Close Window;
-	dt_Insttunesummary << Set Name(Eventnum || " Platform Offset");
-	dt_Insttunesummary << Show Window(1);
-	dt_Basecurve << Close Window;
-	dt_Basecurvefinal << Set Name("Base Curve");
-	
-	BaseFinal = SDMAjsonPrepBase(dt_Basecurvefinal, dt_expiration, Eventnum);
-	FoilFinal = SDMAjsonPrepFoil(dt_Foil);
-	CWFinal = SDMAjsonPrepCW(dt_Crossweb);
-	
-	close(dt_expiration, nosave);
-	close(dt_Sublot, nosave);
-	close(dtSublot2mean, nosave);
-	
-	//currently does not close the base/foil/cw tables.
-	buildJSONarray(BaseFinal, CWFinal, FoilFinal, jsonloc, "SDMA4");
-	
-	//Return the analysis tables.
-	Return(dt_Cal, dt_Sublot, dt_FineTune, dt_InstTune);
-	
-);
 
 //UNUSED FUNCTIONS
 //Nates mods of Jesse's mods of Tim's outlier function
