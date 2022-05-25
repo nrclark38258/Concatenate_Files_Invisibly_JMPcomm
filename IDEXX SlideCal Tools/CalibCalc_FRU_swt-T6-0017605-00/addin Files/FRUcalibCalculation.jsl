@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	RC3 1.0 NClark 052522
+//		-> Updated addPoints() so both iterations go to <=12 instead of <12
 //	RC2 1.0 NClark 042122
 //		-> Sorted final coefficient table so both species curves for one lot are together
 //	RC2 1.0 NClark 042022
@@ -423,7 +425,7 @@ addPoints = Function({datatable,speciesName}, {default local},
 	For(i=1,i<=nitems(curveCount),i++,
 		Match(Uppercase(speciesName),
 			"ALL",
-			For(j=5,j<12,j++,
+			For(j=5,j<=12,j++,
 				conc = Match(j,
 					5,100
 					,
@@ -446,7 +448,7 @@ addPoints = Function({datatable,speciesName}, {default local},
 			For Each Row(datatable, If(:"SAV"n == 100, :"Final AR"n =0.000204 ));
 			,
 			"FELINE",
-			For(j=5,j<12,j++,
+			For(j=5,j<=12,j++,
 				conc = Match(j,
 					5,100
 					,
