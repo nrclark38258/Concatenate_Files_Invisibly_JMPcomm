@@ -7,6 +7,7 @@
 
 //------------------Revision History for both script and Help File--
 //
+//	1.0 NClark 052522 -- validated for PROD usage
 //	RC3 1.0 NClark 052522
 //		-> Updated addPoints() so both iterations go to <=12 instead of <12
 //	RC2 1.0 NClark 042122
