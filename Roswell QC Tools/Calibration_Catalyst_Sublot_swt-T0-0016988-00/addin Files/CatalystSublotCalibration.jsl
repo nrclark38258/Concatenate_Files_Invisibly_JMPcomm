@@ -7,6 +7,8 @@
 
 //------------------Revision History for both script and Help File--
 //  <-- NOTICE THE SPACE, SAGE!
+//		  1.0 SDarling 060122
+//		-> changed column over from results.base_concentration to Concentration because results.base_concentration doesn't include crossweb/foil corrections in sdmaAssStitching function. results.base_concentration in SDMAPatientPrep will still be used to determine which lot is test/reference as the test will have a -1 here consistently whereas reference will have a number not equal to exactly -1.
 //		  1.0 SDarling 051822
 //		-> moved inputCleanup to tested.
 //		  1.0 SDarling 051122
@@ -3045,7 +3047,7 @@ sdmaAssStitching = Function({dt_Panel, dt_Loop, dt_FineTune, dt_InstTune, dt_Exp
 		Continuous,
 		Set Formula(
 			if( dt_FineTune:"Lot Type"n == "Reference",
-				dt_FineTune:"results.base_concentration"n,
+				dt_FineTune:"Concentration"n,
 				dt_FineTune:"Test Lot Calc Dose"n
 			)
 		)
