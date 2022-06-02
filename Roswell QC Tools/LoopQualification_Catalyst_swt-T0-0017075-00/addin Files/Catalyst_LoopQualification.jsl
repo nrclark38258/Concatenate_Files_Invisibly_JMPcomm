@@ -5,7 +5,8 @@
 //Tool Calculates Loop Qual Results for Lytes.
 
 //------------------Revision History for both script and Help File--
-//
+//	2.0.1  SDarling 060222
+//		-> created a subset of the starting table to do analysis in stitching. This is the table analysis happens on. The original remains open upon cleanup.
 //	1.0.13 NClark 020322
 //		-> Added code to remove old loop qual addin (before assays combined)
 //	1.0.12 SDarling 011322
@@ -1597,11 +1598,17 @@ totalLoopReport_2 = Function( {tablename, arColumn, crosswebColumn, foilColumn, 
 	Return(dt, dtSummary, dt_Errorsummary, foilErrorCount)
 );
 
-stitchingFunct = Function({startingTable},{default local},
-	//startingTable = currentdatatable();
+stitchingFunct = Function({startingTable_input},{default local},
+	//startingTable_input = currentdatatable();
 	
 	//function is for stitching together all interweaving functions and their inputs/outputs
 	//allows 'main' to stay cleaner
+	startingTable_name = startingTable_input << get name;
+	startingTable = startingTable_input << Subset(
+		Output Table(startingTable_name || "_processed"),
+		All rows, 
+		Selected columns only (0) 
+	);
 	
 	//modifies information in table based on keys in Barcode column
 	Barcode_Parse(startingTable, "Barcode");

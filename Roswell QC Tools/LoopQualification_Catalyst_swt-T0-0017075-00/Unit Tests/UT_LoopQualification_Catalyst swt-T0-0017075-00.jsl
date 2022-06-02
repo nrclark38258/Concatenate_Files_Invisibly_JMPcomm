@@ -12,8 +12,8 @@ Match(
 		loopQualUT:filePath = "/D:/JSL Development/Official JMP Addin Working/UnitTesting/LoopQualification_Catalyst swt-T0-0017075-00_UT/Files/";
 		,
 		"sdarling",
-		loopQualUT:toolPath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Roswell QC Tools/RoswellQC.CatalystLoopQualification_swt-T0-0017075-00/Catalyst_LoopQualification.jsl";
-		loopQualUT:filePath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Unit Tests/Nate Repo UT/LoopQualification_Catalyst swt-T0-0017075-00_UT/Files/";
+		loopQualUT:toolPath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Roswell QC Tools/LoopQualification_Catalyst_swt-T0-0017075-00/addin Files/Catalyst_LoopQualification.jsl";
+		loopQualUT:filePath = "/C:/Users/sdarling/OneDrive - IDEXX/Sages JSL Working Folders/Roswell QC Tools/LoopQualification_Catalyst_swt-T0-0017075-00/Unit Tests/Files/";
 		
 );
 
@@ -616,11 +616,11 @@ ut test(fullMontyTC, loopQualUT:utGroup||Char(loopQualUT:utGroupTest+1)||"_full 
 		
 		tableName = table1 << get name;
 		unchosenName = "unchosen9-10-11_"|| tableName;
-		ut assert that(Expr(output[1] << get name), ut equal to(table1 << get name));
+		ut assert that(Expr(output[1] << get name), ut equal to(tableName||"_processed"));
 		ut assert that(Expr(output[2] << get name), ut equal to("4140412_CL_Loop Qualification Summary Report"));
 		ut assert that(Expr(output[3] << get name), ut equal to("4140412_CL_Sublot Corrected SDs by Foil and Fluid"));
 		ut assert that(Expr(output[4] << get name), ut equal to("4140412_CL_NDE Count by foil"));
-		ut assert that(Expr(output[5] << get name), ut equal to(unchosenName));
+		ut assert that(Expr(output[5] << get name), ut equal to(unchosenName||"_processed"));
 				
 		ut assert that(Expr(compMain[2] << Are Data Different), ut equal to(0));
 		ut assert that(Expr(compMain[2] << Get columns properties differences), ut empty());
@@ -686,7 +686,7 @@ ut test(fullMontyTC, loopQualUT:utGroup||Char(loopQualUT:utGroupTest+1)||"_full 
 		compSD = loopQualUT:tableCompare(output[4],table5);
 		
 		tableName = table8 << get name;
-		ut assert that(Expr(output[1] << get name), ut equal to(table8 << get name));
+		ut assert that(Expr(output[1] << get name), ut equal to(tableName||"_processed"));
 		ut assert that(Expr(output[2] << get name), ut equal to("4147114_NA_Loop Qualification Summary Report"));
 		ut assert that(Expr(output[3] << get name), ut equal to("4147114_NA_Sublot Corrected SDs by Foil and Fluid"));
 		ut assert that(Expr(output[4] << get name), ut equal to("4147114_NA_NDE Count by foil"));
@@ -748,7 +748,7 @@ ut test(fullMontyTC, loopQualUT:utGroup||Char(loopQualUT:utGroupTest+1)||"_full 
 		compSD = loopQualUT:tableCompare(output[4],table5);
 		
 		tableName = table7 << get name;
-		ut assert that(Expr(output[1] << get name), ut equal to(table7 << get name));
+		ut assert that(Expr(output[1] << get name), ut equal to(tableName||"_processed"));
 		ut assert that(Expr(output[2] << get name), ut equal to("4149201_SDMA_Loop Qualification Summary Report"));
 		ut assert that(Expr(output[3] << get name), ut equal to("4149201_SDMA_Sublot Corrected SDs by Foil and Fluid"));
 		ut assert that(Expr(output[4] << get name), ut equal to("4149201_SDMA_NDE Count by foil"));
