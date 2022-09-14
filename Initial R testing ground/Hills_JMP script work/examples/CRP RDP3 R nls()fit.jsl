@@ -1,8 +1,0 @@
-R Init();
-//R Submit("rm(list=ls())");
-dt = Open("R:\nextlab2\Nate's folder\Catalyst Dx algorithms\CRP curve fitting\CRP RDP3.jmp");
-R Send (dt);
-//R Submit("print(dt)");
-R Submit("X = dt[,1]");
-R Submit("Y = dt[,2]");
-R Submit("X");
