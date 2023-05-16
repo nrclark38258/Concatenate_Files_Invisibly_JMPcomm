@@ -9,13 +9,8 @@
 
 //------------------Revision History--------------------------------
 //
-//  1.2 NClark 020420
-//      -> Added the code to do the changes w/o using the include for of original script
-//      -> Updated check for vars to default set them if they all come up missing
-//	1.1 NClark 040319
-//		-> updated to use full concatinvis file as a non-start file
-//	1.0 NClark 042915
-//		-> First released version
+//	Change log maintained in Change Log file and commit history
+//
 //------------------------------------------------------------------
 
 Names Default To Here( 1 );

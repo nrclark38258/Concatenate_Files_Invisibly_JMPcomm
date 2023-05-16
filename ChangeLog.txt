@@ -6,6 +6,9 @@
 
 //------------------Revision History for script(s)---------------------
 //
+//  v7.1.0 NClark 051623
+//      Shift over to full GitHub Deployment with singular versioning
+//      Updated concat invis to have Try() commands around calls specific to utilities not available for jmp community
 //  r7.0.1 NClark 101421
 //      -> Concat Invis
 //	    6.9.0.1 NClark 101321
