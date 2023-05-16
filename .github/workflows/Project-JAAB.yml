@@ -1,0 +1,12 @@
+name: Build a JMP Addin and Publish it
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  my_first_job:
+    name: Project JAAB
+    uses: idexx-jmp-datum/Project-JAAB/.github/workflows/Build_Addin_Publish.yml@main
+    secrets:
+      Passed_Token: ${{ secrets.JMPDATUM_ADDINBUILDING }}
