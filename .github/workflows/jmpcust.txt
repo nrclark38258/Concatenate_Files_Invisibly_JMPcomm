@@ -11,7 +11,7 @@
                 <jm:caption>Concatenate Invisibly TOOLTAG</jm:caption>
                 <jm:command>
                     <jm:name>CONCATENATE INVISIBLY</jm:name>
-                    <jm:caption>Concat Invisibly/jm:caption>
+                    <jm:caption>Concat Invisibly</jm:caption>
                     <jm:action type="path">$ADDIN_HOME(com.idexx.nclark.concatenate_files_invisibly)\Open invisibly and Concatenate.jsl</jm:action>
                     <jm:tip>Saves RAM by opening files in background before concatenation</jm:tip>
                     <jm:icon type="builtin">IDB_TABLES_CONCATENATE</jm:icon>
